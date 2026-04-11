@@ -277,7 +277,3 @@ The entire pipeline — language runtime, flowchart renderer, editor, terminal, 
 Run a program with the ▶ Run button. After execution completes, the flowchart animates the actual execution path at human speed — showing exactly which branches were taken, how many times the loop ran, which conditions were true. Use the speed control to adjust playback rate.
 
 ---
-
-## License
-
-MIT
