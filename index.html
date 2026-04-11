@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>IVX Editor</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+<div id="app">
+  <header id="hdr">
+    <span class="logo">IVX</span>
+    <div class="hsep"></div>
+    <span id="drive-filename" class="drive-filename"></span>
+    <div id="err"></div>
+  </header>
+  <div id="main-layout">
+    <!-- Google Drive file panel -->
+    <div id="drive-panel">
+      <div id="drive-panel-hdr">
+        <span class="drive-panel-title">Files</span>
+        <button id="drive-connect-btn" class="drive-btn drive-btn-primary">Sign in to Google</button>
+      </div>
+      <div id="drive-file-list">
+        <div class="drive-empty">Sign in to access your IVX files in Google Drive</div>
+      </div>
+      <div id="drive-panel-footer" style="display:none">
+        <button id="drive-new-btn" class="drive-btn">＋ New</button>
+        <button id="drive-save-btn" class="drive-btn">↑ Save</button>
+        <button id="drive-signout-btn" class="drive-btn drive-btn-muted">Sign out</button>
+      </div>
+    </div>
+
+    <div id="ep">
+      <div id="editor-sub">
+        <div id="tb">
+        <button class="kb incoming-btn" data-ins="  ">then</button>
+        <button class="kb incoming-btn" data-ins="else ">else</button>
+        <button class="kb so-btn" data-ins="so ">so</button>
+        <span class="tbl"></span>
+        <button class="kb" data-ins="if ">if</button>
+        <button class="kb" data-ins="fork ">fork</button>
+        <button class="kb" data-ins="loop ">loop</button>
+        <button class="kb" data-ins="dot ">dot</button>
+        <button class="kb" data-ins="take ">take</button>
+        <button class="kb" data-ins="say ">say</button>
+        <button class="kb" data-ins="make ">make</button>
+        <button class="kb" data-ins="fun ">fun</button>
+        <button class="kb" data-ins="end ">end</button>
+        <button class="kb" data-ins="note ">note</button>
+        <button class="kb" data-ins="for ">for</button>
+        <button class="kb" data-ins="in ">in</button>
+        <button class="kb" data-ins="give ">give</button>
+        <button class="kb" data-ins="wait ">wait</button>
+        <button class="kb" data-ins="del ">del</button>
+        <button class="kb outgoing-btn" data-ins="prev ">prev</button>
+        <button class="kb outgoing-btn" data-ins="next ">next</button>
+        <span class="tbl"></span>
+        <button class="kb logic-btn" data-ins="not ">not</button>
+        <button class="kb logic-btn" data-ins=" and ">and</button>
+        <button class="kb logic-btn" data-ins=" or ">or</button>
+        <button class="kb logic-btn" data-ins=" xor ">xor</button>
+        <button class="kb logic-btn" data-ins=" is ">is</button>
+        <span class="tbl"></span>
+        <button class="kb logic-btn" data-ins="yes">yes</button>
+        <button class="kb logic-btn" data-ins="no">no</button>
+        <button class="kb logic-btn" data-ins="none">none</button>
+        <span class="tbl"></span>
+        <button class="kb teal-btn" data-ins="[]">[]</button>
+        <button class="kb teal-btn" data-ins="{}">&#123;&#125;</button>
+        <span style="flex:1"></span>
+        <button class="kb" id="clr">Clear</button>
+        </div>
+        <div id="src-wrap"><div id="src-gutter"><div id="src-gutter-inner"></div></div><div id="src-scroll">
+          <div id="src-hl" aria-hidden="true"></div>
+          <textarea id="src" spellcheck="false" autocorrect="off" autocomplete="off" autocapitalize="off"></textarea></div>
+        </div>
+      </div><!-- end editor-sub -->
+      <div id="term-resizer"></div>
+      <div id="term">
+        <div id="term-hdr">
+          <div id="term-hdr-left">
+            <span id="term-title">Terminal</span>
+            <button id="term-run">▶ Run</button>
+            <button id="term-clear">Clear</button>
+          </div>
+        </div>
+        <div id="term-msgs"></div>
+      </div>
+    </div><!-- end ep -->
+
+    <div id="gp">
+      <div id="gc" class="pui">
+        <button class="gb" id="sprev">‹</button>
+        <button class="gb" id="splay">Play</button>
+        <button class="gb" id="spause">Pause</button>
+        <button class="gb" id="snext">›</button>
+        <div class="gs"></div>
+        <select class="gsel" id="spd">
+          <option value="0.25">0.25×</option>
+          <option value="0.5">0.5×</option>
+          <option value="1" selected>1×</option>
+          <option value="1.5">1.5×</option>
+          <option value="2">2×</option>
+        </select>
+        <div class="gs"></div>
+        <button class="gb" id="cmtbtn">Comments</button>
+      </div>
+      <div id="cp" class="pui">
+        <div id="export-wrap">
+          <select class="gsel" id="export-fmt">
+            <option value="json">JSON</option>
+            <option value="svg">SVG</option>
+            <option value="png">PNG</option>
+          </select>
+          <button class="gb" id="export-btn">Export</button>
+        </div>
+      </div>
+      <div id="controls" style="display:none"></div>
+      <svg id="canvas"></svg>
+      <div id="minimap"><svg id="minimap-canvas"></svg></div>
+    </div>
+  </div><!-- end main-layout -->
+</div>
+
+<script src="ivx.js"></script>
+</body>
+</html>
