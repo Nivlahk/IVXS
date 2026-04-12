@@ -57,7 +57,7 @@ const KEYWORDS = new Set([
   // Functions
   'fun', 'give',
   // Data
-  'make', 'del', 'take', 'say',
+  'make', 'del', 'take', 'say', 'save',
   // Navigation / graph
   'dot', 'fork', 'prev', 'next', 'from',
   // Logic / literals
