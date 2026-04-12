@@ -57,7 +57,7 @@ const KEYWORDS = new Set([
   // Functions
   'fun', 'give',
   // Data
-  'make', 'del', 'take', 'say', 'save',
+  'make', 'del', 'take', 'say', 'save', 'local',
   // Navigation / graph
   'dot', 'fork', 'prev', 'next', 'from',
   // Logic / literals
@@ -75,7 +75,7 @@ const KEYWORDS = new Set([
 // Two-character operators — must be checked before single-char ones
 const TWO_CHAR_OPS = new Set(['//', '!=', '>=', '<=']);
 // Single-character operators
-const ONE_CHAR_OPS = new Set(['+', '-', '/', '*', '%', '^', '=', '<', '>']);
+const ONE_CHAR_OPS = new Set(['+', '-', '/', '*', '%', '^', '=', '<', '>', '.']);
 
 // Python-style escape sequences resolved inside string literals
 const ESCAPE_MAP = {
@@ -109,10 +109,6 @@ class Lexer {
     // Indentation stack — starts at column 0
     this.indentStack = [0];
 
-    // Track whether we are at the start of a logical line
-    // (used to handle indentation)
-    this.atLineStart = true;
-
     // After emitting NEWLINE we process indentation on the next non-empty line
     this.pendingIndent = false;
   }
@@ -124,10 +120,6 @@ class Lexer {
     if (ch === '\n') { this.line++; this.col = 1; }
     else             { this.col++; }
     return ch;
-  }
-  match(str) {
-    if (this.src.startsWith(str, this.pos)) { this.pos += str.length; this.col += str.length; return true; }
-    return false;
   }
 
   // ── Emit helpers ────────────────────────────────────────────────────────────
@@ -412,6 +404,31 @@ class Parser {
     // For-loop nesting depth → iterator variable names
     // depth 0 → i/ii, depth 1 → j/jj, depth 2 → k/kk
     this._forDepth = 0;
+
+    this._statementParsers = {
+      make: () => this.parseMake(),
+      del:  () => this.parseDel(),
+      say:  () => this.parseSay(),
+      take: () => this.parseTake(),
+      save: () => this.parseSave(),
+      local: () => this.parseLocal(),
+      give: () => this.parseGive(),
+      wait: () => this.parseWait(),
+      ask:  () => this.parseExprStatement(), // ask is an expression
+      post: () => this.parsePost(),
+      use:  () => this.parseUse(),
+      if:   () => this.parseIf(),
+      for:  () => this.parseFor(),
+      loop: () => this.parseLoop(),
+      fun:  () => this.parseFun(),
+      dot:  () => {
+        const tok = this.advance();
+        this.eatNewline();
+        return Node('Dot', { line: tok.line });
+      },
+      end:  () => this.parseEnd(),
+      from: () => this.parseFrom(),
+    };
   }
 
   // ── Token helpers ───────────────────────────────────────────────────────────
@@ -480,28 +497,11 @@ class Parser {
     if (tok.type === T.EOF || tok.type === T.DEDENT) return null;
 
     if (tok.type === T.KEYWORD) {
-      switch (tok.value) {
-        case 'make':  return this.parseMake();
-        case 'del':   return this.parseDel();
-        case 'say':   return this.parseSay();
-        case 'take':  return this.parseTake();
-        case 'give':  return this.parseGive();
-        case 'wait':  return this.parseWait();
-        case 'ask':   return this.parseExprStatement(); // ask is an expression
-        case 'post':  return this.parsePost();
-        case 'use':   return this.parseUse();
-        case 'if':    return this.parseIf();
-        case 'for':   return this.parseFor();
-        case 'loop':  return this.parseLoop();
-        case 'fun':   return this.parseFun();
-        case 'dot':   this.advance(); this.eatNewline(); return Node('Dot', { line: tok.line });
-        case 'end':   return this.parseEnd();
-        case 'from':  return this.parseFrom();
-        default:
-          // Could be a bare keyword used as expression (e.g. 'yes', 'none')
-          // or an unknown keyword — try parsing as expression statement
-          return this.parseExprStatement();
-      }
+      const parseStmt = this._statementParsers[tok.value];
+      if (parseStmt) return parseStmt();
+      // Could be a bare keyword used as expression (e.g. 'yes', 'none')
+      // or an unknown keyword — try parsing as expression statement
+      return this.parseExprStatement();
     }
 
     // Identifier — could be a function call or bare expression
@@ -654,6 +654,88 @@ class Parser {
     const key = this.parseExpr();
     this.eatNewline();
     return Node('Use', { key, line: tok.line, col: tok.col });
+  }
+
+  _parseSavePayload(target, line, col) {
+    if (this.check(T.NEWLINE) || this.check(T.EOF) || this.check(T.DEDENT)) {
+      this.error("Expected filename after 'save'", this.peek());
+      return null;
+    }
+
+    const first = this.parseExpr();
+    if (!first) {
+      this.error("Expected filename after 'save'", this.peek());
+      return null;
+    }
+
+    // save user.txt — first token parsed as Identifier('user') and dot-tail remains.
+    if (first.type === 'Identifier' && this.checkOp('.')) {
+      const filenameExpr = this._parseBareFilename(first.name, first.line, first.col);
+      if (!filenameExpr) return null;
+      this.eatNewline();
+      return Node('Save', { valueExpr: null, filenameExpr, target, line, col });
+    }
+
+    let valueExpr = null;
+    let filenameExpr = first;
+    if (!this.check(T.NEWLINE) && !this.check(T.EOF) && !this.check(T.DEDENT)) {
+      valueExpr = first;
+      filenameExpr = this._parseSaveFilenameExpr();
+      if (!filenameExpr) {
+        this.error("Expected filename after value in 'save'", this.peek());
+        return null;
+      }
+    }
+
+    this.eatNewline();
+    return Node('Save', { valueExpr, filenameExpr, target, line, col });
+  }
+
+  // ── save <filename> | save <value> <filename> ────────────────────────────
+  parseSave() {
+    const tok = this.advance(); // eat 'save'
+    return this._parseSavePayload('drive', tok.line, tok.col);
+  }
+
+  _parseBareFilename(initial, line, col) {
+    let name = initial;
+    while (this.checkOp('.')) {
+      this.advance(); // consume '.'
+      const part = this.peek();
+      if ([T.IDENTIFIER, T.KEYWORD, T.NUMBER].includes(part.type)) {
+        name += '.' + String(this.advance().value ?? '');
+      } else {
+        this.error("Expected filename segment after '.'", part);
+        return null;
+      }
+    }
+    return Node('StringLit', { value: name, line, col });
+  }
+
+  _parseSaveFilenameExpr() {
+    const tok = this.peek();
+    if (tok.type === T.STRING) {
+      this.advance();
+      return Node('StringLit', { value: tok.value, line: tok.line, col: tok.col });
+    }
+    if (tok.type === T.IDENTIFIER) {
+      const id = this.advance();
+      return this._parseBareFilename(id.value, id.line, id.col);
+    }
+    // Fallback for computed filename expressions.
+    return this.parseExpr();
+  }
+
+  // ── local save <filename> | local save <value> <filename> ────────────────
+  parseLocal() {
+    const tok = this.advance(); // eat 'local'
+    if (!this.checkKw('save')) {
+      this.error("Expected 'save' after 'local'", this.peek());
+      this.eatNewline();
+      return null;
+    }
+    this.advance(); // eat 'save'
+    return this._parseSavePayload('local', tok.line, tok.col);
   }
 
   // ── if <condition> NEWLINE INDENT <body> [else <body>] ─────────────────────
@@ -937,6 +1019,67 @@ class Parser {
     return this.parsePrimary();
   }
 
+  parsePostfix(base) {
+    let expr = base;
+    while (this.check(T.LBRACKET)) {
+      expr = this.parseIndexAccess(expr);
+    }
+    return expr;
+  }
+
+  parseIndexAccess(target) {
+    const lbr = this.expect(T.LBRACKET, undefined, "Expected '['");
+    if (!lbr) return target;
+
+    const isRowTerminator = () => this.check(T.COMMA) || this.check(T.RBRACKET);
+    const isColTerminator = () => this.check(T.RBRACKET);
+
+    const rowSpec = this._parseIndexSpec(isRowTerminator);
+    const hasComma = this.eat(T.COMMA) !== null;
+    const colSpec = hasComma ? this._parseIndexSpec(isColTerminator) : this._omittedIndexSpec();
+
+    this.expect(T.RBRACKET, undefined, "Expected ']' after index");
+    return Node('IndexAccess', {
+      target,
+      rowSpec,
+      colSpec,
+      hasComma,
+      line: lbr.line,
+      colPos: lbr.col,
+    });
+  }
+
+  _omittedIndexSpec() {
+    return { omitted: true, isSlice: false, start: null, end: null, expr: null };
+  }
+
+  _parseIndexSpec(isTerminator) {
+    if (isTerminator()) return this._omittedIndexSpec();
+
+    let start = null;
+    let end = null;
+    let isSlice = false;
+
+    if (!this.check(T.COLON)) {
+      start = this.parseExpr();
+    }
+
+    if (this.eat(T.COLON)) {
+      isSlice = true;
+      if (!isTerminator()) {
+        end = this.parseExpr();
+      }
+    }
+
+    return {
+      omitted: false,
+      isSlice,
+      start,
+      end,
+      expr: isSlice ? null : start,
+    };
+  }
+
   // ── Primary expressions ────────────────────────────────────────────────────
   parsePrimary() {
     const tok = this.peek();
@@ -944,30 +1087,30 @@ class Parser {
     // Number literal
     if (tok.type === T.NUMBER) {
       this.advance();
-      return Node('NumberLit', { value: tok.value, line: tok.line, col: tok.col });
+      return this.parsePostfix(Node('NumberLit', { value: tok.value, line: tok.line, col: tok.col }));
     }
 
     // String literal
     if (tok.type === T.STRING) {
       this.advance();
-      return Node('StringLit', { value: tok.value, line: tok.line, col: tok.col });
+      return this.parsePostfix(Node('StringLit', { value: tok.value, line: tok.line, col: tok.col }));
     }
 
     // Boolean / none literals
     if (tok.type === T.KEYWORD && ['yes','no','none'].includes(tok.value)) {
       this.advance();
       const value = tok.value === 'yes' ? true : tok.value === 'no' ? false : null;
-      return Node('BoolLit', { value, raw: tok.value, line: tok.line, col: tok.col });
+      return this.parsePostfix(Node('BoolLit', { value, raw: tok.value, line: tok.line, col: tok.col }));
     }
 
     // List literal [...]
     if (tok.type === T.LBRACKET) {
-      return this.parseList();
+      return this.parsePostfix(this.parseList());
     }
 
     // Dict literal {...}
     if (tok.type === T.LBRACE) {
-      return this.parseDict();
+      return this.parsePostfix(this.parseDict());
     }
 
     // Grouped expression (...)
@@ -975,28 +1118,31 @@ class Parser {
       this.advance();
       const expr = this.parseExpr();
       this.expect(T.RPAREN, undefined, "Expected ')'");
-      return expr;
+      return this.parsePostfix(expr);
     }
 
     // Identifier or function call
     if (tok.type === T.IDENTIFIER) {
       this.advance();
+      let expr;
       if (this.check(T.LPAREN)) {
-        return this.parseFunCall(tok);
+        expr = this.parseFunCall(tok);
+      } else {
+        expr = Node('Identifier', { name: tok.value, line: tok.line, col: tok.col });
       }
-      return Node('Identifier', { name: tok.value, line: tok.line, col: tok.col });
+      return this.parsePostfix(expr);
     }
 
     // Lazy declaration: name? — declare at global scope if not exists, then use
     if (tok.type === T.LAZY) {
       this.advance();
-      return Node('LazyDecl', { name: tok.value, line: tok.line, col: tok.col });
+      return this.parsePostfix(Node('LazyDecl', { name: tok.value, line: tok.line, col: tok.col }));
     }
 
     // Implicit loop variables used as identifiers
     if (tok.type === T.KEYWORD && ['i','ii','iii','j','jj','jjj','k','kk','kkk'].includes(tok.value)) {
       this.advance();
-      return Node('Identifier', { name: tok.value, line: tok.line, col: tok.col });
+      return this.parsePostfix(Node('Identifier', { name: tok.value, line: tok.line, col: tok.col }));
     }
 
     // ask <model> <prompt> [use <key>] — AI call expression
@@ -1008,7 +1154,7 @@ class Parser {
       const prompt = this.parseExpr();
       let credential = null;
       if (this.checkKw('use')) { this.advance(); credential = this.parseExpr(); }
-      return Node('Ask', { model, prompt, credential, line: tok.line, col: tok.col });
+      return this.parsePostfix(Node('Ask', { model, prompt, credential, line: tok.line, col: tok.col }));
     }
 
     // Nothing matched
@@ -1222,6 +1368,27 @@ class TypeChecker {
     this.globals = new TCEnv(null, 'global');
     // Built-in: err is always in scope as none (universal sentinel)
     this.globals.define('err', TYPE.NONE);
+
+    this._stmtCheckers = {
+      Assign: (node, env) => this._checkAssignStmt(node, env),
+      Delete: (node, env) => this._checkDeleteStmt(node, env),
+      Say: (node, env) => this._checkSayStmt(node, env),
+      Take: (node, env) => this._checkTakeStmt(node, env),
+      Give: (node, env) => this._checkGiveStmt(node, env),
+      Wait: (node, env) => this._checkWaitStmt(node, env),
+      Use: (node, env) => this._checkUseStmt(node, env),
+      Post: (node, env) => this._checkPostStmt(node, env),
+      Save: (node, env) => this._checkSaveStmt(node, env),
+      TakeFile: (node, env) => this._checkTakeFileStmt(node, env),
+      If: (node, env) => this._checkIfStmt(node, env),
+      Loop: (node, env) => this._checkLoopStmt(node, env),
+      For: (node, env) => this._checkForStmt(node, env),
+      Fun: (node, env) => this._checkFunStmt(node, env),
+      ExprStatement: (node, env) => this._checkExprStatementStmt(node, env),
+      End: () => {},
+      Dot: () => {},
+      Import: () => {},
+    };
   }
 
   err(msg, node) {
@@ -1229,8 +1396,11 @@ class TypeChecker {
   }
 
   // ── Check a full program ───────────────────────────────────────────────────
-  check(source) {
-    const { ast, errors: parseErrors } = parse(source);
+  check(sourceOrParsed) {
+    const parsed = (sourceOrParsed && typeof sourceOrParsed === 'object' && sourceOrParsed.ast)
+      ? sourceOrParsed
+      : parse(sourceOrParsed);
+    const { ast, errors: parseErrors } = parsed;
     // Surface parse errors as type errors so caller gets one list
     for (const e of parseErrors) {
       this.errors.push(new TypeError_('Parse error: ' + e.message, e.line, e.col));
@@ -1248,185 +1418,159 @@ class TypeChecker {
 
   // ── Statement ──────────────────────────────────────────────────────────────
   checkStmt(node, env) {
-    switch (node.type) {
+    const checker = this._stmtCheckers[node.type];
+    if (checker) checker(node, env);
+  }
 
-      case 'Assign': {
-        const exprType = this.checkExpr(node.expr, env);
-        const existing = env.lookup(node.name);
-        if (existing && existing.defined && existing.type !== TYPE.NONE) {
-          // Reassignment — type must be compatible
-          if (!compatible(exprType, existing.type)) {
-            this.err(
-              `Cannot assign ${exprType} to '${node.name}' which is ${existing.type}`,
-              node
-            );
-          } else {
-            env.update(node.name, exprType);
-          }
-        } else {
-          // New variable — infer type
-          env.define(node.name, exprType);
-        }
-        break;
+  _checkAssignStmt(node, env) {
+    const exprType = this.checkExpr(node.expr, env);
+    const existing = env.lookup(node.name);
+    if (existing && existing.defined && existing.type !== TYPE.NONE) {
+      if (!compatible(exprType, existing.type)) {
+        this.err(
+          `Cannot assign ${exprType} to '${node.name}' which is ${existing.type}`,
+          node
+        );
+      } else {
+        env.update(node.name, exprType);
       }
-
-      case 'Delete': {
-        const existing = env.lookup(node.name);
-        if (!existing) {
-          this.err(`Cannot delete '${node.name}': variable not defined`, node);
-        } else {
-          // Mark as deleted by setting to none
-          env.update(node.name, TYPE.NONE);
-        }
-        break;
-      }
-
-      case 'Say': {
-        this.checkExpr(node.expr, env);
-        break;
-      }
-
-      case 'Take': {
-        // 'take' always produces a real value — mark variable as properly defined
-        // The type depends on the converter: int→INTEGER, flt→FLOAT, str→STRING,
-        // bin→BOOLEAN, list→LIST, dict→DICT, none→STRING (default)
-        const takeTypeMap = { int: TYPE.INTEGER, flt: TYPE.FLOAT, str: TYPE.STRING,
-                              bin: TYPE.BOOLEAN, list: TYPE.LIST, dict: TYPE.DICT };
-        const inferredType = takeTypeMap[node.converter] ?? TYPE.STRING;
-        const existing = env.lookup(node.name);
-        // If variable exists and is none, it's being reset — allow any type
-        // If variable doesn't exist, define it fresh
-        if (!existing || existing.type === TYPE.NONE) {
-          env.define(node.name, inferredType);
-        } else {
-          env.update(node.name, inferredType);
-        }
-        break;
-      }
-
-      case 'Give': {
-        // 'give' inside a function — record return type on the function's env
-        const exprType = this.checkExpr(node.expr, env);
-        if (env._returnType !== undefined) {
-          if (env._returnType === TYPE.UNKNOWN) {
-            env._returnType = exprType;
-          } else if (!compatible(exprType, env._returnType)) {
-            this.err(
-              `Inconsistent return types: ${exprType} vs ${env._returnType}`,
-              node
-            );
-          }
-        }
-        break;
-      }
-
-      case 'Wait': {
-        if (node.condition) {
-          const t = this.checkExpr(node.condition, env);
-          if (t !== TYPE.BOOLEAN && t !== TYPE.UNKNOWN) {
-            this.err(`'wait' condition must be boolean, got ${t}`, node);
-          }
-        } else if (node.expr) {
-          const t = this.checkExpr(node.expr, env);
-          if (t !== TYPE.INTEGER && t !== TYPE.UNKNOWN && t !== TYPE.NONE) {
-            this.err(`'wait' cycle count must be integer, got ${t}`, node);
-          }
-        }
-        break;
-      }
-
-      case 'Use': {
-        // use <key> — sets global credential, key must resolve to string
-        this.checkExpr(node.key, env);
-        break;
-      }
-
-      case 'Post': {
-        // post <url> <body> [use <key>]
-        this.checkExpr(node.url, env);
-        this.checkExpr(node.body, env);
-        if (node.credential) this.checkExpr(node.credential, env);
-        break;
-      }
-
-      case 'TakeFile': {
-        // take file.csv — result type depends on extension
-        const fileTypeMap = { csv: TYPE.LIST, json: TYPE.DICT, txt: TYPE.STRING,
-                              tsv: TYPE.LIST, xml: TYPE.STRING };
-        const inferredType = fileTypeMap[node.ext] ?? TYPE.STRING;
-        env.define(node.name, inferredType);
-        break;
-      }
-
-      case 'If': {
-        const condType = this.checkExpr(node.condition, env);
-        if (condType !== TYPE.BOOLEAN && condType !== TYPE.UNKNOWN) {
-          this.err(`'if' condition must be boolean, got ${condType}`, node);
-        }
-        const bodyEnv = env.child('if-body');
-        this.checkBlock(node.body, bodyEnv);
-        if (node.else_) {
-          const elseEnv = env.child('else-body');
-          this.checkBlock(node.else_, elseEnv);
-        }
-        break;
-      }
-
-      case 'Loop': {
-        const condType = this.checkExpr(node.condition, env);
-        if (condType !== TYPE.BOOLEAN && condType !== TYPE.UNKNOWN) {
-          this.err(`'loop' condition must be boolean, got ${condType}`, node);
-        }
-        const loopEnv = env.child('loop-body');
-        this.checkBlock(node.body, loopEnv);
-        break;
-      }
-
-      case 'For': {
-        // Resolve the iterable
-        const iterType = this.resolveIdentifier(node.target, env, node);
-        // Define iterator variables in the loop body scope
-        const forEnv = env.child('for-body');
-        // i gets the element type, ii gets index (integer) for lists/strings,
-        // or value for dicts. For now, both are typed loosely until runtime knows.
-        const elemType = iterType === TYPE.LIST   ? TYPE.UNKNOWN
-                       : iterType === TYPE.STRING ? TYPE.STRING
-                       : iterType === TYPE.DICT   ? TYPE.UNKNOWN
-                       : TYPE.UNKNOWN;
-        forEnv.define(node.iterVar,  elemType);
-        forEnv.define(node.iterVar2, iterType === TYPE.DICT ? TYPE.UNKNOWN : TYPE.INTEGER);
-        this.checkBlock(node.body, forEnv);
-        break;
-      }
-
-      case 'Fun': {
-        // First pass: register the function signature so recursive calls work
-        const fnEnv = env.child('fun-' + node.name);
-        fnEnv._returnType = TYPE.UNKNOWN;
-        // Params are untyped until inference — mark as UNKNOWN
-        for (const p of node.params) fnEnv.define(p, TYPE.UNKNOWN);
-        env.defFn(node.name, node.params.map(p => ({ name: p, type: TYPE.UNKNOWN })), TYPE.UNKNOWN);
-        // Check body
-        this.checkBlock(node.body, fnEnv);
-        // Update function return type from what 'out' inferred
-        const retType = fnEnv._returnType ?? TYPE.UNKNOWN;
-        env.defFn(node.name, node.params.map(p => ({ name: p, type: fnEnv.lookup(p)?.type ?? TYPE.UNKNOWN })), retType);
-        break;
-      }
-
-      case 'End':
-      case 'Dot':
-      case 'Import':
-        break; // nothing to type-check structurally
-
-      case 'ExprStatement':
-        if (node.expr) this.checkExpr(node.expr, env);
-        break;
-
-      default:
-        // Unknown statement type — skip
-        break;
+    } else {
+      env.define(node.name, exprType);
     }
+  }
+
+  _checkDeleteStmt(node, env) {
+    const existing = env.lookup(node.name);
+    if (!existing) {
+      this.err(`Cannot delete '${node.name}': variable not defined`, node);
+    } else {
+      env.update(node.name, TYPE.NONE);
+    }
+  }
+
+  _checkSayStmt(node, env) {
+    this.checkExpr(node.expr, env);
+  }
+
+  _checkTakeStmt(node, env) {
+    const takeTypeMap = {
+      int: TYPE.INTEGER,
+      flt: TYPE.FLOAT,
+      str: TYPE.STRING,
+      bin: TYPE.BOOLEAN,
+      list: TYPE.LIST,
+      dict: TYPE.DICT,
+    };
+    const inferredType = takeTypeMap[node.converter] ?? TYPE.STRING;
+    const existing = env.lookup(node.name);
+    if (!existing || existing.type === TYPE.NONE) {
+      env.define(node.name, inferredType);
+    } else {
+      env.update(node.name, inferredType);
+    }
+  }
+
+  _checkGiveStmt(node, env) {
+    const exprType = this.checkExpr(node.expr, env);
+    if (env._returnType !== undefined) {
+      if (env._returnType === TYPE.UNKNOWN) {
+        env._returnType = exprType;
+      } else if (!compatible(exprType, env._returnType)) {
+        this.err(`Inconsistent return types: ${exprType} vs ${env._returnType}`, node);
+      }
+    }
+  }
+
+  _checkWaitStmt(node, env) {
+    if (node.condition) {
+      const t = this.checkExpr(node.condition, env);
+      if (t !== TYPE.BOOLEAN && t !== TYPE.UNKNOWN) {
+        this.err(`'wait' condition must be boolean, got ${t}`, node);
+      }
+    } else if (node.expr) {
+      const t = this.checkExpr(node.expr, env);
+      if (t !== TYPE.INTEGER && t !== TYPE.UNKNOWN && t !== TYPE.NONE) {
+        this.err(`'wait' cycle count must be integer, got ${t}`, node);
+      }
+    }
+  }
+
+  _checkUseStmt(node, env) {
+    this.checkExpr(node.key, env);
+  }
+
+  _checkPostStmt(node, env) {
+    this.checkExpr(node.url, env);
+    this.checkExpr(node.body, env);
+    if (node.credential) this.checkExpr(node.credential, env);
+  }
+
+  _checkSaveStmt(node, env) {
+    if (node.valueExpr) this.checkExpr(node.valueExpr, env);
+    const filenameType = this.checkExpr(node.filenameExpr, env);
+    if (![TYPE.STRING, TYPE.UNKNOWN, TYPE.NONE, TYPE.URL].includes(filenameType)) {
+      this.err(`'save' filename should be string-like, got ${filenameType}`, node.filenameExpr ?? node);
+    }
+  }
+
+  _checkTakeFileStmt(node, env) {
+    const fileTypeMap = {
+      csv: TYPE.LIST,
+      json: TYPE.DICT,
+      txt: TYPE.STRING,
+      tsv: TYPE.LIST,
+      xml: TYPE.STRING,
+    };
+    const inferredType = fileTypeMap[node.ext] ?? TYPE.STRING;
+    env.define(node.name, inferredType);
+  }
+
+  _checkIfStmt(node, env) {
+    const condType = this.checkExpr(node.condition, env);
+    if (condType !== TYPE.BOOLEAN && condType !== TYPE.UNKNOWN) {
+      this.err(`'if' condition must be boolean, got ${condType}`, node);
+    }
+    const bodyEnv = env.child('if-body');
+    this.checkBlock(node.body, bodyEnv);
+    if (node.else_) {
+      const elseEnv = env.child('else-body');
+      this.checkBlock(node.else_, elseEnv);
+    }
+  }
+
+  _checkLoopStmt(node, env) {
+    const condType = this.checkExpr(node.condition, env);
+    if (condType !== TYPE.BOOLEAN && condType !== TYPE.UNKNOWN) {
+      this.err(`'loop' condition must be boolean, got ${condType}`, node);
+    }
+    const loopEnv = env.child('loop-body');
+    this.checkBlock(node.body, loopEnv);
+  }
+
+  _checkForStmt(node, env) {
+    const iterType = this.resolveIdentifier(node.target, env, node);
+    const forEnv = env.child('for-body');
+    const elemType = iterType === TYPE.LIST ? TYPE.UNKNOWN
+      : iterType === TYPE.STRING ? TYPE.STRING
+      : iterType === TYPE.DICT ? TYPE.UNKNOWN
+      : TYPE.UNKNOWN;
+    forEnv.define(node.iterVar, elemType);
+    forEnv.define(node.iterVar2, iterType === TYPE.DICT ? TYPE.UNKNOWN : TYPE.INTEGER);
+    this.checkBlock(node.body, forEnv);
+  }
+
+  _checkFunStmt(node, env) {
+    const fnEnv = env.child('fun-' + node.name);
+    fnEnv._returnType = TYPE.UNKNOWN;
+    for (const p of node.params) fnEnv.define(p, TYPE.UNKNOWN);
+    env.defFn(node.name, node.params.map(p => ({ name: p, type: TYPE.UNKNOWN })), TYPE.UNKNOWN);
+    this.checkBlock(node.body, fnEnv);
+    const retType = fnEnv._returnType ?? TYPE.UNKNOWN;
+    env.defFn(node.name, node.params.map(p => ({ name: p, type: fnEnv.lookup(p)?.type ?? TYPE.UNKNOWN })), retType);
+  }
+
+  _checkExprStatementStmt(node, env) {
+    if (node.expr) this.checkExpr(node.expr, env);
   }
 
   // ── Expression type inference ──────────────────────────────────────────────
@@ -1482,6 +1626,40 @@ class TypeChecker {
 
       case 'Identifier':
         return this.resolveIdentifier(node.name, env, node);
+
+      case 'IndexAccess': {
+        const targetType = this.checkExpr(node.target, env);
+        if (!node.hasComma) {
+          if (![TYPE.LIST, TYPE.DICT, TYPE.STRING, TYPE.UNKNOWN, TYPE.NONE].includes(targetType)) {
+            this.err(`Indexing requires list/dict/string target, got ${targetType}`, node.target ?? node);
+          }
+        } else if (![TYPE.LIST, TYPE.UNKNOWN, TYPE.NONE].includes(targetType)) {
+          this.err(`2D indexing requires list target, got ${targetType}`, node.target ?? node);
+        }
+        const row = node.rowSpec;
+        const col = node.colSpec;
+        if (row && !row.omitted) {
+          if (row.isSlice) {
+            if (row.start) this.checkExpr(row.start, env);
+            if (row.end) this.checkExpr(row.end, env);
+          } else if (row.expr) {
+            this.checkExpr(row.expr, env);
+          }
+        }
+        if (col && !col.omitted) {
+          if (col.isSlice) {
+            if (col.start) this.checkExpr(col.start, env);
+            if (col.end) this.checkExpr(col.end, env);
+          } else if (col.expr) {
+            this.checkExpr(col.expr, env);
+          }
+        }
+        if (node.hasComma && row?.omitted && !col?.omitted) return TYPE.LIST;
+        if (node.hasComma && !row?.omitted && col?.omitted) return TYPE.LIST;
+        if (node.hasComma && (row?.isSlice || col?.isSlice)) return TYPE.LIST;
+        if (!node.hasComma && row?.isSlice) return TYPE.LIST;
+        return TYPE.UNKNOWN;
+      }
 
       case 'BinOp': {
         const left  = this.checkExpr(node.left,  env);
@@ -1554,9 +1732,9 @@ class TypeChecker {
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
-function typecheck(source) {
+function typecheck(sourceOrParsed) {
   const tc = new TypeChecker();
-  return tc.check(source);
+  return tc.check(sourceOrParsed);
 }
 
 
@@ -1633,6 +1811,318 @@ class IVXFunction {
   }
 }
 
+const BUILTIN_DEFS = {
+  int: {
+    params: ['x'],
+    call: (args) => Math.trunc(Number(args[0])),
+  },
+  flt: {
+    params: ['x'],
+    call: (args) => Number(args[0]),
+  },
+  str: {
+    params: ['x'],
+    call: (args) => ivxRepr(args[0]),
+  },
+  bin: {
+    params: ['x'],
+    call: (args) => Boolean(args[0]),
+  },
+  list: {
+    params: ['x'],
+    call: (args) => Array.isArray(args[0]) ? args[0] : args[0] instanceof Map ? [...args[0].values()] : [args[0]],
+  },
+  dict: {
+    params: ['x'],
+    call: (args) => args[0] instanceof Map ? args[0] : new Map(Object.entries(args[0] ?? {})),
+  },
+  length: {
+    params: ['x'],
+    call: (args, node) => {
+      const v = args[0];
+      if (typeof v === 'string') return v.length;
+      if (Array.isArray(v)) return v.length;
+      if (v instanceof Map) return v.size;
+      throw new RuntimeError(`length() requires string, list, or dict`, node?.line);
+    },
+  },
+  keys: {
+    params: ['d'],
+    call: (args) => args[0] instanceof Map ? [...args[0].keys()] : [],
+  },
+  values: {
+    params: ['d'],
+    call: (args) => args[0] instanceof Map ? [...args[0].values()] : [],
+  },
+  has: {
+    params: ['d', 'k'],
+    call: (args) => args[0] instanceof Map ? args[0].has(args[1]) : false,
+  },
+  push: {
+    params: ['list', 'val'],
+    call: (args) => {
+      if (Array.isArray(args[0])) args[0].push(args[1]);
+      return args[0];
+    },
+  },
+  pop: {
+    params: ['list'],
+    call: (args) => {
+      if (Array.isArray(args[0])) return args[0].pop() ?? NONE;
+      return NONE;
+    },
+  },
+  abs: {
+    params: ['x'],
+    call: (args) => Math.abs(args[0]),
+  },
+  floor: {
+    params: ['x'],
+    call: (args) => Math.floor(args[0]),
+  },
+  ceil: {
+    params: ['x'],
+    call: (args) => Math.ceil(args[0]),
+  },
+  round: {
+    params: ['x'],
+    call: (args) => Math.round(args[0]),
+  },
+  min: {
+    params: ['a', 'b'],
+    call: (args) => Math.min(args[0], args[1]),
+  },
+  max: {
+    params: ['a', 'b'],
+    call: (args) => Math.max(args[0], args[1]),
+  },
+  sqrt: {
+    params: ['x'],
+    call: (args) => Math.sqrt(args[0]),
+  },
+  upper: {
+    params: ['s'],
+    call: (args) => String(args[0]).toUpperCase(),
+  },
+  lower: {
+    params: ['s'],
+    call: (args) => String(args[0]).toLowerCase(),
+  },
+  trim: {
+    params: ['s'],
+    call: (args) => String(args[0]).trim(),
+  },
+  split: {
+    params: ['s', 'sep'],
+    call: (args) => String(args[0]).split(args[1] ?? ''),
+  },
+  join: {
+    params: ['list', 'sep'],
+    call: (args, node) => {
+      // Relational join overload: join(left, right, leftCol, rightCol[, kind])
+      if (args.length >= 4) {
+        return tableJoin(args[0], args[1], args[2], args[3], args[4] ?? 'inner', node);
+      }
+      // Original string/list join behavior
+      return (args[0] ?? []).join(args[1] ?? '');
+    },
+  },
+  where: {
+    params: ['table', 'col', 'op', 'value'],
+    call: (args, node) => tableWhere(args, node),
+  },
+  order: {
+    params: ['table', 'col', 'dir'],
+    call: (args) => tableOrder(args[0], args[1], args[2] ?? 'asc'),
+  },
+  group: {
+    params: ['table', 'cols'],
+    call: (args) => tableGroup(args[0], args[1]),
+  },
+  agg: {
+    params: ['grouped', 'col', 'fn', 'as'],
+    call: (args, node) => tableAgg(args[0], args[1], args[2], args[3], node),
+  },
+  contains: {
+    params: ['s', 'sub'],
+    call: (args) => String(args[0]).includes(String(args[1])),
+  },
+  replace: {
+    params: ['s', 'from', 'to'],
+    call: (args) => String(args[0]).replaceAll(String(args[1]), String(args[2])),
+  },
+};
+
+function ivxToPlain(value) {
+  if (value === NONE || value === null || value === undefined) return null;
+  if (Array.isArray(value)) return value.map(v => ivxToPlain(v));
+  if (value instanceof Map) {
+    const obj = {};
+    for (const [k, v] of value.entries()) obj[String(k)] = ivxToPlain(v);
+    return obj;
+  }
+  if (typeof value === 'object') {
+    const obj = {};
+    for (const [k, v] of Object.entries(value)) obj[k] = ivxToPlain(v);
+    return obj;
+  }
+  return value;
+}
+
+function tableToObjectRows(table) {
+  if (!Array.isArray(table)) return [];
+  if (table.length === 0) return [];
+
+  // Row objects (plain objects / maps)
+  if (table.every(r => r instanceof Map || (r && typeof r === 'object' && !Array.isArray(r)))) {
+    return table.map(r => (r instanceof Map ? ivxToPlain(r) : ivxToPlain(r)));
+  }
+
+  // 2D list rows -> object rows (header-aware)
+  if (table.every(r => Array.isArray(r))) {
+    const first = table[0] ?? [];
+    const hasHeader = first.every(c => typeof c === 'string');
+    const rows = hasHeader ? table.slice(1) : table;
+    const headers = hasHeader
+      ? first
+      : Array.from({ length: Math.max(...rows.map(r => r.length), 0) }, (_, i) => `c${i}`);
+
+    return rows.map(r => {
+      const obj = {};
+      for (let i = 0; i < headers.length; i++) obj[headers[i]] = ivxToPlain(r[i]);
+      return obj;
+    });
+  }
+
+  return table.map(v => ({ value: ivxToPlain(v) }));
+}
+
+function tableCompare(left, op, right) {
+  switch (op) {
+    case '=': return left === right;
+    case '!=': return left !== right;
+    case '<': return left < right;
+    case '>': return left > right;
+    case '<=': return left <= right;
+    case '>=': return left >= right;
+    case 'contains': return String(left ?? '').includes(String(right ?? ''));
+    default: return left === right;
+  }
+}
+
+function tableWhere(args, node) {
+  const rows = tableToObjectRows(args[0]);
+  const col = String(args[1] ?? '');
+  if (!col) throw new RuntimeError("where() requires a column name", node?.line);
+
+  let op = '=';
+  let val = NONE;
+  if (args.length >= 4) {
+    op = String(args[2] ?? '=');
+    val = ivxToPlain(args[3]);
+  } else {
+    val = ivxToPlain(args[2]);
+  }
+
+  return rows.filter(r => tableCompare(r[col], op, val));
+}
+
+function tableOrder(table, col, dir = 'asc') {
+  const rows = tableToObjectRows(table);
+  const key = String(col ?? '');
+  const sign = String(dir).toLowerCase() === 'desc' ? -1 : 1;
+  return rows.slice().sort((a, b) => {
+    const av = a?.[key];
+    const bv = b?.[key];
+    if (av === bv) return 0;
+    return av > bv ? sign : -sign;
+  });
+}
+
+function tableGroup(table, cols) {
+  const rows = tableToObjectRows(table);
+  const keys = Array.isArray(cols) ? cols.map(String) : [String(cols ?? '')];
+  const buckets = new Map();
+
+  for (const row of rows) {
+    const keyObj = {};
+    for (const k of keys) keyObj[k] = row?.[k];
+    const key = JSON.stringify(keyObj);
+    if (!buckets.has(key)) buckets.set(key, { key: keyObj, rows: [] });
+    buckets.get(key).rows.push(row);
+  }
+
+  return [...buckets.values()];
+}
+
+function tableAgg(grouped, col, fn, asName, node) {
+  if (!Array.isArray(grouped)) throw new RuntimeError('agg() expects grouped rows list', node?.line);
+  const key = String(col ?? '');
+  const op = String(fn ?? 'count').toLowerCase();
+  const outKey = String(asName ?? `${op}_${key}`);
+
+  return grouped.map(g => {
+    const rows = Array.isArray(g?.rows) ? g.rows : [];
+    const values = rows.map(r => r?.[key]).filter(v => v !== null && v !== undefined);
+    let value;
+
+    if (op === 'count') value = rows.length;
+    else if (op === 'sum') value = values.reduce((a, v) => a + Number(v || 0), 0);
+    else if (op === 'avg') value = values.length ? values.reduce((a, v) => a + Number(v || 0), 0) / values.length : 0;
+    else if (op === 'min') value = values.length ? values.reduce((a, v) => (a < v ? a : v)) : NONE;
+    else if (op === 'max') value = values.length ? values.reduce((a, v) => (a > v ? a : v)) : NONE;
+    else throw new RuntimeError(`agg(): unknown function '${op}'`, node?.line);
+
+    return { ...(g?.key ?? {}), [outKey]: value };
+  });
+}
+
+function tableJoin(leftTable, rightTable, leftCol, rightCol, kind = 'inner', node) {
+  const left = tableToObjectRows(leftTable);
+  const right = tableToObjectRows(rightTable);
+  const lCol = String(leftCol ?? '');
+  const rCol = String(rightCol ?? '');
+  const mode = String(kind ?? 'inner').toLowerCase();
+
+  if (!lCol || !rCol) throw new RuntimeError('join() requires left and right key columns', node?.line);
+
+  const rIndex = new Map();
+  for (const r of right) {
+    const key = r?.[rCol];
+    if (!rIndex.has(key)) rIndex.set(key, []);
+    rIndex.get(key).push(r);
+  }
+
+  const out = [];
+  const rightSeen = new Set();
+  for (const l of left) {
+    const key = l?.[lCol];
+    const matches = rIndex.get(key) ?? [];
+    if (matches.length === 0) {
+      if (mode === 'left' || mode === 'full') out.push({ ...l });
+      continue;
+    }
+    for (const r of matches) {
+      rightSeen.add(r);
+      const merged = { ...l };
+      for (const [k, v] of Object.entries(r ?? {})) {
+        if (k in merged) merged[`r_${k}`] = v;
+        else merged[k] = v;
+      }
+      out.push(merged);
+    }
+  }
+
+  if (mode === 'right' || mode === 'full') {
+    for (const r of right) {
+      if (rightSeen.has(r)) continue;
+      out.push({ ...r });
+    }
+  }
+
+  return out;
+}
+
 // ── Interpreter ───────────────────────────────────────────────────────────────
 class Interpreter {
   constructor(options = {}) {
@@ -1653,103 +2143,269 @@ class Interpreter {
 
     // Register built-in functions
     this._registerBuiltins();
+
+    this._exprEvaluators = {
+      NumberLit: (node, env) => this._evalNumberLit(node, env),
+      StringLit: (node, env) => this._evalStringLit(node, env),
+      BoolLit: (node, env) => this._evalBoolLit(node, env),
+      Ask: (node, env) => this._evalAskExpr(node, env),
+      ListLit: (node, env) => this._evalListLit(node, env),
+      DictLit: (node, env) => this._evalDictLit(node, env),
+      Identifier: (node, env) => this._evalIdentifierExpr(node, env),
+      IndexAccess: (node, env) => this._evalIndexAccessExpr(node, env),
+      LazyDecl: (node, env) => this._evalLazyDeclExpr(node, env),
+      BinOp: (node, env) => this.evalBinOp(node, env),
+      Post: (node, env) => this._evalPostExpr(node, env),
+      UnaryOp: (node, env) => this._evalUnaryOpExpr(node, env),
+      Call: (node, env) => this.evalCall(node, env),
+    };
   }
 
   // ── Built-in functions ────────────────────────────────────────────────────
   _registerBuiltins() {
     const G = this.globals;
-
-    // Type conversion
-    G.set('int',  new IVXFunction('int',  ['x'], null, null));
-    G.set('flt',  new IVXFunction('flt',  ['x'], null, null));
-    G.set('str',  new IVXFunction('str',  ['x'], null, null));
-    G.set('bin',  new IVXFunction('bin',  ['x'], null, null));
-    G.set('list', new IVXFunction('list', ['x'], null, null));
-    G.set('dict', new IVXFunction('dict', ['x'], null, null));
-
-    // Collections
-    G.set('length',  new IVXFunction('length',  ['x'], null, null));
-    G.set('keys',    new IVXFunction('keys',    ['d'], null, null));
-    G.set('values',  new IVXFunction('values',  ['d'], null, null));
-    G.set('has',     new IVXFunction('has',     ['d', 'k'], null, null));
-    G.set('push',    new IVXFunction('push',    ['list', 'val'], null, null));
-    G.set('pop',     new IVXFunction('pop',     ['list'], null, null));
-
-    // Math
-    G.set('abs',     new IVXFunction('abs',     ['x'], null, null));
-    G.set('floor',   new IVXFunction('floor',   ['x'], null, null));
-    G.set('ceil',    new IVXFunction('ceil',    ['x'], null, null));
-    G.set('round',   new IVXFunction('round',   ['x'], null, null));
-    G.set('min',     new IVXFunction('min',     ['a', 'b'], null, null));
-    G.set('max',     new IVXFunction('max',     ['a', 'b'], null, null));
-    G.set('sqrt',    new IVXFunction('sqrt',    ['x'], null, null));
-
-    // String
-    G.set('upper',   new IVXFunction('upper',   ['s'], null, null));
-    G.set('lower',   new IVXFunction('lower',   ['s'], null, null));
-    G.set('trim',    new IVXFunction('trim',    ['s'], null, null));
-    G.set('split',   new IVXFunction('split',   ['s', 'sep'], null, null));
-    G.set('join',    new IVXFunction('join',    ['list', 'sep'], null, null));
-    G.set('contains',new IVXFunction('contains',['s', 'sub'], null, null));
-    G.set('replace', new IVXFunction('replace', ['s', 'from', 'to'], null, null));
+    for (const [name, spec] of Object.entries(BUILTIN_DEFS)) {
+      G.set(name, new IVXFunction(name, spec.params, null, null));
+    }
   }
 
   // ── Call a built-in function by name ──────────────────────────────────────
   _callBuiltin(name, args, node) {
-    switch (name) {
-      case 'int':  return Math.trunc(Number(args[0]));
-      case 'flt':  return Number(args[0]);
-      case 'str':  return ivxRepr(args[0]);
-      case 'bin':  return Boolean(args[0]);
-      case 'list': return Array.isArray(args[0]) ? args[0] : args[0] instanceof Map ? [...args[0].values()] : [args[0]];
-      case 'dict': return args[0] instanceof Map ? args[0] : new Map(Object.entries(args[0] ?? {}));
-      case 'length':  {
-        const v = args[0];
-        if (typeof v === 'string') return v.length;
-        if (Array.isArray(v))     return v.length;
-        if (v instanceof Map)     return v.size;
-        throw new RuntimeError(`length() requires string, list, or dict`, node?.line);
+    const spec = BUILTIN_DEFS[name];
+    if (!spec) throw new RuntimeError(`Unknown built-in '${name}'`, node?.line);
+    return spec.call(args, node);
+  }
+
+  async _executePost(node, env, { storeResponse = false } = {}) {
+    const url  = await this.evalExpr(node.url,  env);
+    const body = await this.evalExpr(node.body, env);
+    const cred = node.credential
+      ? await this.evalExpr(node.credential, env)
+      : this.globals.get('__credential__') ?? null;
+    const headers = { 'Content-Type': 'application/json' };
+    if (cred) headers['Authorization'] = `Bearer ${cred}`;
+
+    try {
+      const res = await fetch(String(url), {
+        method: 'POST',
+        headers,
+        body: typeof body === 'string' ? body : JSON.stringify(body),
+      });
+      const ct = res.headers.get('content-type') || '';
+      const result = ct.includes('application/json') ? await res.json() : await res.text();
+      if (storeResponse) {
+        // Convenience variable for statement-form post.
+        this.globals.set('response', result);
       }
-      case 'keys':    return args[0] instanceof Map ? [...args[0].keys()]   : [];
-      case 'values':  return args[0] instanceof Map ? [...args[0].values()] : [];
-      case 'has':     return args[0] instanceof Map ? args[0].has(args[1]) : false;
-      case 'push':    { if (Array.isArray(args[0])) { args[0].push(args[1]); } return args[0]; }
-      case 'pop':     { if (Array.isArray(args[0])) return args[0].pop() ?? NONE; return NONE; }
-      case 'abs':     return Math.abs(args[0]);
-      case 'floor':   return Math.floor(args[0]);
-      case 'ceil':    return Math.ceil(args[0]);
-      case 'round':   return Math.round(args[0]);
-      case 'min':     return Math.min(args[0], args[1]);
-      case 'max':     return Math.max(args[0], args[1]);
-      case 'sqrt':    return Math.sqrt(args[0]);
-      case 'upper':   return String(args[0]).toUpperCase();
-      case 'lower':   return String(args[0]).toLowerCase();
-      case 'trim':    return String(args[0]).trim();
-      case 'split':   return String(args[0]).split(args[1] ?? '');
-      case 'join':    return (args[0] ?? []).join(args[1] ?? '');
-      case 'contains':return String(args[0]).includes(String(args[1]));
-      case 'replace': return String(args[0]).replaceAll(String(args[1]), String(args[2]));
-      default: throw new RuntimeError(`Unknown built-in '${name}'`, node?.line);
+      return result;
+    } catch (e) {
+      throw new RuntimeError(`post failed: ${e.message}`, node.line);
     }
+  }
+
+  _ivxToPlain(value) {
+    if (value === NONE || value === null || value === undefined) return null;
+    if (Array.isArray(value)) return value.map(v => this._ivxToPlain(v));
+    if (value instanceof Map) {
+      const obj = {};
+      for (const [k, v] of value.entries()) obj[String(k)] = this._ivxToPlain(v);
+      return obj;
+    }
+    if (typeof value === 'object') {
+      const obj = {};
+      for (const [k, v] of Object.entries(value)) obj[k] = this._ivxToPlain(v);
+      return obj;
+    }
+    return value;
+  }
+
+  _escapeDelimitedCell(val, delimiter) {
+    const s = String(val ?? '');
+    const needsQuote = s.includes('"') || s.includes('\n') || s.includes('\r') || s.includes(delimiter);
+    const escaped = s.replace(/"/g, '""');
+    return needsQuote ? `"${escaped}"` : escaped;
+  }
+
+  _toDelimitedText(value, delimiter) {
+    const plain = this._ivxToPlain(value);
+
+    if (Array.isArray(plain)) {
+      if (plain.length === 0) return '';
+
+      if (plain.every(row => row && typeof row === 'object' && !Array.isArray(row))) {
+        const headers = [];
+        for (const row of plain) {
+          for (const k of Object.keys(row)) {
+            if (!headers.includes(k)) headers.push(k);
+          }
+        }
+        const lines = [];
+        lines.push(headers.map(h => this._escapeDelimitedCell(h, delimiter)).join(delimiter));
+        for (const row of plain) {
+          const line = headers
+            .map(h => this._escapeDelimitedCell(row[h] ?? '', delimiter))
+            .join(delimiter);
+          lines.push(line);
+        }
+        return lines.join('\n');
+      }
+
+      if (plain.every(row => Array.isArray(row))) {
+        return plain
+          .map(row => row.map(cell => this._escapeDelimitedCell(cell, delimiter)).join(delimiter))
+          .join('\n');
+      }
+
+      const header = this._escapeDelimitedCell('value', delimiter);
+      const body = plain.map(v => this._escapeDelimitedCell(v, delimiter)).join('\n');
+      return body ? `${header}\n${body}` : header;
+    }
+
+    if (plain && typeof plain === 'object') {
+      const keys = Object.keys(plain);
+      const header = keys.map(k => this._escapeDelimitedCell(k, delimiter)).join(delimiter);
+      const row = keys.map(k => this._escapeDelimitedCell(plain[k], delimiter)).join(delimiter);
+      return `${header}\n${row}`;
+    }
+
+    return String(plain ?? '');
+  }
+
+  _serializeForSave(value, filename) {
+    const match = /\.([A-Za-z0-9]+)$/.exec(filename);
+    const ext = (match?.[1] ?? 'txt').toLowerCase();
+
+    if (ext === 'json') {
+      return {
+        filename,
+        mimeType: 'application/json',
+        content: JSON.stringify(this._ivxToPlain(value), null, 2),
+      };
+    }
+    if (ext === 'csv') {
+      return {
+        filename,
+        mimeType: 'text/csv',
+        content: this._toDelimitedText(value, ','),
+      };
+    }
+    if (ext === 'tsv') {
+      return {
+        filename,
+        mimeType: 'text/tab-separated-values',
+        content: this._toDelimitedText(value, '\t'),
+      };
+    }
+    if (ext === 'xlsx') {
+      this.globals.set('err', "save: '.xlsx' uses CSV content in zero-dependency mode");
+      return {
+        filename,
+        mimeType: 'text/csv',
+        content: this._toDelimitedText(value, ','),
+      };
+    }
+
+    return {
+      filename,
+      mimeType: 'text/plain',
+      content: typeof value === 'string' ? value : ivxRepr(value),
+    };
+  }
+
+  async _saveLocalFile(filename, content, mimeType) {
+    const blob = new Blob([content], { type: mimeType || 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async _saveDriveFile(filename, content, mimeType) {
+    if (!driveToken) {
+      throw new RuntimeError("save: not signed in to Google Drive", 0);
+    }
+
+    await driveEnsureFolder();
+    const escapedName = String(filename).replace(/'/g, "\\'");
+    const q = `'${driveFolderId}' in parents and name='${escapedName}' and trashed=false`;
+    const found = await driveAPI(`/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`);
+    let fileId = found.files?.[0]?.id ?? null;
+
+    if (!fileId) {
+      const meta = await driveAPI('/drive/v3/files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: filename,
+          parents: [driveFolderId],
+          mimeType: mimeType || 'text/plain',
+        }),
+      });
+      fileId = meta.id;
+    }
+
+    const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': 'Bearer ' + driveToken,
+        'Content-Type': mimeType || 'text/plain',
+      },
+      body: content,
+    });
+    if (!res.ok) {
+      throw new RuntimeError(`save: Drive upload failed (${res.status})`, 0);
+    }
+
+    if (typeof driveListFiles === 'function') {
+      try { await driveListFiles(); } catch (_) {}
+    }
+  }
+
+  async _executeSave(node, env) {
+    const rawName = await this.evalExpr(node.filenameExpr, env);
+    const filename = String(rawName ?? '').trim();
+    if (!filename) {
+      throw new RuntimeError("save: filename cannot be empty", node.line);
+    }
+
+    let value;
+    if (node.valueExpr) {
+      value = await this.evalExpr(node.valueExpr, env);
+    } else if (this.globals.has('response')) {
+      value = this.globals.get('response');
+    } else if (this.globals.has('err')) {
+      value = this.globals.get('err');
+    } else {
+      value = NONE;
+    }
+
+    const payload = this._serializeForSave(value, filename);
+    if (node.target === 'local') {
+      await this._saveLocalFile(payload.filename, payload.content, payload.mimeType);
+      return;
+    }
+    await this._saveDriveFile(payload.filename, payload.content, payload.mimeType);
   }
 
   // ── Execute a program from source ─────────────────────────────────────────
   async run(source, options = {}) {
+    // Parse once and reuse for type checking and execution.
+    const parsed = parse(source);
+
     // Type-check first — surface errors without running
-    const { errors: typeErrors } = typecheck(source);
-    if (typeErrors.length > 0 && !options.ignoreTypeErrors) {
+    const { errors: typeErrors } = typecheck(parsed);
+    const hasParseErrors = parsed.errors.length > 0;
+    if (typeErrors.length > 0 && (hasParseErrors || !options.ignoreTypeErrors)) {
       for (const e of typeErrors) this.onError(e);
       return;
     }
 
-    const { ast, errors: parseErrors } = parse(source);
-    if (parseErrors.length > 0) {
-      for (const e of parseErrors) this.onError(e);
-      return;
-    }
-
     try {
-      await this.execBlock(ast.body, this.globals);
+      await this.execBlock(parsed.ast.body, this.globals);
     } catch (e) {
       if (e instanceof RuntimeError) this.onError(e);
       else throw e;
@@ -1839,27 +2495,12 @@ class Interpreter {
       case 'Post': {
         // post <url> <body> [use <key>]
         // Result stored in 'response' by default, or assign via make response post ...
-        const url  = await this.evalExpr(node.url,  env);
-        const body = await this.evalExpr(node.body, env);
-        const cred = node.credential
-          ? await this.evalExpr(node.credential, env)
-          : this.globals.get('__credential__') ?? null;
-        const headers = { 'Content-Type': 'application/json' };
-        if (cred) headers['Authorization'] = `Bearer ${cred}`;
-        try {
-          const res = await fetch(String(url), {
-            method: 'POST',
-            headers,
-            body: typeof body === 'string' ? body : JSON.stringify(body),
-          });
-          const ct = res.headers.get('content-type') || '';
-          const result = ct.includes('application/json') ? await res.json() : await res.text();
-          // Always store in 'response' as convenience variable
-          this.globals.set('response', result);
-          return result;
-        } catch(e) {
-          throw new RuntimeError(`post failed: ${e.message}`, node.line);
-        }
+        return await this._executePost(node, env, { storeResponse: true });
+      }
+
+      case 'Save': {
+        await this._executeSave(node, env);
+        break;
       }
 
       case 'TakeFile': {
@@ -2005,197 +2646,300 @@ class Interpreter {
   // ── Evaluate an expression to a value ─────────────────────────────────────
   async evalExpr(node, env) {
     if (!node) return NONE;
+    const evaluator = this._exprEvaluators[node.type];
+    if (!evaluator) return NONE;
+    return await evaluator(node, env);
+  }
 
-    switch (node.type) {
+  async _evalNumberLit(node) {
+    return node.value;
+  }
 
-      case 'NumberLit': return node.value;
-      case 'StringLit': {
-        let sv = node.value;
-        // String interpolation: replace {varname} with value from env
-        if (typeof sv === 'string' && sv.includes('{')) {
-          sv = sv.replace(/\{([A-Za-z_]\w*)\}/g, (match, name) => {
-            const val = env.get(name);
-            if (val === undefined) return match; // leave unreplaced if not found
-            return ivxRepr(val);
-          });
-        }
-        // URL type — automatically fetch on evaluation
-        if (typeof sv === 'string' && (sv.startsWith('http://') || sv.startsWith('https://'))) {
-          try {
-            const res = await fetch(sv);
-            const ct  = res.headers.get('content-type') || '';
-            if (ct.includes('application/json')) return await res.json();
-            return await res.text();
-          } catch(e) {
-            throw new RuntimeError(`fetch failed for ${sv}: ${e.message}`, node.line);
-          }
-        }
-        return sv;
-      }
-      case 'BoolLit':   return node.value; // true, false, or null (none)
-
-      case 'Ask': {
-        // ask <model> "prompt" [use key]
-        // Supported models: chatgpt → OpenAI, gemini → Google, claude → Anthropic
-        const prompt     = await this.evalExpr(node.prompt, env);
-        const credential = node.credential
-          ? await this.evalExpr(node.credential, env)
-          : this.globals.get('__credential__') ?? null;
-        const model = (node.model ?? 'gemini').toLowerCase();
-
-        if (!credential) {
-          throw new RuntimeError(
-            `ask ${model}: no API key. Add: make key "your-key" use key`,
-            node.line
-          );
-        }
-
-        try {
-          // ── Google Gemini ──────────────────────────────────────────────────
-          if (model === 'gemini' || model === 'google') {
-            const res = await fetch(
-              `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${credential}`,
-              {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  contents: [{ parts: [{ text: String(prompt) }] }]
-                }),
-              }
-            );
-            if (!res.ok) {
-              const err = await res.json().catch(() => ({}));
-              throw new RuntimeError(
-                `Gemini error ${res.status}: ${err?.error?.message ?? res.statusText}`,
-                node.line
-              );
-            }
-            const data = await res.json();
-            return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-          }
-
-          // ── OpenAI ChatGPT ─────────────────────────────────────────────────
-          if (model === 'chatgpt' || model === 'gpt') {
-            const res = await fetch('https://api.openai.com/v1/chat/completions', {
-              method: 'POST',
-              headers: {
-                'Content-Type':  'application/json',
-                'Authorization': `Bearer ${credential}`,
-              },
-              body: JSON.stringify({
-                model:    'gpt-4o-mini',
-                messages: [{ role: 'user', content: String(prompt) }],
-              }),
-            });
-            if (!res.ok) {
-              const err = await res.json().catch(() => ({}));
-              throw new RuntimeError(
-                `OpenAI error ${res.status}: ${err?.error?.message ?? res.statusText}`,
-                node.line
-              );
-            }
-            const data = await res.json();
-            return data?.choices?.[0]?.message?.content ?? '';
-          }
-
-          // ── Anthropic Claude ───────────────────────────────────────────────
-          if (model === 'claude' || model === 'anthropic') {
-            const res = await fetch('https://api.anthropic.com/v1/messages', {
-              method: 'POST',
-              headers: {
-                'Content-Type':      'application/json',
-                'x-api-key':         credential,
-                'anthropic-version': '2023-06-01',
-                'anthropic-dangerous-direct-browser-access': 'true',
-              },
-              body: JSON.stringify({
-                model:      'claude-haiku-4-5-20251001',
-                max_tokens: 1024,
-                messages:   [{ role: 'user', content: String(prompt) }],
-              }),
-            });
-            if (!res.ok) {
-              const err = await res.json().catch(() => ({}));
-              throw new RuntimeError(
-                `Claude error ${res.status}: ${err?.error?.message ?? res.statusText}`,
-                node.line
-              );
-            }
-            const data = await res.json();
-            return data?.content?.[0]?.text ?? '';
-          }
-
-          throw new RuntimeError(
-            `Unknown model '${model}'. Use: gemini, chatgpt, or claude`,
-            node.line
-          );
-
-        } catch(e) {
-          if (e instanceof RuntimeError) throw e;
-          throw new RuntimeError(`ask ${model} failed: ${e.message}`, node.line);
-        }
-      }
-
-      case 'ListLit': {
-        const elements = [];
-        for (const el of node.elements) elements.push(await this.evalExpr(el, env));
-        return elements;
-      }
-
-      case 'DictLit': {
-        const map = new Map();
-        for (const { key, value } of node.pairs) {
-          const k = await this.evalExpr(key,   env);
-          const v = await this.evalExpr(value, env);
-          map.set(k, v);
-        }
-        return map;
-      }
-
-      case 'Identifier': {
-        const val = env.get(node.name);
-        if (val === undefined) {
-          throw new RuntimeError(`Undefined variable '${node.name}'`, node.line, node.col);
-        }
-        return val;
-      }
-
-      case 'LazyDecl': {
-        // name? — ensure variable exists at global scope, then return its value
-        // Default is none unless we can infer from context (handled at BinOp level)
-        if (!this.globals.has(node.name)) {
-          this.globals.set(node.name, NONE);
-        }
-        return this.globals.get(node.name);
-      }
-
-      case 'BinOp': return await this.evalBinOp(node, env);
-      case 'Post': {
-        // post as expression — make response post "url" body
-        const url  = await this.evalExpr(node.url,  env);
-        const body = await this.evalExpr(node.body, env);
-        const cred = node.credential
-          ? await this.evalExpr(node.credential, env)
-          : this.globals.get('__credential__') ?? null;
-        const headers = { 'Content-Type': 'application/json' };
-        if (cred) headers['Authorization'] = `Bearer ${cred}`;
-        const res = await fetch(String(url), {
-          method: 'POST', headers,
-          body: typeof body === 'string' ? body : JSON.stringify(body),
-        });
-        const ct = res.headers.get('content-type') || '';
-        return ct.includes('application/json') ? await res.json() : await res.text();
-      }
-      case 'UnaryOp': {
-        const operand = await this.evalExpr(node.operand, env);
-        if (node.op === 'not') return !isTruthy(operand);
-        return operand;
-      }
-
-      case 'Call': return await this.evalCall(node, env);
-
-      default: return NONE;
+  async _evalStringLit(node, env) {
+    let sv = node.value;
+    if (typeof sv === 'string' && sv.includes('{')) {
+      sv = sv.replace(/\{([A-Za-z_]\w*)\}/g, (match, name) => {
+        const val = env.get(name);
+        if (val === undefined) return match;
+        return ivxRepr(val);
+      });
     }
+    if (typeof sv === 'string' && (sv.startsWith('http://') || sv.startsWith('https://'))) {
+      try {
+        const res = await fetch(sv);
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) return await res.json();
+        return await res.text();
+      } catch (e) {
+        throw new RuntimeError(`fetch failed for ${sv}: ${e.message}`, node.line);
+      }
+    }
+    return sv;
+  }
+
+  async _evalBoolLit(node) {
+    return node.value;
+  }
+
+  async _evalAskExpr(node, env) {
+    const prompt = await this.evalExpr(node.prompt, env);
+    const credential = node.credential
+      ? await this.evalExpr(node.credential, env)
+      : this.globals.get('__credential__') ?? null;
+    const model = (node.model ?? 'gemini').toLowerCase();
+
+    if (!credential) {
+      throw new RuntimeError(
+        `ask ${model}: no API key. Add: make key "your-key" use key`,
+        node.line
+      );
+    }
+
+    try {
+      if (model === 'gemini' || model === 'google') {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${credential}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: String(prompt) }] }]
+            }),
+          }
+        );
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new RuntimeError(
+            `Gemini error ${res.status}: ${err?.error?.message ?? res.statusText}`,
+            node.line
+          );
+        }
+        const data = await res.json();
+        return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+      }
+
+      if (model === 'chatgpt' || model === 'gpt') {
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${credential}`,
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [{ role: 'user', content: String(prompt) }],
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new RuntimeError(
+            `OpenAI error ${res.status}: ${err?.error?.message ?? res.statusText}`,
+            node.line
+          );
+        }
+        const data = await res.json();
+        return data?.choices?.[0]?.message?.content ?? '';
+      }
+
+      if (model === 'claude' || model === 'anthropic') {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': credential,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+          },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 1024,
+            messages: [{ role: 'user', content: String(prompt) }],
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new RuntimeError(
+            `Claude error ${res.status}: ${err?.error?.message ?? res.statusText}`,
+            node.line
+          );
+        }
+        const data = await res.json();
+        return data?.content?.[0]?.text ?? '';
+      }
+
+      throw new RuntimeError(
+        `Unknown model '${model}'. Use: gemini, chatgpt, or claude`,
+        node.line
+      );
+
+    } catch (e) {
+      if (e instanceof RuntimeError) throw e;
+      throw new RuntimeError(`ask ${model} failed: ${e.message}`, node.line);
+    }
+  }
+
+  async _evalListLit(node, env) {
+    const elements = [];
+    for (const el of node.elements) elements.push(await this.evalExpr(el, env));
+    return elements;
+  }
+
+  async _evalDictLit(node, env) {
+    const map = new Map();
+    for (const { key, value } of node.pairs) {
+      const k = await this.evalExpr(key, env);
+      const v = await this.evalExpr(value, env);
+      map.set(k, v);
+    }
+    return map;
+  }
+
+  async _evalIdentifierExpr(node, env) {
+    const val = env.get(node.name);
+    if (val === undefined) {
+      throw new RuntimeError(`Undefined variable '${node.name}'`, node.line, node.col);
+    }
+    return val;
+  }
+
+  _toArrayIndex(value, node, label) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || !Number.isInteger(n)) {
+      throw new RuntimeError(`${label} index must be an integer`, node?.line);
+    }
+    return n;
+  }
+
+  _toSliceBound(value, node, label) {
+    if (value === null || value === undefined) return null;
+    return this._toArrayIndex(value, node, label);
+  }
+
+  _pickColumnFromRow(row, colIdxOrKey) {
+    if (row == null) return NONE;
+    if (row instanceof Map) {
+      return row.has(colIdxOrKey) ? row.get(colIdxOrKey) : NONE;
+    }
+    if (Array.isArray(row)) {
+      if (typeof colIdxOrKey === 'string') return NONE;
+      return row[colIdxOrKey] ?? NONE;
+    }
+    if (typeof row === 'object') {
+      return row[colIdxOrKey] ?? NONE;
+    }
+    return NONE;
+  }
+
+  _sliceColumnsFromRow(row, start, end) {
+    if (Array.isArray(row)) return row.slice(start ?? undefined, end ?? undefined);
+    return NONE;
+  }
+
+  async _resolveIndexSpec(spec, env, node, label, { allowString = false } = {}) {
+    if (!spec || spec.omitted) return { omitted: true, isSlice: false, value: null, start: null, end: null };
+    if (spec.isSlice) {
+      const startRaw = spec.start ? await this.evalExpr(spec.start, env) : null;
+      const endRaw = spec.end ? await this.evalExpr(spec.end, env) : null;
+      return {
+        omitted: false,
+        isSlice: true,
+        start: this._toSliceBound(startRaw, node, `${label} start`),
+        end: this._toSliceBound(endRaw, node, `${label} end`),
+      };
+    }
+
+    const raw = spec.expr ? await this.evalExpr(spec.expr, env) : null;
+    if (allowString && typeof raw === 'string') {
+      return { omitted: false, isSlice: false, value: raw, start: null, end: null };
+    }
+    return { omitted: false, isSlice: false, value: this._toArrayIndex(raw, node, label), start: null, end: null };
+  }
+
+  async _evalIndexAccessExpr(node, env) {
+    const target = await this.evalExpr(node.target, env);
+    const isArrayTarget = Array.isArray(target);
+
+    const row = await this._resolveIndexSpec(node.rowSpec, env, node, 'Row');
+    const col = await this._resolveIndexSpec(node.colSpec, env, node, 'Column', { allowString: true });
+
+    if (!isArrayTarget) {
+      if (node.hasComma) {
+        throw new RuntimeError(`2D indexing requires a list target`, node.line);
+      }
+      if (row.omitted) return target;
+      if (row.isSlice) {
+        if (typeof target === 'string') {
+          return target.slice(row.start ?? undefined, row.end ?? undefined);
+        }
+        throw new RuntimeError(`Slice indexing requires list or string target`, node.line);
+      }
+
+      if (target instanceof Map) {
+        return target.has(row.value) ? target.get(row.value) : NONE;
+      }
+      if (typeof target === 'object' && target !== null) {
+        return target[row.value] ?? NONE;
+      }
+      if (typeof target === 'string') {
+        const idx = this._toArrayIndex(row.value, node, 'Index');
+        return target[idx] ?? NONE;
+      }
+      throw new RuntimeError(`Indexing requires a list/dict/string target`, node.line);
+    }
+
+    if (!node.hasComma) {
+      if (row.omitted) return target;
+      if (row.isSlice) return target.slice(row.start ?? undefined, row.end ?? undefined);
+      return target[row.value] ?? NONE;
+    }
+
+    // t[,] -> whole table
+    if (row.omitted && col.omitted) return target;
+
+    // Build selected row set first.
+    let selectedRows;
+    if (row.omitted) {
+      selectedRows = target.slice();
+    } else if (row.isSlice) {
+      selectedRows = target.slice(row.start ?? undefined, row.end ?? undefined);
+    } else {
+      selectedRows = [target[row.value] ?? NONE];
+    }
+
+    // Row-only access in 2D form: t[r,] or t[r1:r2,]
+    if (col.omitted) {
+      if (!row.omitted && !row.isSlice) return selectedRows[0] ?? NONE;
+      return selectedRows;
+    }
+
+    // Column slices: t[,c1:c2], t[r,c1:c2], t[r1:r2,c1:c2]
+    if (col.isSlice) {
+      const projected = selectedRows.map(r => this._sliceColumnsFromRow(r, col.start, col.end));
+      if (!row.omitted && !row.isSlice) return projected[0] ?? NONE;
+      return projected;
+    }
+
+    // Single column projection: t[,c], t[r,c], t[r1:r2,c]
+    const projected = selectedRows.map(r => this._pickColumnFromRow(r, col.value));
+    if (!row.omitted && !row.isSlice) return projected[0] ?? NONE;
+    return projected;
+  }
+
+  async _evalLazyDeclExpr(node) {
+    if (!this.globals.has(node.name)) {
+      this.globals.set(node.name, NONE);
+    }
+    return this.globals.get(node.name);
+  }
+
+  async _evalPostExpr(node, env) {
+    return await this._executePost(node, env);
+  }
+
+  async _evalUnaryOpExpr(node, env) {
+    const operand = await this.evalExpr(node.operand, env);
+    if (node.op === 'not') return !isTruthy(operand);
+    return operand;
   }
 
   // ── Binary operations ──────────────────────────────────────────────────────
@@ -2342,6 +3086,9 @@ function ivxRepr(value) {
   if (value === true)           return 'yes';
   if (value === false)          return 'no';
   if (value instanceof Map)     return '{' + [...value.entries()].map(([k,v]) => `${ivxRepr(k)}: ${ivxRepr(v)}`).join(', ') + '}';
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return '{' + Object.entries(value).map(([k, v]) => `${k}: ${ivxRepr(v)}`).join(', ') + '}';
+  }
   if (Array.isArray(value))     return '[' + value.map(ivxRepr).join(', ') + ']';
   return String(value);
 }
@@ -2350,6 +3097,77 @@ function ivxRepr(value) {
 function interpret(source, options = {}) {
   const interp = new Interpreter(options);
   return interp.run(source, options);
+}
+
+async function runIVXSelfTests() {
+  const results = [];
+  const pass = (name, details = {}) => results.push({ name, ok: true, ...details });
+  const fail = (name, details = {}) => results.push({ name, ok: false, ...details });
+
+  try {
+    const p = parse('make x 1\nsay x');
+    if (p.errors.length === 0 && p.ast?.type === 'Program') {
+      pass('parse-basic');
+    } else {
+      fail('parse-basic', { errors: p.errors });
+    }
+  } catch (e) {
+    fail('parse-basic', { error: e.message ?? String(e) });
+  }
+
+  try {
+    const tc = typecheck('say not_defined_var');
+    if (tc.errors.length > 0) {
+      pass('typecheck-undefined-var', { count: tc.errors.length });
+    } else {
+      fail('typecheck-undefined-var', { count: 0 });
+    }
+  } catch (e) {
+    fail('typecheck-undefined-var', { error: e.message ?? String(e) });
+  }
+
+  try {
+    const out = [];
+    await interpret('make x 2\nmake x + 3\nsay x', {
+      onOutput: (v) => { out.push(v); },
+      onError: (e) => { throw e; },
+    });
+    if (out.length === 1 && out[0] === 5) {
+      pass('runtime-arithmetic-output', { output: out[0] });
+    } else {
+      fail('runtime-arithmetic-output', { output: out });
+    }
+  } catch (e) {
+    fail('runtime-arithmetic-output', { error: e.message ?? String(e) });
+  }
+
+  try {
+    const out = [];
+    await interpret('make xs [1,2,3]\nsay length(xs)', {
+      onOutput: (v) => { out.push(v); },
+      onError: (e) => { throw e; },
+    });
+    if (out.length === 1 && out[0] === 3) {
+      pass('runtime-builtin-length', { output: out[0] });
+    } else {
+      fail('runtime-builtin-length', { output: out });
+    }
+  } catch (e) {
+    fail('runtime-builtin-length', { error: e.message ?? String(e) });
+  }
+
+  const total = results.length;
+  const passed = results.filter(r => r.ok).length;
+  const failed = total - passed;
+  const summary = { total, passed, failed, results };
+  if (typeof console !== 'undefined') {
+    console.log('IVX self-test summary:', summary);
+  }
+  return summary;
+}
+
+if (typeof window !== 'undefined') {
+  window.runIVXSelfTests = runIVXSelfTests;
 }
 
 
@@ -2416,6 +3234,13 @@ const KIND_TO_KEY = {
   Connector: 'dot', Function: 'fun', Start: 'from'
 };
 
+function preprocessControlFlowSyntax(raw) {
+  return String(raw)
+    .replace(/then\s+/g, '\n  ')
+    .replace(/\bso\s+/g, '\n')
+    .replace(/;/g, '\n');
+}
+
 // Rewrite a single source line in-place, preserving indentation and keyword prefix.
 function commitNodeEditToSource(line, newText) {
   const originalSrc = srcEl.value;
@@ -2424,10 +3249,7 @@ function commitNodeEditToSource(line, newText) {
   // Map preprocessed line index back to original source line index
   const prepToOrig = [];
   originalLines.forEach((origLine, origIdx) => {
-    const expanded = origLine
-      .replace(/then\s+/g, '\n  ')
-      .replace(/\bso\s+/g, '\n')
-      .replace(/;/g, '\n');
+    const expanded = preprocessControlFlowSyntax(origLine);
     const count = expanded.split('\n').length;
     for (let k = 0; k < count; k++) prepToOrig.push(origIdx);
   });
@@ -2482,10 +3304,7 @@ function insertNodeOnEdgeInSource(fromNodeId, toNodeId, nodeKind) {
   const prepToOrig = [];
   const prepToSubLine = [];
   originalLines.forEach((origLine, origIdx) => {
-    const expanded = origLine
-      .replace(/then\s+/g, '\n  ')
-      .replace(/\bso\s+/g, '\n')
-      .replace(/;/g, '\n');
+    const expanded = preprocessControlFlowSyntax(origLine);
     const subLines = expanded.split('\n');
     subLines.forEach((_, k) => {
       prepToOrig.push(origIdx);
@@ -2518,11 +3337,7 @@ function insertNodeOnEdgeInSource(fromNodeId, toNodeId, nodeKind) {
   };
 
   const expandOrigLine = (raw) => {
-    return raw
-      .replace(/then\s+/g, '\n  ')
-      .replace(/\bso\s+/g, '\n')
-      .replace(/;/g, '\n')
-      .split('\n');
+    return preprocessControlFlowSyntax(raw).split('\n');
   };
 
   const fromOrigIdx = isImplicit(fromNode) ? -1 : toOrigIdx(fromNode.line);
@@ -3867,10 +4682,7 @@ const makeCtx = (baseIndent, firstLast, savedLast = null) => ({
 });
 function parseivx(source) {
   // Treat ';' as a line break and 'then ' as a newline with indent
-  const preprocessed = source
-    .replace(/then\s+/g, '\n  ')
-    .replace(/\bso\s+/g, '\n')
-    .replace(/;/g, '\n');
+  const preprocessed = preprocessControlFlowSyntax(source);
   const rawLines = preprocessed.split('\n');
 
   // Pass 1: parse lines and collect indent info
