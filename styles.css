@@ -1,10 +1,10 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden;background:#0f0f14;color:#cdd6f4;font-family:system-ui,sans-serif}
 
-#app{display:grid;grid-template-rows:38px 1fr;grid-template-columns:420px 1fr;height:100vh}
+#app{display:grid;grid-template-rows:38px 1fr;height:100vh}
 
 /* header */
-#hdr{grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:0 14px;
+#hdr{display:flex;align-items:center;gap:10px;padding:0 14px;
      background:#1c1c28;border-bottom:1px solid #2a2a3e}
 .logo{font-size:13px;font-weight:700;letter-spacing:.1em;color:#89b4fa}
 .hsep{width:1px;height:16px;background:#3a3a5c}
@@ -14,7 +14,7 @@ html,body{height:100%;overflow:hidden;background:#0f0f14;color:#cdd6f4;font-fami
 #err.ok{color:#4ade80}
 
 /* editor pane — split vertically: editor top, resizer, terminal bottom */
-#ep{display:grid;grid-template-rows:1fr 6px 200px;border-right:1px solid #2a2a3e;background:#16161f;min-height:0;overflow:hidden}
+#ep{display:grid;grid-template-rows:1fr 6px 200px;border-right:1px solid #2a2a3e;background:#16161f;min-height:0;overflow:hidden;height:100%}
 #tb{display:flex;align-items:center;gap:4px;padding:4px 8px;flex-wrap:wrap;
     background:#1c1c28;border-bottom:1px solid #2a2a3e;flex-shrink:0}
 .tbl{font-size:10px;color:#6b7280}
@@ -75,7 +75,7 @@ html,body{height:100%;overflow:hidden;background:#0f0f14;color:#cdd6f4;font-fami
 #src::selection{background:rgba(137,180,250,.25)}
 
 /* graph pane */
-#gp{position:relative;overflow:hidden;background:#0f0f14}
+#gp{position:relative;overflow:hidden;background:#0f0f14;height:100%}
 svg#canvas{width:100%;height:100%;cursor:grab;background:#0f0f14}
 svg#canvas.panning{cursor:grabbing}
 svg#canvas text{font-size:12px;fill:#eee;user-select:none}
@@ -260,8 +260,8 @@ path[data-edge-from]:hover{filter:drop-shadow(0 0 4px #89b4fa);stroke:#89b4fa !i
   height: calc(100vh - 38px);
   min-height: 0;
 }
-#main-layout > #ep   { grid-column: 2; }
-#main-layout > #gp   { grid-column: 3; }
+#main-layout > #ep    { grid-column: 2; }
+#main-layout > #gp    { grid-column: 3; }
 
 #drive-panel {
   grid-column: 1;
@@ -346,6 +346,7 @@ path[data-edge-from]:hover{filter:drop-shadow(0 0 4px #89b4fa);stroke:#89b4fa !i
   text-align: center;
 }
 .drive-btn-primary:hover { background: #1e5a8a; }
+
 .drive-btn-muted { color: #6b7280; font-size: 10px; }
 .drive-btn-muted:hover { color: #f87171; border-color: #f87171; }
 
