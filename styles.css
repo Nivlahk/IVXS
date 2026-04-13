@@ -197,14 +197,15 @@ path[data-edge-from]:hover{filter:drop-shadow(0 0 4px #89b4fa);stroke:#89b4fa !i
 /* keyword colors in highlight layer */
 #src-hl .kw-flow     { color: #cba6f7; }  /* so, then, else — soft indigo */
 #src-hl .kw-node     { color: #cba6f7; }  /* if fork loop dot take give fun end from make — purple */
+#src-hl .kw-classname{ color: #4ec9b0; }  /* class names (Dog, Animal) — teal accent */
 #src-hl .kw-outgoing { color: #cba6f7; }  /* prev next — soft indigo */
 #src-hl .kw-note     { color: #a6e3a1; }  /* note ... — comment green */
 #src-hl .kw-logic    { color: #4a7fbd; }  /* not and or xor is yes no none — dark blue */
 #src-hl .kw-funcall  { color: #c9a227; }  /* identifier() — gold */
 #src-hl .kw-string   { color: #ce9178; }  /* "..." — VS Code string orange */
 #src-hl .kw-number   { color: #b5cea8; }  /* integers and floats — VS Code numeric green */
-#src-hl .kw-list     { color: #4ec9b0; }  /* [...] — light teal */
-#src-hl .kw-dict     { color: #4ec9b0; }  /* {...} — light teal */
+#src-hl .kw-list     { color: #9ca3af; }  /* [...] — light grey */
+#src-hl .kw-dict     { color: #9ca3af; }  /* {...} — light grey */
 /* editor sub-wrapper (toolbar + src-wrap) */
 #editor-sub{display:flex;flex-direction:column;min-height:0;overflow:hidden}
 

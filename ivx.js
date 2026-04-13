@@ -55,7 +55,9 @@ const KEYWORDS = new Set([
   // Control flow
   'if', 'else', 'for', 'loop', 'end', 'so', 'then',
   // Functions
-  'fun', 'give',
+  'fun', 'class', 'give',
+  // OOP
+  'extends', 'super',
   // Data
   'make', 'del', 'take', 'say', 'save', 'local',
   // Navigation / graph
@@ -417,6 +419,7 @@ class Parser {
       ask:  () => this.parseExprStatement(), // ask is an expression
       post: () => this.parsePost(),
       use:  () => this.parseUse(),
+      class: () => this.parseClass(),
       if:   () => this.parseIf(),
       for:  () => this.parseFor(),
       loop: () => this.parseLoop(),
@@ -523,14 +526,25 @@ class Parser {
       this.error("Expected variable name after 'make'", nameTok);
       return null;
     }
-    const name = this.advance().value;
+
+    let target = Node('Identifier', { name: this.advance().value, line: nameTok.line, col: nameTok.col });
+    while (this.checkOp('.')) {
+      const dot = this.advance();
+      const fieldTok = this.peek();
+      if (fieldTok.type !== T.IDENTIFIER) {
+        this.error("Expected field name after '.'", fieldTok);
+        break;
+      }
+      this.advance();
+      target = Node('MemberAccess', { object: target, field: fieldTok.value, line: dot.line, col: dot.col });
+    }
 
     // Check for shorthand: make x <op> <expr> where op is a binary arithmetic op
     const nextTok = this.peek();
     let expr;
     if (nextTok.type === T.OP && ['+','-','*','/','//','%','^'].includes(nextTok.value)) {
       // make x + 5  →  make x x + 5  (implied LHS is x itself)
-      const impliedLeft = Node('Identifier', { name, line: tok.line, col: tok.col });
+      const impliedLeft = target;
       const op = this.advance().value;
       const right = this.parseExpr();
       expr = Node('BinOp', { op, left: impliedLeft, right, line: tok.line });
@@ -539,7 +553,8 @@ class Parser {
     }
 
     this.eatNewline();
-    return Node('Assign', { name, expr, lazy: isLazy, line: tok.line, col: tok.col });
+    const name = target.type === 'Identifier' ? target.name : null;
+    return Node('Assign', { name, target, expr, lazy: isLazy, line: tok.line, col: tok.col });
   }
 
   // ── del x ──────────────────────────────────────────────────────────────────
@@ -860,6 +875,35 @@ class Parser {
     return Node('Fun', { name, params, body, line: tok.line, col: tok.col });
   }
 
+  // ── class name(superclass?) ───────────────────────────────────────────────
+  // Example: class Dog(Animal)
+  parseClass() {
+    const tok  = this.advance(); // eat 'class'
+    const nameTok = this.peek();
+    if (nameTok.type !== T.IDENTIFIER) {
+      this.error("Expected class name after 'class'", nameTok);
+      return null;
+    }
+    const name = this.advance().value;
+
+    let superclass = null;
+    if (this.eat(T.LPAREN)) {
+      if (!this.check(T.RPAREN) && !this.check(T.EOF)) {
+        const superTok = this.peek();
+        if (superTok.type !== T.IDENTIFIER) {
+          this.error("Expected superclass name inside class parentheses", superTok);
+        } else {
+          superclass = { name: this.advance().value, line: superTok.line, col: superTok.col };
+        }
+      }
+      this.expect(T.RPAREN, undefined, "Expected ')' after class header");
+    }
+
+    this.eatNewline();
+    const body = this.check(T.INDENT) ? this.parseBlock() : [];
+    return Node('Class', { name, superclass, body, line: tok.line, col: tok.col });
+  }
+
   // ── end [message] ──────────────────────────────────────────────────────────
   parseEnd() {
     const tok = this.advance(); // eat 'end'
@@ -1021,8 +1065,37 @@ class Parser {
 
   parsePostfix(base) {
     let expr = base;
-    while (this.check(T.LBRACKET)) {
-      expr = this.parseIndexAccess(expr);
+    while (true) {
+      if (this.check(T.LBRACKET)) {
+        expr = this.parseIndexAccess(expr);
+        continue;
+      }
+      if (this.checkOp('.')) {
+        const dot = this.advance();
+        const fieldTok = this.peek();
+        if (fieldTok.type !== T.IDENTIFIER) {
+          this.error("Expected field name after '.'", fieldTok);
+          break;
+        }
+        this.advance();
+        expr = Node('MemberAccess', { object: expr, field: fieldTok.value, line: dot.line, col: dot.col });
+        continue;
+      }
+      if (this.check(T.LPAREN)) {
+        const lp = this.advance();
+        const args = [];
+        while (!this.check(T.RPAREN) && !this.check(T.EOF)) {
+          const arg = this.parseExpr();
+          if (arg) args.push(arg);
+          if (!this.eat(T.COMMA)) break;
+        }
+        this.expect(T.RPAREN, undefined, "Expected ')' after arguments");
+        expr = expr.type === 'Identifier'
+          ? Node('Call', { name: expr.name, args, line: expr.line, col: expr.col })
+          : Node('Invoke', { callee: expr, args, line: lp.line, col: lp.col });
+        continue;
+      }
+      break;
     }
     return expr;
   }
@@ -1053,6 +1126,36 @@ class Parser {
     return { omitted: true, isSlice: false, start: null, end: null, expr: null };
   }
 
+  _parseIndexAtom() {
+    // Excel-style cell literal: A0, BC12 (unquoted) inside brackets.
+    // Lexer tokenizes this as IDENTIFIER + NUMBER, so stitch it back.
+    const a = this.peek();
+    const b = this.peek(1);
+    if (a.type === T.IDENTIFIER && b.type === T.NUMBER && Number.isInteger(b.value) && b.value >= 0) {
+      this.advance();
+      this.advance();
+      return Node('StringLit', {
+        value: `${a.value}${b.value}`,
+        line: a.line,
+        col: a.col,
+      });
+    }
+    return this.parseExpr();
+  }
+
+  _inferClassFieldName(expr) {
+    if (!expr) return '';
+    if (expr.type === 'Identifier' || expr.type === 'LazyDecl') return expr.name;
+    if (expr.type === 'MemberAccess') {
+      if (expr.object?.type === 'Identifier' && expr.object.name === 'self') return expr.field;
+      return this._inferClassFieldName(expr.object);
+    }
+    if (expr.type === 'BinOp') return this._inferClassFieldName(expr.left) || this._inferClassFieldName(expr.right);
+    if (expr.type === 'UnaryOp') return this._inferClassFieldName(expr.operand);
+    if (expr.type === 'IndexAccess') return this._inferClassFieldName(expr.target);
+    return '';
+  }
+
   _parseIndexSpec(isTerminator) {
     if (isTerminator()) return this._omittedIndexSpec();
 
@@ -1061,13 +1164,13 @@ class Parser {
     let isSlice = false;
 
     if (!this.check(T.COLON)) {
-      start = this.parseExpr();
+      start = this._parseIndexAtom();
     }
 
     if (this.eat(T.COLON)) {
       isSlice = true;
       if (!isTerminator()) {
-        end = this.parseExpr();
+        end = this._parseIndexAtom();
       }
     }
 
@@ -1121,16 +1224,16 @@ class Parser {
       return this.parsePostfix(expr);
     }
 
-    // Identifier or function call
+    // Identifier
     if (tok.type === T.IDENTIFIER) {
       this.advance();
-      let expr;
-      if (this.check(T.LPAREN)) {
-        expr = this.parseFunCall(tok);
-      } else {
-        expr = Node('Identifier', { name: tok.value, line: tok.line, col: tok.col });
-      }
-      return this.parsePostfix(expr);
+      return this.parsePostfix(Node('Identifier', { name: tok.value, line: tok.line, col: tok.col }));
+    }
+
+    // super — subclass method context only
+    if (tok.type === T.KEYWORD && tok.value === 'super') {
+      this.advance();
+      return this.parsePostfix(Node('Super', { line: tok.line, col: tok.col }));
     }
 
     // Lazy declaration: name? — declare at global scope if not exists, then use
@@ -1352,10 +1455,20 @@ class TCEnv {
     this.fns.set(name, { params, returnType });
   }
 
+  // Define a class signature (callable constructor-like value)
+  defClass(name, params, returnType) {
+    this.fns.set(name, { params, returnType, isClass: true });
+  }
+
   // Look up a function — walks up the scope chain
   lookupFn(name) {
     if (this.fns.has(name)) return this.fns.get(name);
     return this.parent?.lookupFn(name) ?? null;
+  }
+
+  lookupClass(name) {
+    const fn = this.lookupFn(name);
+    return fn?.isClass ? fn : null;
   }
 
   child(name) { return new TCEnv(this, name); }
@@ -1384,6 +1497,7 @@ class TypeChecker {
       Loop: (node, env) => this._checkLoopStmt(node, env),
       For: (node, env) => this._checkForStmt(node, env),
       Fun: (node, env) => this._checkFunStmt(node, env),
+      Class: (node, env) => this._checkClassStmt(node, env),
       ExprStatement: (node, env) => this._checkExprStatementStmt(node, env),
       End: () => {},
       Dot: () => {},
@@ -1424,6 +1538,11 @@ class TypeChecker {
 
   _checkAssignStmt(node, env) {
     const exprType = this.checkExpr(node.expr, env);
+    if (node.target?.type === 'MemberAccess') {
+      this.checkExpr(node.target.object, env);
+      this.checkExpr(node.target, env);
+      return;
+    }
     const existing = env.lookup(node.name);
     if (existing && existing.defined && existing.type !== TYPE.NONE) {
       if (!compatible(exprType, existing.type)) {
@@ -1569,8 +1688,80 @@ class TypeChecker {
     env.defFn(node.name, node.params.map(p => ({ name: p, type: fnEnv.lookup(p)?.type ?? TYPE.UNKNOWN })), retType);
   }
 
+  _checkClassStmt(node, env) {
+    const initMethod = (node.body ?? []).find(stmt => stmt?.type === 'Fun' && stmt.name === 'init');
+    env.defClass(
+      node.name,
+      (initMethod?.params ?? []).map(param => ({ name: param, type: TYPE.UNKNOWN })),
+      TYPE.DICT
+    );
+    const classEnv = env.child('class-' + node.name);
+    classEnv.define('self', TYPE.DICT);
+    if (node.superclass) {
+      const superclass = env.lookupClass(node.superclass.name);
+      if (!superclass) {
+        this.err(`Superclass '${node.superclass.name}' is not defined`, node.superclass);
+      }
+      classEnv.define('super', TYPE.DICT);
+    }
+    this.checkBlock(node.body ?? [], classEnv);
+  }
+
   _checkExprStatementStmt(node, env) {
     if (node.expr) this.checkExpr(node.expr, env);
+  }
+
+  _isTableListLiteral(node) {
+    return Array.isArray(node?.elements)
+      && node.elements.length > 0
+      && node.elements.every(el => el?.type === 'ListLit');
+  }
+
+  _checkTableListLiteral(node, env) {
+    const rows = node.elements;
+
+    // Header row (row 0) is schema-exempt, but still type-check each header cell expression.
+    if (rows[0]) {
+      for (const cell of rows[0].elements ?? []) this.checkExpr(cell, env);
+    }
+
+    const dataRows = rows.slice(1);
+    if (dataRows.length === 0) return TYPE.LIST;
+
+    const firstDataRow = dataRows.find(r => (r.elements?.length ?? 0) > 0) ?? dataRows[0];
+    const width = firstDataRow.elements?.length ?? 0;
+    const colTypes = Array.from({ length: width }, () => TYPE.UNKNOWN);
+
+    for (let r = 0; r < dataRows.length; r++) {
+      const rowNode = dataRows[r];
+      const cells = rowNode.elements ?? [];
+      const logicalRow = r + 1; // data row index; row 0 is header
+
+      if (cells.length !== width) {
+        this.err(
+          `Table rows must have consistent width: expected ${width} column(s), got ${cells.length} at row ${logicalRow}`,
+          rowNode
+        );
+      }
+
+      const limit = Math.min(width, cells.length);
+      for (let c = 0; c < limit; c++) {
+        const cellNode = cells[c];
+        const cellType = this.checkExpr(cellNode, env);
+        if (colTypes[c] === TYPE.UNKNOWN) {
+          colTypes[c] = cellType;
+          continue;
+        }
+        if (!compatible(cellType, colTypes[c])) {
+          this.err(
+            `Table column ${c} must be homogeneous: expected ${colTypes[c]}, got ${cellType} at row ${logicalRow}`,
+            cellNode
+          );
+        }
+      }
+    }
+
+    return TYPE.LIST;
   }
 
   // ── Expression type inference ──────────────────────────────────────────────
@@ -1602,6 +1793,11 @@ class TypeChecker {
 
       case 'ListLit': {
         if (node.elements.length === 0) return TYPE.LIST;
+
+        if (this._isTableListLiteral(node)) {
+          return this._checkTableListLiteral(node, env);
+        }
+
         // Infer element type from first element, check homogeneity
         const firstType = this.checkExpr(node.elements[0], env);
         for (let i = 1; i < node.elements.length; i++) {
@@ -1622,6 +1818,18 @@ class TypeChecker {
           this.checkExpr(value, env);
         }
         return TYPE.DICT;
+      }
+
+      case 'MemberAccess': {
+        this.checkExpr(node.object, env);
+        return TYPE.UNKNOWN;
+      }
+
+      case 'Super': {
+        if (!env.lookup('super')) {
+          this.err(`'super' is only available inside a subclass method`, node);
+        }
+        return TYPE.UNKNOWN;
       }
 
       case 'Identifier':
@@ -1687,22 +1895,23 @@ class TypeChecker {
       }
 
       case 'Call': {
-        const fn = env.lookupFn(node.name);
-        if (!fn) {
-          this.err(`Undefined function '${node.name}'`, node);
+        const callee = env.lookupFn(node.name);
+        const isClass = callee?.isClass === true;
+        if (!callee) {
+          this.err(`Undefined function or class '${node.name}'`, node);
           return TYPE.UNKNOWN;
         }
         // Check argument count
-        if (node.args.length !== fn.params.length) {
+        if (node.args.length !== callee.params.length) {
           this.err(
-            `Function '${node.name}' expects ${fn.params.length} argument(s), got ${node.args.length}`,
+            `${isClass ? 'Class' : 'Function'} '${node.name}' expects ${callee.params.length} argument(s), got ${node.args.length}`,
             node
           );
         }
         // Check argument types
-        for (let i = 0; i < Math.min(node.args.length, fn.params.length); i++) {
+        for (let i = 0; i < Math.min(node.args.length, callee.params.length); i++) {
           const argType    = this.checkExpr(node.args[i], env);
-          const paramType  = fn.params[i]?.type ?? TYPE.UNKNOWN;
+          const paramType  = callee.params[i]?.type ?? TYPE.UNKNOWN;
           if (!compatible(argType, paramType)) {
             this.err(
               `Argument ${i + 1} of '${node.name}': expected ${paramType}, got ${argType}`,
@@ -1710,7 +1919,13 @@ class TypeChecker {
             );
           }
         }
-        return fn.returnType ?? TYPE.UNKNOWN;
+        return callee.returnType ?? TYPE.UNKNOWN;
+      }
+
+      case 'Invoke': {
+        this.checkExpr(node.callee, env);
+        for (const arg of node.args) this.checkExpr(arg, env);
+        return TYPE.UNKNOWN;
       }
 
       default:
@@ -1808,6 +2023,73 @@ class IVXFunction {
     this.params  = params;
     this.body    = body;
     this.closure = closure; // captured environment
+  }
+}
+
+class IVXClass {
+  constructor(name, body, closure, superclass = null) {
+    this.name = name;
+    this.body = body ?? [];
+    this.closure = closure;
+    this.superclass = superclass;
+    this.methods = new Map();
+    this.initStmts = [];
+  }
+
+  resolveMethod(name) {
+    if (this.methods.has(name)) return this.methods.get(name);
+    return this.superclass?.resolveMethod(name) ?? null;
+  }
+
+  async instantiate(args, interp) {
+    const classEnv = this.closure ? this.closure.child() : interp.globals.child();
+    const instance = new Map();
+    instance.set('__class__', this.name);
+    instance.set('__class_obj__', this);
+    classEnv.set('self', instance);
+
+    if (this.superclass) {
+      classEnv.set('super', new IVXSuperProxy(instance, this));
+    }
+
+    const initMethod = this.resolveMethod('init');
+    if (!initMethod && args.length > 0) {
+      throw new RuntimeError(`Class '${this.name}' does not define an init() method`, 0, 0);
+    }
+    if (initMethod) {
+      for (let i = 0; i < initMethod.params.length; i++) {
+        const value = args[i] ?? NONE;
+        const paramName = initMethod.params[i];
+        instance.set(paramName, value);
+        classEnv.set(paramName, value);
+      }
+    }
+
+    for (const stmt of this.initStmts) {
+      await interp.execStmt(stmt, classEnv);
+    }
+
+    if (initMethod) {
+      const boundInit = interp._bindMethod(initMethod, instance);
+      const fnEnv = boundInit.closure.child();
+      fnEnv.set('self', instance);
+      if (boundInit.__boundSuper !== undefined) {
+        fnEnv.set('super', boundInit.__boundSuper);
+      }
+
+      const result = await interp.execBlock(boundInit.body, fnEnv);
+      if (result instanceof ReturnSignal) return instance;
+    }
+
+    return instance;
+  }
+}
+
+class IVXSuperProxy {
+  constructor(self, ownerClass) {
+    this.__kind__ = 'super';
+    this.self = self;
+    this.ownerClass = ownerClass;
   }
 }
 
@@ -2149,8 +2431,10 @@ class Interpreter {
       StringLit: (node, env) => this._evalStringLit(node, env),
       BoolLit: (node, env) => this._evalBoolLit(node, env),
       Ask: (node, env) => this._evalAskExpr(node, env),
+      Super: (node, env) => this._evalSuperExpr(node, env),
       ListLit: (node, env) => this._evalListLit(node, env),
       DictLit: (node, env) => this._evalDictLit(node, env),
+      MemberAccess: (node, env) => this._evalMemberAccessExpr(node, env),
       Identifier: (node, env) => this._evalIdentifierExpr(node, env),
       IndexAccess: (node, env) => this._evalIndexAccessExpr(node, env),
       LazyDecl: (node, env) => this._evalLazyDeclExpr(node, env),
@@ -2158,7 +2442,47 @@ class Interpreter {
       Post: (node, env) => this._evalPostExpr(node, env),
       UnaryOp: (node, env) => this._evalUnaryOpExpr(node, env),
       Call: (node, env) => this.evalCall(node, env),
+      Invoke: (node, env) => this._evalInvokeExpr(node, env),
     };
+  }
+
+  _resolveClassObject(name, env = this.globals) {
+    const value = env?.get?.(name);
+    return value instanceof IVXClass ? value : null;
+  }
+
+  _bindMethod(methodFn, selfValue) {
+    const bound = new IVXFunction(methodFn.name, methodFn.params, methodFn.body, methodFn.closure);
+    bound.__ownerClass = methodFn.__ownerClass ?? null;
+    bound.__boundSelf = selfValue;
+
+    const ownerClass = methodFn.__ownerClass ?? null;
+    if (ownerClass?.superclass) {
+      bound.__boundSuper = new IVXSuperProxy(selfValue, ownerClass);
+    }
+
+    return bound;
+  }
+
+  _resolveInstanceMember(instance, field, selfValue = instance) {
+    if (!(instance instanceof Map)) return NONE;
+    if (instance.has(field)) return instance.get(field);
+
+    const classObj = instance.get('__class_obj__');
+    const method = classObj?.resolveMethod?.(field) ?? null;
+    if (method) {
+      return this._bindMethod(method, selfValue);
+    }
+
+    return NONE;
+  }
+
+  _resolveSuperMember(proxy, field) {
+    if (!(proxy instanceof IVXSuperProxy)) return NONE;
+    const superClass = proxy.ownerClass?.superclass ?? null;
+    const method = superClass?.resolveMethod?.(field) ?? null;
+    if (method) return this._bindMethod(method, proxy.self);
+    return NONE;
   }
 
   // ── Built-in functions ────────────────────────────────────────────────────
@@ -2433,7 +2757,7 @@ class Interpreter {
       case 'Assign': {
         // Lazy declaration: make name? + expr — hoist to global if not exists
         // Default is 0 for arithmetic context (most common), none otherwise
-        if (node.lazy && !this.globals.has(node.name)) {
+        if (node.lazy && node.name && !this.globals.has(node.name)) {
           // Peek at the expr to infer a better default
           // BinOp with arithmetic op on an Identifier named same as node.name
           // means the implied left is already set; infer from the right side
@@ -2451,7 +2775,18 @@ class Interpreter {
           this.globals.set(node.name, defaultVal);
         }
         const value = await this.evalExpr(node.expr, env);
-        env.set(node.name, value);
+        if (node.target?.type === 'MemberAccess') {
+          const obj = await this.evalExpr(node.target.object, env);
+          if (obj instanceof Map) {
+            obj.set(node.target.field, value);
+          } else if (obj && typeof obj === 'object') {
+            obj[node.target.field] = value;
+          } else {
+            throw new RuntimeError(`Cannot assign field '${node.target.field}' on non-object value`, node.line);
+          }
+        } else {
+          env.set(node.name, value);
+        }
         break;
       }
 
@@ -2618,6 +2953,32 @@ class Interpreter {
       case 'Fun': {
         const fn = new IVXFunction(node.name, node.params, node.body, env);
         env.set(node.name, fn);
+        break;
+      }
+
+      case 'Class': {
+        const superClass = node.superclass
+          ? this._resolveClassObject(node.superclass.name, env)
+          : null;
+        if (node.superclass && !superClass) {
+          throw new RuntimeError(`Superclass '${node.superclass.name}' is not defined`, node.superclass.line, node.superclass.col);
+        }
+        const cls = new IVXClass(node.name, node.body, env, superClass);
+        const classEnv = env.child();
+        classEnv.set('self', NONE);
+        if (superClass) {
+          classEnv.set('super', new IVXSuperProxy(NONE, cls));
+        }
+        for (const stmt of node.body ?? []) {
+          if (stmt?.type === 'Fun') {
+            const methodFn = new IVXFunction(stmt.name, stmt.params, stmt.body, classEnv);
+            methodFn.__ownerClass = cls;
+            cls.methods.set(stmt.name, methodFn);
+          } else if (stmt) {
+            cls.initStmts.push(stmt);
+          }
+        }
+        env.set(node.name, cls);
         break;
       }
 
@@ -2794,12 +3155,78 @@ class Interpreter {
     return map;
   }
 
+  async _evalMemberAccessExpr(node, env) {
+    const target = await this.evalExpr(node.object, env);
+    if (target instanceof IVXSuperProxy) {
+      return this._resolveSuperMember(target, node.field);
+    }
+    if (target instanceof Map) {
+      return this._resolveInstanceMember(target, node.field, target);
+    }
+    if (target && typeof target === 'object') {
+      return node.field in target ? target[node.field] : NONE;
+    }
+    return NONE;
+  }
+
+  async _evalSuperExpr(node, env) {
+    const target = env.get('super');
+    if (target instanceof IVXSuperProxy) return target;
+    throw new RuntimeError(`'super' is only available inside a subclass method`, node.line, node.col);
+  }
+
   async _evalIdentifierExpr(node, env) {
     const val = env.get(node.name);
     if (val === undefined) {
       throw new RuntimeError(`Undefined variable '${node.name}'`, node.line, node.col);
     }
     return val;
+  }
+
+  async _evalInvokeExpr(node, env) {
+    const callee = await this.evalExpr(node.callee, env);
+    const args = [];
+    for (const arg of node.args) args.push(await this.evalExpr(arg, env));
+
+    if (callee instanceof IVXFunction) {
+      if (callee.body === null) {
+        try {
+          return this._callBuiltin(callee.name, args, node) ?? NONE;
+        } catch (e) {
+          this.globals.set('err', e.message ?? String(e));
+          return NONE;
+        }
+      }
+      const fnEnv = callee.closure.child();
+      if (callee.__boundSelf !== undefined) {
+        fnEnv.set('self', callee.__boundSelf);
+      }
+      if (callee.__boundSuper !== undefined) {
+        fnEnv.set('super', callee.__boundSuper);
+      }
+      for (let i = 0; i < callee.params.length; i++) {
+        fnEnv.set(callee.params[i], args[i] ?? NONE);
+      }
+      try {
+        const result = await this.execBlock(callee.body, fnEnv);
+        if (result instanceof ReturnSignal) return result.value;
+        return NONE;
+      } catch (e) {
+        this.globals.set('err', e.message ?? String(e));
+        return NONE;
+      }
+    }
+
+    if (callee instanceof IVXClass) {
+      try {
+        return await callee.instantiate(args, this, node);
+      } catch (e) {
+        this.globals.set('err', e.message ?? String(e));
+        return NONE;
+      }
+    }
+
+    throw new RuntimeError('Attempted to call a non-callable value', node.line);
   }
 
   _toArrayIndex(value, node, label) {
@@ -2813,6 +3240,63 @@ class Interpreter {
   _toSliceBound(value, node, label) {
     if (value === null || value === undefined) return null;
     return this._toArrayIndex(value, node, label);
+  }
+
+  _toExcelColumnIndex(value) {
+    if (typeof value !== 'string') return null;
+    const col = value.trim().toUpperCase();
+    if (!/^[A-Z]+$/.test(col)) return null;
+    let out = 0;
+    for (let i = 0; i < col.length; i++) {
+      out = out * 26 + (col.charCodeAt(i) - 64);
+    }
+    return out - 1;
+  }
+
+  _parseExcelCellRef(value) {
+    if (typeof value !== 'string') return null;
+    const m = value.trim().toUpperCase().match(/^([A-Z]+)(\d+)$/);
+    if (!m) return null;
+    const col = this._toExcelColumnIndex(m[1]);
+    const row = Number(m[2]);
+    if (col == null || !Number.isInteger(row) || row < 0) return null;
+    return { row, col };
+  }
+
+  _normalizeTableColumnSelector(value, node) {
+    if (typeof value !== 'string') return value;
+    const colIdx = this._toExcelColumnIndex(value);
+    if (colIdx == null) {
+      throw new RuntimeError(`Invalid table column '${value}'. Use Excel letters like A, B, AA`, node?.line);
+    }
+    return colIdx;
+  }
+
+  _sliceExcelRange(table, startRef, endRef) {
+    const rowStart = Math.min(startRef.row, endRef.row);
+    const rowEnd = Math.max(startRef.row, endRef.row);
+    const colStart = Math.min(startRef.col, endRef.col);
+    const colEnd = Math.max(startRef.col, endRef.col);
+    const out = [];
+
+    for (let r = rowStart; r <= rowEnd; r++) {
+      const rowVal = table[r] ?? NONE;
+      if (Array.isArray(rowVal)) {
+        out.push(rowVal.slice(colStart, colEnd + 1));
+      } else if (rowVal instanceof Map) {
+        const rowOut = [];
+        for (let c = colStart; c <= colEnd; c++) rowOut.push(rowVal.get(c) ?? NONE);
+        out.push(rowOut);
+      } else if (rowVal && typeof rowVal === 'object') {
+        const rowOut = [];
+        for (let c = colStart; c <= colEnd; c++) rowOut.push(rowVal[c] ?? NONE);
+        out.push(rowOut);
+      } else {
+        out.push([]);
+      }
+    }
+
+    return out;
   }
 
   _pickColumnFromRow(row, colIdxOrKey) {
@@ -2840,11 +3324,19 @@ class Interpreter {
     if (spec.isSlice) {
       const startRaw = spec.start ? await this.evalExpr(spec.start, env) : null;
       const endRaw = spec.end ? await this.evalExpr(spec.end, env) : null;
+
+      const start = allowString && typeof startRaw === 'string'
+        ? startRaw
+        : this._toSliceBound(startRaw, node, `${label} start`);
+      const end = allowString && typeof endRaw === 'string'
+        ? endRaw
+        : this._toSliceBound(endRaw, node, `${label} end`);
+
       return {
         omitted: false,
         isSlice: true,
-        start: this._toSliceBound(startRaw, node, `${label} start`),
-        end: this._toSliceBound(endRaw, node, `${label} end`),
+        start,
+        end,
       };
     }
 
@@ -2859,7 +3351,7 @@ class Interpreter {
     const target = await this.evalExpr(node.target, env);
     const isArrayTarget = Array.isArray(target);
 
-    const row = await this._resolveIndexSpec(node.rowSpec, env, node, 'Row');
+    const row = await this._resolveIndexSpec(node.rowSpec, env, node, 'Row', { allowString: isArrayTarget });
     const col = await this._resolveIndexSpec(node.colSpec, env, node, 'Column', { allowString: true });
 
     if (!isArrayTarget) {
@@ -2889,7 +3381,21 @@ class Interpreter {
 
     if (!node.hasComma) {
       if (row.omitted) return target;
-      if (row.isSlice) return target.slice(row.start ?? undefined, row.end ?? undefined);
+      if (row.isSlice) {
+        const startRef = this._parseExcelCellRef(row.start);
+        const endRef = this._parseExcelCellRef(row.end);
+        if (startRef && endRef) {
+          return this._sliceExcelRange(target, startRef, endRef);
+        }
+        return target.slice(row.start ?? undefined, row.end ?? undefined);
+      }
+      if (typeof row.value === 'string') {
+        const cell = this._parseExcelCellRef(row.value);
+        if (cell) {
+          const tableRow = target[cell.row];
+          return this._pickColumnFromRow(tableRow, cell.col);
+        }
+      }
       return target[row.value] ?? NONE;
     }
 
@@ -2914,13 +3420,16 @@ class Interpreter {
 
     // Column slices: t[,c1:c2], t[r,c1:c2], t[r1:r2,c1:c2]
     if (col.isSlice) {
-      const projected = selectedRows.map(r => this._sliceColumnsFromRow(r, col.start, col.end));
+      const cStart = this._normalizeTableColumnSelector(col.start, node);
+      const cEnd = this._normalizeTableColumnSelector(col.end, node);
+      const projected = selectedRows.map(r => this._sliceColumnsFromRow(r, cStart, cEnd));
       if (!row.omitted && !row.isSlice) return projected[0] ?? NONE;
       return projected;
     }
 
     // Single column projection: t[,c], t[r,c], t[r1:r2,c]
-    const projected = selectedRows.map(r => this._pickColumnFromRow(r, col.value));
+    const colSelector = this._normalizeTableColumnSelector(col.value, node);
+    const projected = selectedRows.map(r => this._pickColumnFromRow(r, colSelector));
     if (!row.omitted && !row.isSlice) return projected[0] ?? NONE;
     return projected;
   }
@@ -3006,8 +3515,17 @@ class Interpreter {
     const args = [];
     for (const arg of node.args) args.push(await this.evalExpr(arg, env));
 
-    if (!(callee instanceof IVXFunction)) {
-      throw new RuntimeError(`'${node.name}' is not a function`, node.line);
+    if (!(callee instanceof IVXFunction) && !(callee instanceof IVXClass)) {
+      throw new RuntimeError(`'${node.name}' is not callable`, node.line);
+    }
+
+    if (callee instanceof IVXClass) {
+      try {
+        return await callee.instantiate(args, this, node);
+      } catch (e) {
+        this.globals.set('err', e.message ?? String(e));
+        return NONE;
+      }
     }
 
     // Built-in: body is null, delegate to _callBuiltin
@@ -3085,9 +3603,9 @@ function ivxRepr(value) {
   if (value === NONE)           return 'none';
   if (value === true)           return 'yes';
   if (value === false)          return 'no';
-  if (value instanceof Map)     return '{' + [...value.entries()].map(([k,v]) => `${ivxRepr(k)}: ${ivxRepr(v)}`).join(', ') + '}';
+  if (value instanceof Map)     return '{' + [...value.entries()].filter(([k]) => !String(k).startsWith('__')).map(([k,v]) => `${ivxRepr(k)}: ${ivxRepr(v)}`).join(', ') + '}';
   if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return '{' + Object.entries(value).map(([k, v]) => `${k}: ${ivxRepr(v)}`).join(', ') + '}';
+    return '{' + Object.entries(value).filter(([k]) => !String(k).startsWith('__')).map(([k, v]) => `${k}: ${ivxRepr(v)}`).join(', ') + '}';
   }
   if (Array.isArray(value))     return '[' + value.map(ivxRepr).join(', ') + ']';
   return String(value);
@@ -3127,6 +3645,62 @@ async function runIVXSelfTests() {
   }
 
   try {
+    const tc = typecheck('make t [["name","score"],["Ana",10],["Bo",11]]');
+    if (tc.errors.length === 0) {
+      pass('typecheck-table-header-exempt');
+    } else {
+      fail('typecheck-table-header-exempt', { errors: tc.errors.map(e => e.toString()) });
+    }
+  } catch (e) {
+    fail('typecheck-table-header-exempt', { error: e.message ?? String(e) });
+  }
+
+  try {
+    const out = [];
+    await interpret('class Dog\n  fun init(size, name)\n    make self.size size\n    make self.name name\nmake d Dog(3, "Rex")\nsay d.size\nsay d.name', {
+      onOutput: (v) => { out.push(v); },
+      onError: (e) => { throw e; },
+    });
+    if (out.length === 2 && out[0] === 3 && out[1] === 'Rex') {
+      pass('runtime-class-constructor');
+    } else {
+      fail('runtime-class-constructor', { output: out });
+    }
+  } catch (e) {
+    fail('runtime-class-constructor', { error: e.message ?? String(e) });
+  }
+
+  try {
+    const out = [];
+    await interpret('class Counter\n  fun init(value)\n    make self.value value\n  fun inc()\n    make self.value self.value + 1\n    give self.value\nmake c Counter(1)\nsay c.inc()\nsay c.inc()', {
+      onOutput: (v) => { out.push(v); },
+      onError: (e) => { throw e; },
+    });
+    if (out.length === 2 && out[0] === 2 && out[1] === 3) {
+      pass('runtime-class-methods');
+    } else {
+      fail('runtime-class-methods', { output: out });
+    }
+  } catch (e) {
+    fail('runtime-class-methods', { error: e.message ?? String(e) });
+  }
+
+  try {
+    const out = [];
+    await interpret('class Animal\n  fun init(name)\n    make self.name name\n  fun speak()\n    give self.name\nclass Dog(Animal)\n  fun init(name)\n    make self.name name\n  fun speak()\n    give super.speak() + "!"\nmake d Dog("Rex")\nsay d.speak()\nsay d.name', {
+      onOutput: (v) => { out.push(v); },
+      onError: (e) => { throw e; },
+    });
+    if (out.length === 2 && out[0] === 'Rex!' && out[1] === 'Rex') {
+      pass('runtime-class-inheritance');
+    } else {
+      fail('runtime-class-inheritance', { output: out });
+    }
+  } catch (e) {
+    fail('runtime-class-inheritance', { error: e.message ?? String(e) });
+  }
+
+  try {
     const out = [];
     await interpret('make x 2\nmake x + 3\nsay x', {
       onOutput: (v) => { out.push(v); },
@@ -3154,6 +3728,38 @@ async function runIVXSelfTests() {
     }
   } catch (e) {
     fail('runtime-builtin-length', { error: e.message ?? String(e) });
+  }
+
+  try {
+    const out = [];
+    await interpret('make t [["name","score"],["Ana",11],["Bo",22]]\nsay t[A0]\nsay t[B1]', {
+      onOutput: (v) => { out.push(v); },
+      onError: (e) => { throw e; },
+    });
+    if (out.length === 2 && out[0] === 'name' && out[1] === 11) {
+      pass('runtime-excel-cell-index', { output: out });
+    } else {
+      fail('runtime-excel-cell-index', { output: out });
+    }
+  } catch (e) {
+    fail('runtime-excel-cell-index', { error: e.message ?? String(e) });
+  }
+
+  try {
+    const out = [];
+    await interpret('make t [["c1","c2","c3"],[11,12,13],[21,22,23],[31,32,33]]\nsay t[A1:B2]\nsay t[2, "B"]', {
+      onOutput: (v) => { out.push(v); },
+      onError: (e) => { throw e; },
+    });
+    const okRange = out.length >= 1 && ivxEqual(out[0], [[11,12],[21,22]]);
+    const okCell = out.length >= 2 && out[1] === 22;
+    if (okRange && okCell) {
+      pass('runtime-excel-range-index', { output: out });
+    } else {
+      fail('runtime-excel-range-index', { output: out });
+    }
+  } catch (e) {
+    fail('runtime-excel-range-index', { error: e.message ?? String(e) });
   }
 
   const total = results.length;
@@ -3193,6 +3799,7 @@ let blockState    = new Map();
 let watchMap      = new Map();
 let breakpoints   = new Set();
 let varColorCache = new Map();
+let lastRenderedBlocks = [];
 
 let viewBox = { x:0, y:0, width:1000, height:800 };
 let graphBounds   = { x:0, y:0, width:1000, height:800 };
@@ -3555,8 +4162,86 @@ const shiftTextY = (textEl, delta) => {
 const blockKey = group => [...group].sort((a,b)=>a-b).join(',');
 
 function getOrCreateBlockState(key) {
-  if (!blockState.has(key)) blockState.set(key, { collapsed: false });
+  if (!blockState.has(key)) blockState.set(key, { collapsed: false, label: '', color: '' });
   return blockState.get(key);
+}
+
+function isBlankLine(s) {
+  return String(s ?? '').trim() === '';
+}
+
+function isValidCssColorToken(token) {
+  const v = String(token ?? '').trim();
+  if (!v) return false;
+  if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(v)) return true;
+  if (typeof document === 'undefined') return false;
+  const probe = document.createElement('span');
+  probe.style.color = '';
+  probe.style.color = v;
+  return probe.style.color !== '';
+}
+
+function parseBlockDirectiveFromNoteLine(line) {
+  const m = String(line ?? '').trim().match(/^note\s+(.+)$/i);
+  if (!m) return null;
+  const body = m[1].trim();
+  if (!body) return null;
+
+  const parts = body.split(/\s+/).filter(Boolean);
+  let color = '';
+  const labelParts = [];
+  let consumedColor = false;
+
+  for (const part of parts) {
+    if (!consumedColor && isValidCssColorToken(part)) {
+      color = part;
+      consumedColor = true;
+    } else {
+      labelParts.push(part);
+    }
+  }
+
+  return { color, label: labelParts.join(' ') };
+}
+
+function buildPreprocessedToOriginalMap(source) {
+  const originalLines = String(source ?? '').split('\n');
+  const prepToOrig = [];
+  originalLines.forEach((line, idx) => {
+    const expanded = preprocessControlFlowSyntax(line);
+    const count = expanded.split('\n').length;
+    for (let i = 0; i < count; i++) prepToOrig.push(idx);
+  });
+  return { originalLines, prepToOrig };
+}
+
+function readBlockDirectiveForPreprocessedLine(preLine, sourceInfo) {
+  if (!sourceInfo) return null;
+  const { originalLines, prepToOrig } = sourceInfo;
+  if (!Array.isArray(originalLines) || !Array.isArray(prepToOrig)) return null;
+
+  const origLine = (preLine >= 0 && preLine < prepToOrig.length) ? prepToOrig[preLine] : preLine;
+  if (origLine == null || origLine < 0 || origLine >= originalLines.length) return null;
+
+  let i = origLine - 1;
+  while (i >= 0 && isBlankLine(originalLines[i])) i--;
+  if (i < 0) return null;
+
+  // If multiple note lines are stacked, use the FIRST one after the separator.
+  let noteStart = i;
+  while (noteStart - 1 >= 0 && /^note\b/i.test(String(originalLines[noteStart - 1]).trim())) {
+    noteStart--;
+  }
+
+  const directive = parseBlockDirectiveFromNoteLine(originalLines[noteStart]);
+  if (!directive) return null;
+
+  let blanksAbove = 0;
+  let j = noteStart - 1;
+  while (j >= 0 && isBlankLine(originalLines[j])) { blanksAbove++; j--; }
+  if (blanksAbove < 2) return null;
+
+  return directive;
 }
 
 // ─── Layout ───────────────────────────────────────────────────────────────────
@@ -3626,6 +4311,9 @@ function computeLayout(graph) {
   const { byId, childOf, parentOf } = buildAdj(graph);
   const { branchIdx, decOf } = computeBranchInfo(graph, byId, childOf, parentOf);
   const depthMap = computeLayering(graph, byId);
+  const sourceInfo = (typeof srcEl !== 'undefined' && srcEl && typeof srcEl.value === 'string')
+    ? buildPreprocessedToOriginalMap(srcEl.value)
+    : null;
   const XSTEP = Math.max(100, Math.min(180,
     Math.max(80, ...graph.nodes.map(n => Math.min(measureText(n.text||n.kind)+PAD_X*2, MAX_NODE_W))) + 40));
   currentXSTEP = XSTEP;
@@ -3761,6 +4449,14 @@ function computeLayout(graph) {
     const { ownerKey, group } = blk;
     const key = blockKey(group);
     const state = getOrCreateBlockState(key);
+    const firstLine = Math.min(...[...group].map(id => positions.get(id)?.id != null ? byId.get(id)?.line ?? Infinity : Infinity));
+    const directive = Number.isFinite(firstLine) ? readBlockDirectiveForPreprocessedLine(firstLine, sourceInfo) : null;
+
+    const label = directive?.label ?? state.label ?? '';
+    const color = directive?.color ?? state.color ?? '';
+
+    state.label = label;
+    state.color = color;
     const shift = shiftByOwner.get(ownerKey) ?? 0;
 
     // Apply cumulative shift from PREVIOUS blocks
@@ -3781,7 +4477,7 @@ function computeLayout(graph) {
     }
     if (!isFinite(minX)) continue;
 
-    blockBoxes.push({ key, collapsed:state.collapsed, ownerKey, minX,maxX,minY,maxY, group });
+    blockBoxes.push({ key, collapsed:state.collapsed, ownerKey, minX,maxX,minY,maxY, group, label, color });
     shiftByOwner.set(ownerKey, shift + BLOCK_GAP_Y);
   }
 
@@ -4017,19 +4713,37 @@ function renderBlockBg(blockBoxes, positions) {
     const x = minX - BLOCK_PAD, w = (maxX-minX)+BLOCK_PAD*2;
     const headerY = minY - HEADER_H - CLEARANCE;
     const contentH = (maxY - minY) + BLOCK_PAD;
+    const customColor = (box.color || '').trim();
+    const hasCustomColor = !!customColor;
+
+    const shellFill = hasCustomColor ? customColor : 'rgba(255,255,255,0.025)';
+    const shellFillOpacity = hasCustomColor ? 0.07 : 1;
+    const shellStroke = hasCustomColor ? customColor : 'rgba(255,255,255,0.07)';
+    const shellStrokeOpacity = hasCustomColor ? 0.45 : 1;
+
+    const headerFill = hasCustomColor ? customColor : 'rgba(40,40,70,0.9)';
+    const headerFillOpacity = hasCustomColor ? 0.24 : 1;
+    const headerStroke = hasCustomColor ? customColor : 'rgba(255,255,255,0.07)';
+    const headerStrokeOpacity = hasCustomColor ? 0.7 : 1;
 
     // All block chrome goes in one group tagged for back-insertion
-    const g = el('g', {'data-block-bg':'1'}, svg);
+    const g = el('g', {
+      'data-block-bg':'1',
+      'data-block-key': key,
+      'data-block-label': (box.label || '').trim(),
+      'data-block-color': customColor,
+    }, svg);
 
     el('rect',{x,y:headerY,width:w,height:HEADER_H+CLEARANCE+contentH,rx:8,ry:8,
-      fill:'rgba(255,255,255,0.025)',stroke:'rgba(255,255,255,0.07)','stroke-width':1,
+      fill:shellFill,'fill-opacity':shellFillOpacity,stroke:shellStroke,'stroke-opacity':shellStrokeOpacity,'stroke-width':1,
       style:'pointer-events:none;'},g);
 
     el('rect',{x,y:headerY,width:w,height:HEADER_H,rx:5,ry:5,
-      fill:'rgba(40,40,70,0.9)',stroke:'rgba(255,255,255,0.07)','stroke-width':1,'data-block-key':key,style:'cursor:grab'},g);
+      fill:headerFill,'fill-opacity':headerFillOpacity,stroke:headerStroke,'stroke-opacity':headerStrokeOpacity,'stroke-width':1,'data-block-key':key,style:'cursor:grab'},g);
 
-    const lbl = el('text',{x:x+8,y:headerY+HEADER_H-5,'text-anchor':'start','font-size':10,fill:'#9ca3af'},g);
-    lbl.textContent=`Block ${key.split(',')[0]}…`;
+    const lbl = el('text',{x:x+8,y:headerY+HEADER_H-5,'text-anchor':'start','font-size':10,fill:hasCustomColor?'#e5e7eb':'#9ca3af'},g);
+    const customLabel = (box.label || '').trim();
+    lbl.textContent = customLabel || `Block ${key.split(',')[0]}…`;
   }
 }
 
@@ -4160,6 +4874,21 @@ function renderGraph(graph) {
     }
     if (isFinite(minX)) { box.minX=minX; box.maxX=maxX; box.minY=minY; box.maxY=maxY; }
   }
+
+  // Keep a compact snapshot for export paths.
+  lastRenderedBlocks = blockBoxes.map(box => ({
+    key: box.key,
+    label: (box.label || '').trim(),
+    color: (box.color || '').trim(),
+    collapsed: !!box.collapsed,
+    ownerKey: box.ownerKey,
+    nodes: [...box.group],
+    bounds: {
+      minX: box.minX, maxX: box.maxX,
+      minY: box.minY, maxY: box.maxY,
+    },
+  }));
+
   renderBlockBg(blockBoxes, positions);
   // Push the full-bg rects AND header rects to back so they sit behind nodes.
   // We mark them with a data attribute in renderBlockBg to make selection reliable.
@@ -5493,6 +6222,16 @@ function exportSVG() {
     .flow-b { animation: flow-b .45s linear infinite; }
   `;
   clone.insertBefore(style, clone.firstChild);
+
+  const meta = document.createElementNS('http://www.w3.org/2000/svg', 'metadata');
+  meta.setAttribute('id', 'ivx-metadata');
+  meta.textContent = JSON.stringify({
+    format: 'ivx.graph.v1',
+    exportedAt: new Date().toISOString(),
+    blocks: lastRenderedBlocks,
+  });
+  clone.insertBefore(meta, clone.firstChild);
+
   return new XMLSerializer().serializeToString(clone);
 }
 
@@ -5521,7 +6260,12 @@ function exportJSON() {
       });
     }
   }
-  downloadFile('graph.json', JSON.stringify(map, null, 2), 'application/json');
+  const payload = {
+    format: 'ivx.graph.v1',
+    graph: map,
+    blocks: lastRenderedBlocks,
+  };
+  downloadFile('graph.json', JSON.stringify(payload, null, 2), 'application/json');
 }
 
 function exportAsSVG() {
@@ -5568,7 +6312,7 @@ function escHtml(s) {
 }
 
 // Keyword sets for the tokenizing highlighter
-const _KW_NODE     = new Set(['if','fork','loop','dot','con','take','say','give','fun','end','from','make','note','for','in','wait','del','ask','post','use']);
+const _KW_NODE     = new Set(['if','fork','loop','dot','con','take','say','give','fun','class','end','from','make','note','for','in','wait','del','ask','post','use']);
 const _KW_FLOW     = new Set(['so','then','else']);
 const _KW_OUTGOING = new Set(['prev','next','use']);
 const _KW_LOGIC    = new Set(['not','and','or','xor','is','yes','no','none']);
@@ -5576,7 +6320,7 @@ const _KW_LOGIC    = new Set(['not','and','or','xor','is','yes','no','none']);
 // Tokenize a raw source line into typed spans, then emit HTML.
 // Handles strings, numbers, lists, dicts, keywords — all before HTML escaping
 // so bracket/quote characters are never corrupted by &amp; etc.
-function highlightLine(line, allVars = new Set()) {
+function highlightLine(line, allVars = new Set(), allClasses = new Set()) {
   // Split off trailing 'note ...' comment first
   const noteMatch = line.match(/^(.*?)\b(note\s.*)$/);
   const code = noteMatch ? noteMatch[1] : line;
@@ -5647,7 +6391,8 @@ function highlightLine(line, allVars = new Set()) {
       const isFunCall = code[j] === '(';
       const isLazy    = code[j] === '?' && !isFunCall;
       let cls = '';
-      if (isFunCall)                       cls = 'kw-funcall';
+      if (allClasses.has(word))            cls = 'kw-classname';
+      else if (isFunCall)                  cls = 'kw-funcall';
       else if (_KW_NODE.has(word))         cls = 'kw-node';
       else if (_KW_FLOW.has(word))         cls = 'kw-flow';
       else if (_KW_OUTGOING.has(word))     cls = 'kw-outgoing';
@@ -5685,7 +6430,14 @@ function highlightSource(src) {
   // Also collect lazy-declared variables (name?) so they color as vars
   const lazyMatches = src.match(/\b([A-Za-z_]\w*)\?/g);
   if (lazyMatches) lazyMatches.forEach(m => { allVars.add(m.slice(0, -1)); });
-  return src.split('\n').map(line => highlightLine(line, allVars)).join('\n');
+
+  // Collect declared class names so both declarations and constructor calls
+  // share one visual identity.
+  const allClasses = new Set();
+  const classMatches = src.match(/\bclass\s+([A-Za-z_]\w*)/g);
+  if (classMatches) classMatches.forEach(m => { const c = m.match(/class\s+([A-Za-z_]\w*)/); if (c) allClasses.add(c[1]); });
+
+  return src.split('\n').map(line => highlightLine(line, allVars, allClasses)).join('\n');
 }
 
 function updateHighlight() {
@@ -6106,5 +6858,4 @@ document.addEventListener('keydown', (e) => {
 driveNewBtn .addEventListener('click', driveNewFile);
 driveSaveBtn.addEventListener('click', driveSaveFile);
 
-// Init on load
 window.addEventListener('load', driveInit);

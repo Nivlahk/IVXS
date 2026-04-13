@@ -116,6 +116,32 @@ and  or  not  xor  is  in  logical
 
 Whitespace around operators is enforced. `x-5` is invalid. `x - 5` is required.
 
+### Table indexing (2D lists)
+
+IVX supports table-style indexing on 2D lists:
+
+```
+make t [[11,12,13],[21,22,23],[31,32,33]]
+
+say t[1]         note second row (0-based numeric index)
+say t[1,2]       note row 1, col 2 (0-based numeric index)
+say t[,1]        note full column 1
+say t[0:2, 1:3]  note row/col slicing
+```
+
+Excel-style cell and range notation is also supported:
+
+```
+say t[A0]        note header row cell (A0 = first row, first column)
+say t[B1]        note second row, column B
+say t[A1:B2]     note rectangular range, inclusive bounds
+say t[2, "B"]    note third row, column B
+```
+
+Row numbers in Excel-style references are zero-based in IVX (`A0`, `B0`, ...), so row `0` can represent headers.
+
+For 2D list typing, IVX treats row `0` as header-friendly: column type checks are enforced across data rows (`1+`), while header cells may use different types.
+
 ### String interpolation
 
 ```
@@ -135,6 +161,56 @@ loop guess? != secret
 
 `guess?` declares `guess` as `none` if it doesn't exist (inferred from `secret`'s type).
 `tries?` declares `tries` as `0` (inferred from the `+ 1` arithmetic context).
+
+### Classes
+
+IVX supports constructor-style classes that infer field initialization from an `init()` method:
+
+```
+class Dog
+  fun init(size, name)
+    make self.size size
+    make self.name name
+
+make d Dog(3, "Rex")
+say d.size   note 3
+say d.name   note Rex
+```
+
+Each `init()` parameter becomes a field on the created instance automatically, so you can reference `self.size` and `self.name` immediately inside methods and after construction.
+
+Methods can live under the class body as indented `fun` declarations, and they get `self` automatically through closure binding:
+
+```
+class Counter
+  fun init(value)
+    make self.value value
+  fun inc()
+    make self.value self.value + 1
+    give self.value
+
+make c Counter(1)
+say c.inc()
+say c.inc()
+```
+
+Subclasses use the superclass name in parentheses, and `super` resolves inherited members inside methods:
+
+```
+class Animal
+  fun init(name)
+    make self.name name
+  fun speak()
+    give self.name
+
+class Dog(Animal)
+  fun speak()
+    give super.speak() + "!"
+
+make d Dog("Rex")
+say d.speak()   note Rex!
+say d.name      note Rex
+```
 
 ### Implicit subject in conditions
 
