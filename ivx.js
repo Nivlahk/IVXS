@@ -72,7 +72,7 @@ const KEYWORDS = new Set([
   // Network / AI
   'ask', 'post', 'use',
   // Google services
-  'translate', 'sheets', 'gmail', 'to', 'subject', 'body',
+  'sheets', 'gmail', 'to', 'subject', 'body',
   // Implicit loop variables
   'i', 'ii', 'iii', 'j', 'jj', 'jjj', 'k', 'kk', 'kkk',
 ]);
@@ -423,7 +423,6 @@ class Parser {
       post: () => this.parsePost(),
       use:  () => this.parseUse(),
       gmail: () => this.parseGmail(),
-      translate: () => this.parseExprStatement(), // translate is an expression
       sheets:    () => this.parseExprStatement(), // sheets is an expression
       class: () => this.parseClass(),
       if:   () => this.parseIf(),
@@ -1275,15 +1274,6 @@ class Parser {
       let credential = null;
       if (this.checkKw('use')) { this.advance(); credential = this.parseExpr(); }
       return this.parsePostfix(Node('Ask', { model, prompt, credential, line: tok.line, col: tok.col }));
-    }
-
-    // translate <text> to <lang> — Google Translate expression
-    if (tok.type === T.KEYWORD && tok.value === 'translate') {
-      this.advance(); // eat 'translate'
-      const text = this.parseExpr();
-      let target = null;
-      if (this.checkKw('to')) { this.advance(); target = this.parseExpr(); }
-      return this.parsePostfix(Node('Translate', { text, target, line: tok.line, col: tok.col }));
     }
 
     // sheets <name> — returns a Sheets handle object
@@ -2464,7 +2454,6 @@ class Interpreter {
       StringLit: (node, env) => this._evalStringLit(node, env),
       BoolLit: (node, env) => this._evalBoolLit(node, env),
       Ask: (node, env) => this._evalAskExpr(node, env),
-      Translate: (node, env) => this._evalTranslateExpr(node, env),
       SheetsOpen: (node, env) => this._evalSheetsOpenExpr(node, env),
       Super: (node, env) => this._evalSuperExpr(node, env),
       ListLit: (node, env) => this._evalListLit(node, env),
@@ -3204,20 +3193,6 @@ class Interpreter {
       throw new RuntimeError(`Google API error ${res.status}: ${msg}`, null);
     }
     return res.json();
-  }
-
-  // ── translate <text> to <lang> ────────────────────────────────────────────
-  async _evalTranslateExpr(node, env) {
-    const text   = String(await this.evalExpr(node.text, env));
-    const target = node.target ? String(await this.evalExpr(node.target, env)) : 'en';
-    const data = await this._googleAPI(
-      'https://translation.googleapis.com/language/translate/v2',
-      {
-        method: 'POST',
-        body: JSON.stringify({ q: text, target, format: 'text' }),
-      }
-    );
-    return data?.data?.translations?.[0]?.translatedText ?? '';
   }
 
   // ── sheets <name> — returns a handle with .read and .write ───────────────
@@ -7522,7 +7497,7 @@ function escHtml(s) {
 }
 
 // Keyword sets for the tokenizing highlighter
-const _KW_NODE     = new Set(['if','fork','loop','dot','con','take','say','give','fun','class','end','from','make','note','for','in','wait','del','ask','post','use','sheets','gmail','translate']);
+const _KW_NODE     = new Set(['if','fork','loop','dot','con','take','say','give','fun','class','end','from','make','note','for','in','wait','del','ask','post','use','sheets','gmail']);
 const _KW_FLOW     = new Set(['so','then','else']);
 const _KW_OUTGOING = new Set(['prev','next','use']);
 const _KW_LOGIC    = new Set(['not','and','or','xor','is','yes','no','none']);
@@ -7885,7 +7860,6 @@ const DRIVE_SCOPE     = [
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/spreadsheets',
-  'https://www.googleapis.com/auth/cloud-translation',
 ].join(' ');
 const DRIVE_FOLDER    = 'IVX';
 
