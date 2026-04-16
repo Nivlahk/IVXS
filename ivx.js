@@ -1,4 +1,5 @@
 'use strict';
+console.log('IVX BUILD v3 - list/dict fixes active');
 
 // ── lexer.js ─────────────────────────────────────────────────────────────────
 
@@ -70,6 +71,8 @@ const KEYWORDS = new Set([
   'wait', 'note',
   // Network / AI
   'ask', 'post', 'use',
+  // Google services
+  'translate', 'sheets', 'gmail', 'to', 'subject', 'body',
   // Implicit loop variables
   'i', 'ii', 'iii', 'j', 'jj', 'jjj', 'k', 'kk', 'kkk',
 ]);
@@ -419,6 +422,9 @@ class Parser {
       ask:  () => this.parseExprStatement(), // ask is an expression
       post: () => this.parsePost(),
       use:  () => this.parseUse(),
+      gmail: () => this.parseGmail(),
+      translate: () => this.parseExprStatement(), // translate is an expression
+      sheets:    () => this.parseExprStatement(), // sheets is an expression
       class: () => this.parseClass(),
       if:   () => this.parseIf(),
       for:  () => this.parseFor(),
@@ -661,6 +667,17 @@ class Parser {
     if (this.checkKw('use')) { this.advance(); credential = this.parseExpr(); }
     this.eatNewline();
     return Node('Post', { url, body, credential, line: tok.line, col: tok.col });
+  }
+
+  // ── gmail to <addr> subject <subj> body <body> ────────────────────────────
+  parseGmail() {
+    const tok = this.advance(); // eat 'gmail'
+    let to = null, subject = null, body = null;
+    if (this.checkKw('to')) { this.advance(); to = this.parseExpr(); }
+    if (this.checkKw('subject')) { this.advance(); subject = this.parseExpr(); }
+    if (this.checkKw('body')) { this.advance(); body = this.parseExpr(); }
+    this.eatNewline();
+    return Node('Gmail', { to, subject, body, line: tok.line, col: tok.col });
   }
 
   // ── use <key>  (global form — standalone statement) ───────────────────────
@@ -1258,6 +1275,22 @@ class Parser {
       let credential = null;
       if (this.checkKw('use')) { this.advance(); credential = this.parseExpr(); }
       return this.parsePostfix(Node('Ask', { model, prompt, credential, line: tok.line, col: tok.col }));
+    }
+
+    // translate <text> to <lang> — Google Translate expression
+    if (tok.type === T.KEYWORD && tok.value === 'translate') {
+      this.advance(); // eat 'translate'
+      const text = this.parseExpr();
+      let target = null;
+      if (this.checkKw('to')) { this.advance(); target = this.parseExpr(); }
+      return this.parsePostfix(Node('Translate', { text, target, line: tok.line, col: tok.col }));
+    }
+
+    // sheets <name> — returns a Sheets handle object
+    if (tok.type === T.KEYWORD && tok.value === 'sheets') {
+      this.advance(); // eat 'sheets'
+      const name = this.parseExpr();
+      return this.parsePostfix(Node('SheetsOpen', { name, line: tok.line, col: tok.col }));
     }
 
     // Nothing matched
@@ -2431,6 +2464,8 @@ class Interpreter {
       StringLit: (node, env) => this._evalStringLit(node, env),
       BoolLit: (node, env) => this._evalBoolLit(node, env),
       Ask: (node, env) => this._evalAskExpr(node, env),
+      Translate: (node, env) => this._evalTranslateExpr(node, env),
+      SheetsOpen: (node, env) => this._evalSheetsOpenExpr(node, env),
       Super: (node, env) => this._evalSuperExpr(node, env),
       ListLit: (node, env) => this._evalListLit(node, env),
       DictLit: (node, env) => this._evalDictLit(node, env),
@@ -2833,6 +2868,11 @@ class Interpreter {
         return await this._executePost(node, env, { storeResponse: true });
       }
 
+      case 'Gmail': {
+        await this._executeGmail(node, env);
+        break;
+      }
+
       case 'Save': {
         await this._executeSave(node, env);
         break;
@@ -3139,6 +3179,131 @@ class Interpreter {
     }
   }
 
+  // ── Google service helpers ────────────────────────────────────────────────
+
+  _googleToken() {
+    // driveToken is the shared OAuth token for all Google services
+    if (typeof driveToken !== 'undefined' && driveToken) return driveToken;
+    return null;
+  }
+
+  async _googleAPI(url, opts = {}) {
+    const token = this._googleToken();
+    if (!token) throw new RuntimeError('Not signed in to Google. Click "Sign in to Google" first.', null);
+    const res = await fetch(url, {
+      ...opts,
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json',
+        ...(opts.headers || {}),
+      },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      const msg = err?.error?.message ?? err?.error?.status ?? res.statusText;
+      throw new RuntimeError(`Google API error ${res.status}: ${msg}`, null);
+    }
+    return res.json();
+  }
+
+  // ── translate <text> to <lang> ────────────────────────────────────────────
+  async _evalTranslateExpr(node, env) {
+    const text   = String(await this.evalExpr(node.text, env));
+    const target = node.target ? String(await this.evalExpr(node.target, env)) : 'en';
+    const data = await this._googleAPI(
+      'https://translation.googleapis.com/language/translate/v2',
+      {
+        method: 'POST',
+        body: JSON.stringify({ q: text, target, format: 'text' }),
+      }
+    );
+    return data?.data?.translations?.[0]?.translatedText ?? '';
+  }
+
+  // ── sheets <name> — returns a handle with .read and .write ───────────────
+  async _evalSheetsOpenExpr(node, env) {
+    const name = String(await this.evalExpr(node.name, env));
+    const token = this._googleToken();
+    if (!token) throw new RuntimeError('Not signed in to Google. Click "Sign in to Google" first.', node.line);
+
+    // Find the spreadsheet by name in Drive
+    const q = encodeURIComponent(`name='${name}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`);
+    const listRes = await this._googleAPI(
+      `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=1`
+    );
+    const file = listRes?.files?.[0];
+    if (!file) throw new RuntimeError(`Spreadsheet "${name}" not found in Drive.`, node.line);
+    const spreadsheetId = file.id;
+    const interp = this;
+
+    // Return a Map-like handle with read/write methods
+    const handle = new Map();
+    handle.set('__type__', 'sheets');
+    handle.set('__id__', spreadsheetId);
+    handle.set('__name__', name);
+
+    // handle.read("A1:C10") → 2D list
+    handle.set('read', async (range) => {
+      const r = encodeURIComponent(String(range));
+      const data = await interp._googleAPI(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${r}`
+      );
+      return data?.values ?? [];
+    });
+
+    // handle.write("A1", value) or handle.write("A1:B2", [[...],[...]])
+    handle.set('write', async (range, value) => {
+      const r = encodeURIComponent(String(range));
+      const body = Array.isArray(value) ? value : [[value]];
+      await interp._googleAPI(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${r}?valueInputOption=USER_ENTERED`,
+        { method: 'PUT', body: JSON.stringify({ values: body }) }
+      );
+      return value;
+    });
+
+    // handle.append(row) — appends a row to the first sheet
+    handle.set('append', async (row) => {
+      const body = Array.isArray(row[0]) ? row : [row];
+      await interp._googleAPI(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+        { method: 'POST', body: JSON.stringify({ values: body }) }
+      );
+      return row;
+    });
+
+    return handle;
+  }
+
+  // ── gmail to <addr> subject <subj> body <body> ────────────────────────────
+  async _executeGmail(node, env) {
+    const to      = node.to      ? String(await this.evalExpr(node.to, env))      : '';
+    const subject = node.subject ? String(await this.evalExpr(node.subject, env)) : '';
+    const body    = node.body    ? String(await this.evalExpr(node.body, env))     : '';
+
+    if (!to) throw new RuntimeError("gmail: missing 'to' address", node.line);
+
+    // Build RFC 2822 message and base64url-encode it
+    const raw = [
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      `Content-Type: text/plain; charset="UTF-8"`,
+      `MIME-Version: 1.0`,
+      '',
+      body,
+    ].join('\r\n');
+
+    const encoded = btoa(unescape(encodeURIComponent(raw)))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    await this._googleAPI(
+      'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+      { method: 'POST', body: JSON.stringify({ raw: encoded }) }
+    );
+
+    this.onOutput?.(`Email sent to ${to}`);
+  }
+
   async _evalListLit(node, env) {
     const elements = [];
     for (const el of node.elements) elements.push(await this.evalExpr(el, env));
@@ -3223,6 +3388,16 @@ class Interpreter {
       } catch (e) {
         this.globals.set('err', e.message ?? String(e));
         return NONE;
+      }
+    }
+
+    // Native async functions stored in Maps (e.g. sheets handle methods)
+    if (typeof callee === 'function') {
+      try {
+        return await callee(...args) ?? NONE;
+      } catch (e) {
+        if (e instanceof RuntimeError) throw e;
+        throw new RuntimeError(e.message ?? String(e), node.line);
       }
     }
 
@@ -3842,10 +4017,27 @@ const KIND_TO_KEY = {
 };
 
 function preprocessControlFlowSyntax(raw) {
-  return String(raw)
+  // Expand 'then' and 'so' as before, but only expand ';' as a statement
+  // separator when it is outside of brackets/strings — so that 2D list
+  // syntax like [1,2; 3,4] is preserved intact.
+  const s = String(raw)
     .replace(/then\s+/g, '\n  ')
-    .replace(/\bso\s+/g, '\n')
-    .replace(/;/g, '\n');
+    .replace(/\bso\s+/g, '\n');
+
+  // Expand ';' only outside brackets and quotes
+  let result = '', depth = 0, inD = false, inS = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i], prev = i > 0 ? s[i-1] : '';
+    if (c === '"' && !inS && prev !== '\\') inD = !inD;
+    else if (c === "'" && !inD && prev !== '\\') inS = !inS;
+    else if (!inD && !inS) {
+      if (c === '[' || c === '{' || c === '(') depth++;
+      else if (c === ']' || c === '}' || c === ')') depth--;
+    }
+    if (c === ';' && depth === 0 && !inD && !inS) result += '\n';
+    else result += c;
+  }
+  return result;
 }
 
 // Rewrite a single source line in-place, preserving indentation and keyword prefix.
@@ -4575,34 +4767,120 @@ function buildParamColors(funText, headerId, nodes) {
 
 // ─── Render table nodes (list/dict) ──────────────────────────────────────────
 function renderTableNode(node, pos, cx, cy, kind) {
-  const raw = node.text.trim().replace(/^[\[{]/,'').replace(/[\]}]$/,'');
-  const parts = smartSplit(raw,',');
-  const rows = kind==='list'
-    ? [parts]
-    : [parts.map(p=>smartSplit(p,':')[0]?.trim()??''), parts.map(p=>smartSplit(p,':').slice(1).join(':').trim())];
-  const cols = Math.max(...rows.map(r=>r.length));
-  let colWs = Array.from({length:cols}, (_,c) => Math.max(...rows.map(r=>measureText(String(r[c]??''))+2*CELL_PAD_X), 40));
-  let totalW = colWs.reduce((a,b)=>a+b,0);
-  const BASE_W = MAX_NODE_W/3;
-  if (totalW <= BASE_W) { colWs = colWs.map(w=>w*(BASE_W/totalW)); totalW = BASE_W; }
-  const totalH = rows.length*CELL_H, x0=cx-totalW/2, y0=cy-totalH/2;
-  const g = el('g',{},svg);
-  const bg = el('rect',{x:x0,y:y0,width:totalW,height:totalH,rx:4,ry:4,fill:TYPE_FILL[kind]||'#5C563F',stroke:'#ccc','stroke-width':1.5},g);
-  title(bg, extractComment(node.meta)); bg.dataset.nodeId = node.id;
-  let curY=y0;
-  for (const row of rows) {
-    let curX=x0;
-    for (let c=0;c<row.length;c++) {
-      el('rect',{x:curX,y:curY,width:colWs[c],height:CELL_H,fill:'none',stroke:'#ddd','stroke-width':0.5},g);
-      if (row[c]) {
-        const t = el('text',{x:curX+colWs[c]/2,y:curY+CELL_H/2+3,'text-anchor':'middle','dominant-baseline':'middle','font-size':12,fill:'#e6e6e6'},g);
-        t.textContent=row[c]; t.dataset.nodeId=node.id;
-      }
-      curX+=colWs[c];
+
+  // ── Parse variable name and value ───────────────────────────────────────────
+  const fullText = node.text.trim();
+  const stripped = fullText.replace(/^makes+/, '');
+  const nameMatch = stripped.match(/^([A-Za-z_]w*)s+([[{][sS]*)/);
+  const varName  = nameMatch ? nameMatch[1] : null;
+  const rawValue = nameMatch ? nameMatch[2].trim() : stripped;
+  const inner    = rawValue.replace(/^[[{]/, '').replace(/[]}]$/, '').trim();
+
+  // ── Build rows ───────────────────────────────────────────────────────────────
+  let rows = [];
+  if (kind === 'list') {
+    if (inner.includes(';')) {
+      // IVX 2D syntax: [1,2,3; 4,5,6]
+      rows = inner.split(';').map(rowStr =>
+        smartSplit(rowStr.trim(), ',').map(s => s.trim()).filter(s => s !== '')
+      );
+      const maxCols = Math.max(...rows.map(r => r.length), 1);
+      rows.forEach(r => { while (r.length < maxCols) r.push(''); });
+    } else if (inner.trimStart().startsWith('[')) {
+      // Nested [[1,2],[3,4]] syntax
+      rows = smartSplit(inner, ',')
+        .map(s => s.trim()).filter(s => s.startsWith('['))
+        .map(r => smartSplit(r.replace(/^[/,'').replace(/]$/,''), ',').map(s => s.trim()));
+      const maxCols = Math.max(...rows.map(r => r.length), 1);
+      rows.forEach(r => { while (r.length < maxCols) r.push(''); });
+    } else {
+      rows = [smartSplit(inner, ',').map(s => s.trim())];
     }
-    curY+=CELL_H;
+  } else {
+    const pairs = smartSplit(inner, ',');
+    rows = [
+      pairs.map(p => smartSplit(p, ':')[0]?.trim() ?? ''),
+      pairs.map(p => smartSplit(p, ':').slice(1).join(':').trim()),
+    ];
   }
-  Object.assign(pos, {x:x0,y:y0,width:totalW,height:totalH,edgeTop:y0,edgeBottom:y0+totalH});
+
+  if (!rows.length || !rows[0].length) {
+    Object.assign(pos, { x: cx-40, y: cy-15, width: 80, height: 30, edgeTop: cy-15, edgeBottom: cy+15 });
+    return;
+  }
+
+  const numCols = Math.max(...rows.map(r => r.length), 1);
+  const numRows = rows.length;
+
+  // ── Column widths ────────────────────────────────────────────────────────────
+  let colWs = Array.from({ length: numCols }, (_, c) =>
+    Math.max(...rows.map(r => measureText(String(r[c] ?? '')) + 2 * CELL_PAD_X), 36)
+  );
+  let totalW = colWs.reduce((a, b) => a + b, 0);
+  const MIN_W = Math.max(MAX_NODE_W / 3, 80);
+  if (totalW < MIN_W) {
+    const scale = MIN_W / totalW;
+    colWs = colWs.map(w => w * scale);
+    totalW = MIN_W;
+  }
+
+  // ── Geometry ─────────────────────────────────────────────────────────────────
+  const BADGE_H  = varName ? 18 : 0;
+  const totalH   = numRows * CELL_H;
+  const topOfAll = cy - (BADGE_H + totalH) / 2;
+  const gridY    = topOfAll + BADGE_H;
+  const x0       = cx - totalW / 2;
+  const g = el('g', {}, svg);
+
+  // ── Variable name badge — just the name, no [] or {} ─────────────────────────
+  if (varName) {
+    const badgeColor = kind === 'list' ? '#1e3a5f' : '#7c2d12';
+    const badgeEl = el('rect', { x: x0, y: topOfAll, width: totalW, height: BADGE_H,
+      rx: 4, ry: 4, fill: badgeColor, stroke: '#6b7280', 'stroke-width': 1 }, g);
+    badgeEl.dataset.nodeId = node.id;
+    const lbl = el('text', { x: cx, y: topOfAll + BADGE_H/2 + 1,
+      'text-anchor': 'middle', 'dominant-baseline': 'middle',
+      'font-size': 11, fill: kind === 'list' ? '#93c5fd' : '#fcd34d' }, g);
+    lbl.textContent = varName;
+    lbl.setAttribute('font-weight', '600');
+    lbl.dataset.nodeId = node.id;
+  }
+
+  // ── Outer border ─────────────────────────────────────────────────────────────
+  const borderColor = kind === 'list' ? '#4b5563' : '#92400e';
+  const bg = el('rect', { x: x0, y: gridY, width: totalW, height: totalH,
+    rx: 3, ry: 3, fill: 'none', stroke: borderColor, 'stroke-width': 1.5 }, g);
+  title(bg, extractComment(node.meta));
+  bg.dataset.nodeId = node.id;
+
+  // ── Cells ────────────────────────────────────────────────────────────────────
+  rows.forEach((row, ri) => {
+    const isDictHeader = kind === 'dict' && ri === 0;
+    const rowBg    = isDictHeader ? '#7c2d12' : ri % 2 === 0 ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.15)';
+    const textFill = isDictHeader ? '#fcd34d' : '#e5e7eb';
+    let curX = x0;
+    for (let c = 0; c < numCols; c++) {
+      const cw = colWs[c], ry2 = gridY + ri * CELL_H;
+      el('rect', { x: curX, y: ry2, width: cw, height: CELL_H, fill: rowBg, stroke: 'none' }, g);
+      if (c < numCols-1) el('line', { x1: curX+cw, y1: ry2, x2: curX+cw, y2: ry2+CELL_H, stroke: borderColor, 'stroke-width': 0.5 }, g);
+      if (ri < numRows-1) el('line', { x1: curX, y1: ry2+CELL_H, x2: curX+cw, y2: ry2+CELL_H, stroke: borderColor, 'stroke-width': 0.5 }, g);
+      const cellText = String(row[c] ?? '');
+      if (cellText) {
+        const t = el('text', { x: curX+cw/2, y: ry2+CELL_H/2+1,
+          'text-anchor': 'middle', 'dominant-baseline': 'middle',
+          'font-size': isDictHeader ? 11 : 12, fill: textFill }, g);
+        if (isDictHeader) t.setAttribute('font-weight', '600');
+        t.textContent = cellText;
+        t.dataset.nodeId = node.id;
+      }
+      curX += cw;
+    }
+  });
+
+  Object.assign(pos, {
+    x: x0, y: topOfAll, width: totalW, height: BADGE_H + totalH,
+    edgeTop: topOfAll, edgeBottom: gridY + totalH,
+  });
 }
 
 // ─── Render nodes ─────────────────────────────────────────────────────────────
@@ -5919,7 +6197,16 @@ function parseivx(source) {
                 continue;
             }
             else {
-                node = addNode('Process', lineNum, content, meta);
+                // Detect list/dict literals in make assignments so renderTableNode
+                // can render them as mini-sheets in the flowchart.
+                let nodeMeta = meta;
+                const makeRhs = content.replace(/^make\s+[A-Za-z_]\w*\s*/, '').trimStart();
+                if (makeRhs.startsWith('[')) nodeMeta = (nodeMeta ? nodeMeta + ' ' : '') + 'list';
+                else if (makeRhs.startsWith('{')) nodeMeta = (nodeMeta ? nodeMeta + ' ' : '') + 'dict';
+                node = addNode('Process', lineNum, content, nodeMeta);
+                // Title badge: variable name for any make assignment
+                const _makeM1 = content.match(/^make\s+([A-Za-z_]\w*)/);
+                if (_makeM1 && !nodeMeta.includes('list') && !nodeMeta.includes('dict')) node.title = _makeM1[1];
                 flushUntil(indent, node);
                 if (!tryWireAsBranch(node)) {
                     wireSeq(getLastExec(), node);
@@ -5948,7 +6235,15 @@ function parseivx(source) {
         }
         const hasNonIncomingKeyword = nodeKey || outgoing;
         if (content || hasNonIncomingKeyword) {
-            const n = addNode('Process', lineNum, content, meta);
+            // Detect list/dict literals on make lines (make is not a nodeKey)
+            let fallMeta = meta;
+            const fallRhs = content.replace(/^make\s+[A-Za-z_]\w*\s*/, '').trimStart();
+            if (fallRhs.startsWith('[')) fallMeta = (fallMeta ? fallMeta + ' ' : '') + 'list';
+            else if (fallRhs.startsWith('{')) fallMeta = (fallMeta ? fallMeta + ' ' : '') + 'dict';
+            const n = addNode('Process', lineNum, content, fallMeta);
+            // Title badge: variable name for any make assignment
+            const _makeM2 = content.match(/^make\s+([A-Za-z_]\w*)/);
+            if (_makeM2 && !fallMeta.includes('list') && !fallMeta.includes('dict')) n.title = _makeM2[1];
           // Respect branch scope by indent: dedenting out of a branch must flush
           // enclosing decisions before wiring this node.
           flushUntil(indent, n);
@@ -6202,6 +6497,921 @@ document.getElementById('cmtbtn').addEventListener('click', function toggleComme
 // ── Called by renderer after load ─────────────────────────────────────────────
 function _ivxInit() { doRender(); }
 
+// ── Lenses: AST → target language transpiler ──────────────────────────────────
+//
+// Architecture: template-driven, one render() dispatch per AST node type.
+// Each language is a registry of node-type → render function.
+// Adding a new language = adding a new key to LENS_LANGS.
+//
+// The lens is a *view* of the program, not a replacement for it.
+// IVX source is always the source of truth.
+
+const LensTranspiler = (() => {
+
+  // ── Shared helpers ───────────────────────────────────────────────────────────
+
+  function indent(code, n = 1) {
+    const pad = '    '.repeat(n);
+    return code.split('\n').map(l => l ? pad + l : l).join('\n');
+  }
+
+  function renderExpr(node, lang) {
+    if (!node) return '???';
+    const r = (n) => renderExpr(n, lang);
+    switch (node.type) {
+      case 'NumberLit':  return String(node.value);
+      case 'BoolLit':    return lang.bool(node.value);
+      case 'StringLit':  return lang.string(node.value);
+      case 'Identifier': return node.name;
+      case 'LazyDecl':   return node.name;
+      case 'ListLit':    return '[' + node.elements.map(r).join(', ') + ']';
+      case 'DictLit':    return '{' + node.pairs.map(p => r(p.key) + ': ' + r(p.value)).join(', ') + '}';
+      case 'BinOp': {
+        const op = lang.op ? lang.op(node.op) : mapOp(node.op, lang.id);
+        return r(node.left) + ' ' + op + ' ' + r(node.right);
+      }
+      case 'UnaryOp': {
+        const op = lang.op ? lang.op(node.op) : mapOp(node.op, lang.id);
+        return op + ' ' + r(node.operand);
+      }
+      case 'Call': {
+        const name = lang.builtinCall ? (lang.builtinCall(node.name) ?? node.name) : node.name;
+        return name + '(' + node.args.map(r).join(', ') + ')';
+      }
+      case 'Invoke':
+        return r(node.callee) + '(' + node.args.map(r).join(', ') + ')';
+      case 'MemberAccess':
+        return r(node.object) + '.' + node.field;
+      case 'Super':
+        return 'super';
+      case 'IndexAccess': {
+        const { rowSpec, colSpec, hasComma } = node;
+        if (!hasComma || colSpec.omitted) {
+          return r(node.target) + '[' + specStr(rowSpec, r) + ']';
+        }
+        return r(node.target) + '[' + specStr(rowSpec, r) + '][' + specStr(colSpec, r) + ']';
+      }
+      case 'Ask':
+        return lang.ask ? lang.ask(node) : `ask_${node.model}(${r(node.prompt)})`;
+      default:
+        return '/* ?' + node.type + ' */';
+    }
+  }
+
+  function specStr(spec, r) {
+    if (spec.omitted) return ':';
+    if (spec.isSlice) {
+      const s = spec.start ? r(spec.start) : '';
+      const e = spec.end   ? r(spec.end)   : '';
+      return s + ':' + e;
+    }
+    return r(spec.expr);
+  }
+
+  function mapOp(op, langId) {
+    // Default operator mapping (Python-style); langs can override via lang.op()
+    const MAP = {
+      '=':   '==',
+      '!=':  '!=',
+      'and': 'and',
+      'or':  'or',
+      'not': 'not',
+      'xor': '^',
+      'is':  'is',
+      'in':  'in',
+      '^':   '**',
+      '//':  '//',
+    };
+    return MAP[op] ?? op;
+  }
+
+  function renderBlock(stmts, lang, extraIndent = 1) {
+    const lines = stmts.flatMap(s => renderStmt(s, lang).split('\n'));
+    return indent(lines.join('\n'), extraIndent);
+  }
+
+  function renderStmt(node, lang) {
+    if (!node) return '';
+    if (lang.stmt) {
+      const result = lang.stmt(node, (n) => renderStmt(n, lang), (n) => renderExpr(n, lang));
+      if (result !== null && result !== undefined) return result;
+    }
+    // Fallback generic render
+    return genericStmt(node, lang);
+  }
+
+  function genericStmt(node, lang) {
+    const E = (n) => renderExpr(n, lang);
+    const S = (n) => renderStmt(n, lang);
+    const B = (stmts) => renderBlock(stmts, lang);
+
+    switch (node.type) {
+      case 'Assign': {
+        const target = node.target ? E(node.target) : node.name;
+        return lang.assign(target, E(node.expr), node.lazy);
+      }
+      case 'Say':
+        return lang.say(E(node.expr));
+      case 'Take':
+        return lang.take(node.name, node.converter);
+      case 'TakeFile':
+        return lang.takeFile ? lang.takeFile(node.name, node.ext) : `# take file: ${node.name}.${node.ext}`;
+      case 'Give':
+        return lang.give(E(node.expr));
+      case 'Delete':
+        return lang.del(node.name);
+      case 'If': {
+        const cond = E(node.condition);
+        let out = lang.ifHead(cond) + '\n' + B(node.body);
+        if (node.else_ && node.else_.length > 0) {
+          // Check if it's an else-if chain
+          if (node.else_.length === 1 && node.else_[0].type === 'If') {
+            const inner = S(node.else_[0]);
+            out += '\n' + lang.elseifJoin(inner);
+          } else {
+            out += '\n' + lang.elseHead() + '\n' + B(node.else_);
+            out += '\n' + (lang.blockEnd ? lang.blockEnd() : '');
+          }
+        } else {
+          out += '\n' + (lang.blockEnd ? lang.blockEnd() : '');
+        }
+        return out.replace(/\n+$/, '');
+      }
+      case 'Loop': {
+        const cond = E(node.condition);
+        return lang.loopHead(cond) + '\n' + B(node.body) + (lang.blockEnd ? '\n' + lang.blockEnd() : '');
+      }
+      case 'For': {
+        return lang.forHead(node.iterVar, node.target) + '\n' + B(node.body) + (lang.blockEnd ? '\n' + lang.blockEnd() : '');
+      }
+      case 'Fun': {
+        return lang.funHead(node.name, node.params) + '\n' + B(node.body) + (lang.blockEnd ? '\n' + lang.blockEnd() : '');
+      }
+      case 'Class': {
+        const methods = node.body.map(S).join('\n\n');
+        return lang.classHead(node.name, node.superclass?.name) + '\n' +
+               indent(methods || lang.pass(), 1) +
+               (lang.blockEnd ? '\n' + lang.blockEnd() : '');
+      }
+      case 'ExprStatement':
+        return E(node.expr);
+      case 'End':
+        return lang.end ? lang.end(node.message) : (node.message ? `# end: ${node.message}` : '# end');
+      case 'Wait':
+        return lang.wait ? lang.wait(node, E) : `# wait`;
+      case 'Use':
+        return lang.use ? lang.use(E(node.key)) : `# use ${E(node.key)}`;
+      case 'Post':
+        return lang.post ? lang.post(node, E) : `# post ${E(node.url)}`;
+      case 'Import':
+        return lang.importStmt ? lang.importStmt(node.path) : `# from ${node.path}`;
+      case 'Save':
+        return lang.save ? lang.save(node, E) : `# save ${E(node.filenameExpr)}`;
+      case 'Delete':
+        return lang.del(node.name);
+      case 'Dot':
+        return '# (connector)';
+      default:
+        return `# ${node.type}`;
+    }
+  }
+
+  function renderProgram(ast, lang) {
+    if (!ast || !ast.body) return '';
+    const header = lang.header ? lang.header() : '';
+    const body = ast.body.map(s => renderStmt(s, lang)).filter(Boolean).join('\n');
+    return (header ? header + '\n\n' : '') + body;
+  }
+
+  // ── String escaping ──────────────────────────────────────────────────────────
+
+  function escapeString(val, quote = '"') {
+    return quote + String(val)
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g,  '\\"')
+      .replace(/\n/g, '\\n')
+      .replace(/\t/g, '\\t') + quote;
+  }
+
+  // ── Language definitions ─────────────────────────────────────────────────────
+
+  const PYTHON = {
+    id: 'python',
+    bool:      v => v === null ? 'None' : v ? 'True' : 'False',
+    string:    v => {
+      // Preserve {var} interpolation as f-string if present
+      if (/\{[A-Za-z_]\w*\}/.test(v)) return 'f"' + v.replace(/"/g, '\\"') + '"';
+      return escapeString(v);
+    },
+    op: op => {
+      const M = { '=': '==', 'xor': '^', 'is': 'is', 'in': 'in', '^': '**', '//': '//' };
+      return M[op] ?? op;
+    },
+    assign:    (t, v, lazy) => lazy ? `if '${t}' not in dir():\n    ${t} = ${v}\n${t} = ${v}` : `${t} = ${v}`,
+    say:       v => `print(${v})`,
+    take:      (name, conv) => {
+      const raw = `input("${name}: ")`;
+      if (!conv || conv === 'str') return `${name} = ${raw}`;
+      const convMap = { int: 'int', flt: 'float', bin: 'bin', list: 'list', dict: 'dict' };
+      return `${name} = ${convMap[conv] ?? conv}(${raw})`;
+    },
+    takeFile:  (name, ext) => `${name} = open("${name}.${ext}").read()  # load ${ext} file`,
+    give:      v => `return ${v}`,
+    del:       name => `del ${name}`,
+    ifHead:    cond => `if ${cond}:`,
+    elseHead:  () => 'else:',
+    elseifJoin: inner => 'el' + inner,  // "elif ..."
+    loopHead:  cond => `while ${cond}:`,
+    forHead:   (iterVar, target) => `for ${iterVar} in ${target}:`,
+    funHead:   (name, params) => `def ${name}(${params.join(', ')}):`,
+    classHead: (name, superclass) => superclass ? `class ${name}(${superclass}):` : `class ${name}:`,
+    blockEnd:  () => '',  // Python uses indentation — no 'end' keyword
+    pass:      () => 'pass',
+    end:       msg => msg ? `raise SystemExit("${msg}")` : 'raise SystemExit()',
+    wait:      (node, E) => node.condition
+      ? `while not (${E(node.condition).replace('==', '==')}):\n    pass`
+      : `import time; time.sleep(${E(node.expr)})`,
+    use:       key => `_api_key = ${key}`,
+    post:      (node, E) => `import requests\nresponse = requests.post(${E(node.url)}, json=${E(node.body)})`,
+    ask:       node => `ask_ai("${node.model}", ${renderExpr(node.prompt, PYTHON)})`,
+    header:    () => '',
+    builtinCall: name => {
+      const M = { 'int': 'int', 'str': 'str', 'flt': 'float', 'len': 'len', 'list': 'list', 'dict': 'dict' };
+      return M[name] ?? name;
+    },
+  };
+
+  const JAVASCRIPT = {
+    id: 'javascript',
+    bool:   v => v === null ? 'null' : v ? 'true' : 'false',
+    string: v => {
+      if (/\{[A-Za-z_]\w*\}/.test(v)) return '`' + v.replace(/`/g, '\\`') + '`';
+      return escapeString(v);
+    },
+    op: op => {
+      const M = { '=': '===', '!=': '!==', 'and': '&&', 'or': '||', 'not': '!',
+                  'xor': '^', 'is': '===', 'in': 'in', '^': '**', '//': '/' };
+      return M[op] ?? op;
+    },
+    assign:    (t, v, lazy) => lazy ? `let ${t} = typeof ${t} !== 'undefined' ? ${t} : ${v};` : `let ${t} = ${v};`,
+    say:       v => `console.log(${v});`,
+    take:      (name, conv) => {
+      const raw = `prompt("${name}")`;
+      if (!conv || conv === 'str') return `let ${name} = ${raw};`;
+      const cMap = { int: `parseInt(${raw})`, flt: `parseFloat(${raw})` };
+      return `let ${name} = ${cMap[conv] ?? raw};`;
+    },
+    give:      v => `return ${v};`,
+    del:       name => `delete ${name};`,
+    ifHead:    cond => `if (${cond}) {`,
+    elseHead:  () => '} else {',
+    elseifJoin: inner => '} else ' + inner,
+    loopHead:  cond => `while (${cond}) {`,
+    forHead:   (iterVar, target) => `for (const ${iterVar} of ${target}) {`,
+    funHead:   (name, params) => `function ${name}(${params.join(', ')}) {`,
+    classHead: (name, sup) => sup ? `class ${name} extends ${sup} {` : `class ${name} {`,
+    blockEnd:  () => '}',
+    pass:      () => '// (empty)',
+    end:       msg => msg ? `throw new Error("${msg}");` : 'process.exit(0);',
+    wait:      (node, E) => node.condition
+      ? `// wait until: ${E(node.condition)}`
+      : `await new Promise(r => setTimeout(r, ${E(node.expr)} * 1000));`,
+    use:       key => `const _apiKey = ${key};`,
+    post:      (node, E) => `const response = await fetch(${E(node.url)}, { method: 'POST', body: JSON.stringify(${E(node.body)}) });`,
+    ask:       node => `await askAI("${node.model}", ${renderExpr(node.prompt, JAVASCRIPT)})`,
+    header:    () => `'use strict';`,
+    builtinCall: name => {
+      const M = { 'int': 'parseInt', 'flt': 'parseFloat', 'str': 'String', 'len': '/* len */' };
+      return M[name] ?? name;
+    },
+  };
+
+  const TYPESCRIPT = {
+    ...JAVASCRIPT,
+    id: 'typescript',
+    assign:    (t, v, lazy) => lazy
+      ? `let ${t}: any = typeof ${t} !== 'undefined' ? ${t} : ${v};`
+      : `const ${t} = ${v};`,
+    funHead:   (name, params) => `function ${name}(${params.map(p => p + ': any').join(', ')}): any {`,
+    classHead: (name, sup) => sup ? `class ${name} extends ${sup} {` : `class ${name} {`,
+    header:    () => `// TypeScript`,
+  };
+
+  const PSEUDOCODE = {
+    id: 'pseudocode',
+    bool:      v => v === null ? 'NONE' : v ? 'TRUE' : 'FALSE',
+    string:    v => `"${v}"`,
+    op: op => {
+      const M = { '=': '=', '!=': '≠', '<=': '≤', '>=': '≥', 'and': 'AND', 'or': 'OR',
+                  'not': 'NOT', 'xor': 'XOR', 'is': 'IS', 'in': 'IN', '^': '^', '//': 'DIV', '%': 'MOD' };
+      return M[op] ?? op;
+    },
+    assign:    (t, v) => `SET ${t} ← ${v}`,
+    say:       v => `OUTPUT ${v}`,
+    take:      (name, conv) => `INPUT ${name}${conv ? ` (as ${conv})` : ''}`,
+    give:      v => `RETURN ${v}`,
+    del:       name => `DELETE ${name}`,
+    ifHead:    cond => `IF ${cond} THEN`,
+    elseHead:  () => 'ELSE',
+    elseifJoin: inner => 'ELSE ' + inner,
+    loopHead:  cond => `WHILE ${cond} DO`,
+    forHead:   (iterVar, target) => `FOR EACH ${iterVar} IN ${target}`,
+    funHead:   (name, params) => `PROCEDURE ${name}(${params.join(', ')})`,
+    classHead: (name, sup) => sup ? `CLASS ${name} INHERITS ${sup}` : `CLASS ${name}`,
+    blockEnd:  () => 'END',
+    pass:      () => '(empty)',
+    end:       msg => msg ? `STOP "${msg}"` : 'STOP',
+    wait:      (node, E) => node.condition ? `WAIT UNTIL ${E(node.condition)}` : `WAIT ${E(node.expr)}`,
+    use:       key => `USE API KEY ${key}`,
+    post:      (node, E) => `POST ${E(node.url)} WITH ${E(node.body)}`,
+    ask:       node => `ASK ${node.model.toUpperCase()} "${renderExpr(node.prompt, PSEUDOCODE)}"`,
+    header:    () => '',
+  };
+
+  // ── Language registry ────────────────────────────────────────────────────────
+
+  const LANGS = { python: PYTHON, javascript: JAVASCRIPT, typescript: TYPESCRIPT, pseudocode: PSEUDOCODE };
+
+  // ── Public API ───────────────────────────────────────────────────────────────
+
+  function transpile(source, langId) {
+    const lang = LANGS[langId];
+    if (!lang) return `// Unknown lens: ${langId}`;
+    try {
+      const { ast, errors } = parse(source);
+      let out = renderProgram(ast, lang);
+      if (errors.length > 0) {
+        const errLines = errors.map(e => `# Parse error (line ${e.line}): ${e.message}`).join('\n');
+        out = errLines + '\n\n' + out;
+      }
+      return out || `# (empty program)`;
+    } catch(e) {
+      return `# Transpile error: ${e.message}`;
+    }
+  }
+
+  return { transpile, langs: Object.keys(LANGS) };
+})();
+
+// ── Lens panel UI ─────────────────────────────────────────────────────────────
+
+// ── Reverse Transpiler: target language → IVX ────────────────────────────────
+//
+// Each language returns an array of line results:
+//   { ivx: string, stub: boolean, original: string }
+// stub=true means the line couldn't be converted cleanly — it gets highlighted.
+
+const ReverseTranspiler = (() => {
+
+  // ── Shared expression converters ─────────────────────────────────────────────
+
+  function convertExpr(expr, lang) {
+    if (!expr) return expr;
+    // Booleans / null
+    expr = expr
+      .replace(/\bTrue\b/g,  'yes')
+      .replace(/\bFalse\b/g, 'no')
+      .replace(/\bNone\b/g,  'none')
+      .replace(/\bnull\b/g,  'none')
+      .replace(/\bundefined\b/g, 'none')
+      .replace(/\btrue\b/g,  'yes')
+      .replace(/\bfalse\b/g, 'no');
+    // Operators
+    expr = expr
+      .replace(/\*\*/g,  '^')
+      .replace(/===|==/g, '=')
+      .replace(/!==/g,    '!=')
+      .replace(/&&/g,     'and')
+      .replace(/\|\|/g,   'or')
+      .replace(/!/g,      'not ')
+      .replace(/\bMath\.pow\s*\(([^,]+),\s*([^)]+)\)/g, '($1 ^ $2)');
+    // JS/TS typeof guards → just the variable
+    expr = expr.replace(/typeof\s+\w+\s*!==?\s*['"][^'"]+['"]/g, m => {
+      const v = m.match(/typeof\s+(\w+)/);
+      return v ? v[1] : m;
+    });
+    // Python floor div stays as //
+    // f-strings / template literals → IVX interpolation
+    if (lang === 'python') {
+      expr = expr.replace(/^f["'](.*)["']$/, (_, inner) => `"${inner}"`);
+    }
+    if (lang === 'javascript' || lang === 'typescript') {
+      expr = expr.replace(/^`(.*)`$/, (_, inner) => `"${inner.replace(/\$\{([^}]+)\}/g, '{$1')}"`);
+    }
+    return expr;
+  }
+
+  function convertCondition(expr, lang) {
+    // Strip wrapping parens from JS/TS if statements
+    expr = expr.trim().replace(/^\((.*)\)$/, '$1');
+    return convertExpr(expr, lang);
+  }
+
+  function stripTrailingColon(s) { return s.replace(/:$/, '').trim(); }
+  function stripSemicolon(s)     { return s.replace(/;$/, '').trim(); }
+  function getIndent(line)       { return line.match(/^(\s*)/)[1]; }
+  function dedent(s)             { return s.replace(/^    /, '').replace(/^\t/, ''); }
+
+  // ── Stub result helpers ───────────────────────────────────────────────────────
+
+  function ok(ivx, original)   { return { ivx, stub: false, original }; }
+  function stub(ivx, original) { return { ivx, stub: true,  original }; }
+
+  // ── Python reverse ────────────────────────────────────────────────────────────
+
+  function reversePythonLine(raw) {
+    const line    = raw;
+    const trimmed = raw.trim();
+    const indent  = getIndent(raw);
+    const E       = s => convertExpr(s, 'python');
+    const C       = s => convertCondition(s, 'python');
+
+    if (!trimmed || trimmed.startsWith('#')) {
+      const txt = trimmed.startsWith('#') ? trimmed.slice(1).trim() : '';
+      return ok(indent + (txt ? `note ${txt}` : ''), raw);
+    }
+
+    // import → stub
+    if (/^import\s|^from\s+\S+\s+import/.test(trimmed))
+      return stub(indent + `note import: ${trimmed}`, raw);
+
+    // decorator → stub
+    if (trimmed.startsWith('@'))
+      return stub(indent + `note decorator: ${trimmed}`, raw);
+
+    // try / except / finally / with → stub
+    if (/^(try:|except(\s|:)|finally:|with\s)/.test(trimmed))
+      return stub(indent + `note ${trimmed}`, raw);
+
+    // raise → end
+    if (/^raise\s+SystemExit/.test(trimmed)) {
+      const msg = trimmed.match(/SystemExit\(["'](.+?)["']\)/);
+      return ok(indent + (msg ? `end ${msg[1]}` : 'end'), raw);
+    }
+    if (/^raise\b/.test(trimmed))
+      return stub(indent + `note ${trimmed}`, raw);
+
+    // assert → stub
+    if (/^assert\b/.test(trimmed))
+      return stub(indent + `note ${trimmed}`, raw);
+
+    // pass → (empty comment)
+    if (trimmed === 'pass') return ok('', raw);
+
+    // class Foo: / class Foo(Bar):
+    const classM = trimmed.match(/^class\s+(\w+)(?:\((\w+)\))?\s*:/);
+    if (classM) return ok(indent + `class ${classM[1]}${classM[2] ? `(${classM[2]})` : ''}`, raw);
+
+    // def foo(params):
+    const defM = trimmed.match(/^def\s+(\w+)\s*\(([^)]*)\)\s*(?:->[^:]+)?:/);
+    if (defM) {
+      const params = defM[2].split(',').map(p => p.trim().replace(/\s*=.*$/, '').replace(/:\s*\w+/, '')).filter(Boolean);
+      return ok(indent + `fun ${defM[1]}(${params.join(', ')})`, raw);
+    }
+
+    // return
+    const retM = trimmed.match(/^return\s+(.*)/);
+    if (retM) return ok(indent + `give ${E(retM[1])}`, raw);
+
+    // del
+    const delM = trimmed.match(/^del\s+(\w+)/);
+    if (delM) return ok(indent + `del ${delM[1]}`, raw);
+
+    // print(...)
+    const printM = trimmed.match(/^print\s*\((.*)\)$/);
+    if (printM) return ok(indent + `say ${E(printM[1])}`, raw);
+
+    // input assignment: x = input(...) / x = int(input(...))
+    const inputM = trimmed.match(/^(\w+)\s*=\s*(int|float|str|list|dict)?\(?\s*input\s*\([^)]*\)\s*\)?/);
+    if (inputM) {
+      const conv = inputM[2] ? inputM[2].replace('float', 'flt') : null;
+      return ok(indent + `take ${conv ? `${conv}(${inputM[1]})` : inputM[1]}`, raw);
+    }
+
+    // while cond:
+    const whileM = trimmed.match(/^while\s+(.+):/);
+    if (whileM) return ok(indent + `loop ${C(whileM[1])}`, raw);
+
+    // for x in y:
+    const forInM = trimmed.match(/^for\s+(\w+)\s+in\s+(\w+)\s*:/);
+    if (forInM) return ok(indent + `for ${forInM[1]} in ${forInM[2]}`, raw);
+
+    // for i, x in enumerate(y):
+    const forEnumM = trimmed.match(/^for\s+(\w+)\s*,\s*(\w+)\s+in\s+enumerate\s*\((\w+)\)\s*:/);
+    if (forEnumM) return ok(indent + `for ${forEnumM[2]} in ${forEnumM[3]}`, raw);
+
+    // if cond:
+    const ifM = trimmed.match(/^if\s+(.+):/);
+    if (ifM) return ok(indent + `if ${C(ifM[1])}`, raw);
+
+    // elif cond:
+    const elifM = trimmed.match(/^elif\s+(.+):/);
+    if (elifM) return ok(indent + `else if ${C(elifM[1])}`, raw);
+
+    // else:
+    if (trimmed === 'else:') return ok(indent + 'else', raw);
+
+    // augmented assignment: x += 1 → make x + 1
+    const augM = trimmed.match(/^(\w+(?:\.\w+)*)\s*([+\-*/%])=\s*(.+)/);
+    if (augM) return ok(indent + `make ${augM[1]} ${augM[2]} ${E(augM[3])}`, raw);
+
+    // assignment: x = expr  (skip type annotations like x: int = 5)
+    const assignM = trimmed.match(/^(\w+(?:\.\w+)*)\s*(?::\s*\w+)?\s*=\s*(?!=)(.+)/);
+    if (assignM) return ok(indent + `make ${assignM[1]} ${E(assignM[2])}`, raw);
+
+    // bare function call
+    const callM = trimmed.match(/^(\w+)\s*\((.*)?\)$/);
+    if (callM) return ok(indent + `${callM[1]}(${E(callM[2] ?? '')})`, raw);
+
+    // anything else → stub with note
+    return stub(indent + `note ✗ ${trimmed}`, raw);
+  }
+
+  function reversePython(source) {
+    return source.split('\n').map(reversePythonLine);
+  }
+
+  // ── JavaScript / TypeScript reverse ──────────────────────────────────────────
+
+  function reverseJSLine(raw, lang) {
+    const trimmed = stripSemicolon(raw.trim());
+    const indent  = getIndent(raw);
+    const E       = s => convertExpr(s, lang);
+    const C       = s => convertCondition(s, lang);
+
+    if (!trimmed || trimmed.startsWith('//')) {
+      const txt = trimmed.startsWith('//') ? trimmed.slice(2).trim() : '';
+      return ok(indent + (txt ? `note ${txt}` : ''), raw);
+    }
+
+    // 'use strict' / type annotations top → skip
+    if (trimmed === "'use strict'" || trimmed === '"use strict"' || trimmed === '// TypeScript')
+      return ok('', raw);
+
+    // import → stub
+    if (/^import\s/.test(trimmed))
+      return stub(indent + `note import: ${trimmed}`, raw);
+
+    // export → stub
+    if (/^export\s/.test(trimmed))
+      return stub(indent + `note export: ${trimmed}`, raw);
+
+    // closing brace alone → dedent signal (handled by block logic, skip)
+    if (trimmed === '}') return ok('', raw);
+
+    // class Foo / class Foo extends Bar
+    const classM = trimmed.match(/^class\s+(\w+)(?:\s+extends\s+(\w+))?\s*\{?/);
+    if (classM) return ok(indent + `class ${classM[1]}${classM[2] ? `(${classM[2]})` : ''}`, raw);
+
+    // function foo(params) {
+    const fnM = trimmed.match(/^(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)\s*(?::\s*\w+)?\s*\{?/);
+    if (fnM) {
+      const params = fnM[2].split(',').map(p => p.trim().replace(/:\s*\w+/, '').replace(/\s*=.*$/, '')).filter(Boolean);
+      return ok(indent + `fun ${fnM[1]}(${params.join(', ')})`, raw);
+    }
+
+    // arrow function: const foo = (params) => {
+    const arrowM = trimmed.match(/^(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>/);
+    if (arrowM) {
+      const params = arrowM[2].split(',').map(p => p.trim().replace(/:\s*\w+/, '')).filter(Boolean);
+      return ok(indent + `fun ${arrowM[1]}(${params.join(', ')})`, raw);
+    }
+
+    // return
+    const retM = trimmed.match(/^return\s+(.*)/);
+    if (retM) return ok(indent + `give ${E(retM[1])}`, raw);
+
+    // delete
+    const delM = trimmed.match(/^delete\s+(\w+)/);
+    if (delM) return ok(indent + `del ${delM[1]}`, raw);
+
+    // console.log(...)
+    const logM = trimmed.match(/^console\.log\s*\((.*)\)$/);
+    if (logM) return ok(indent + `say ${E(logM[1])}`, raw);
+
+    // prompt assignment
+    const promptM = trimmed.match(/^(?:let|const|var)\s+(\w+)\s*=\s*(?:parseInt|parseFloat|Number)?\(?\s*prompt\s*\([^)]*\)\s*\)?/);
+    if (promptM) return ok(indent + `take ${promptM[1]}`, raw);
+
+    // while
+    const whileM = trimmed.match(/^while\s*\((.+)\)\s*\{?/);
+    if (whileM) return ok(indent + `loop ${C(whileM[1])}`, raw);
+
+    // for...of
+    const forOfM = trimmed.match(/^for\s*\(\s*(?:const|let|var)\s+(\w+)\s+of\s+(\w+)\s*\)\s*\{?/);
+    if (forOfM) return ok(indent + `for ${forOfM[1]} in ${forOfM[2]}`, raw);
+
+    // for (let i = 0; ...) → stub, too varied
+    const forM = trimmed.match(/^for\s*\(/);
+    if (forM) return stub(indent + `note ✗ ${trimmed}`, raw);
+
+    // if (cond) {
+    const ifM = trimmed.match(/^if\s*\((.+)\)\s*\{?/);
+    if (ifM) return ok(indent + `if ${C(ifM[1])}`, raw);
+
+    // } else if (cond) {
+    const elifM = trimmed.match(/^(?:\}\s*)?else\s+if\s*\((.+)\)\s*\{?/);
+    if (elifM) return ok(indent + `else if ${C(elifM[1])}`, raw);
+
+    // } else {
+    if (/^(?:\}\s*)?else\s*\{?$/.test(trimmed)) return ok(indent + 'else', raw);
+
+    // throw new Error → end
+    const throwM = trimmed.match(/^throw\s+new\s+Error\s*\(\s*["'](.+?)["']\s*\)/);
+    if (throwM) return ok(indent + `end ${throwM[1]}`, raw);
+    if (/^throw\b/.test(trimmed)) return stub(indent + `note ${trimmed}`, raw);
+
+    // augmented: x += 1
+    const augM = trimmed.match(/^(\w+(?:\.\w+)*)\s*([+\-*/%])=\s*(.+)/);
+    if (augM) return ok(indent + `make ${augM[1]} ${augM[2]} ${E(augM[3])}`, raw);
+
+    // const/let/var x = expr
+    const varM = trimmed.match(/^(?:const|let|var)\s+(\w+)\s*(?::\s*\w+)?\s*=\s*(.+)/);
+    if (varM) return ok(indent + `make ${varM[1]} ${E(varM[2])}`, raw);
+
+    // x = expr (reassignment)
+    const assignM = trimmed.match(/^(\w+(?:\.\w+)*)\s*=\s*(?!=)(.+)/);
+    if (assignM) return ok(indent + `make ${assignM[1]} ${E(assignM[2])}`, raw);
+
+    // bare call
+    const callM = trimmed.match(/^(?:await\s+)?(\w+)\s*\((.*)?\)$/);
+    if (callM) return ok(indent + `${callM[1]}(${E(callM[2] ?? '')})`, raw);
+
+    return stub(indent + `note ✗ ${trimmed}`, raw);
+  }
+
+  function reverseJS(source, lang) {
+    return source.split('\n').map(line => reverseJSLine(line, lang));
+  }
+
+  // ── Public API ───────────────────────────────────────────────────────────────
+  // Returns { lines: [{ivx, stub, original}], stubCount: number }
+
+  function reverse(source, langId) {
+    let lines;
+    if      (langId === 'python')     lines = reversePython(source);
+    else if (langId === 'javascript') lines = reverseJS(source, 'javascript');
+    else if (langId === 'typescript') lines = reverseJS(source, 'typescript');
+    else return { lines: [stub(`note Reverse not supported for ${langId}`, source)], stubCount: 1 };
+
+    // Filter out runs of blank lines from skipped constructs (closing braces etc.)
+    const cleaned = [];
+    let lastBlank = false;
+    for (const l of lines) {
+      const isBlank = !l.ivx.trim();
+      if (isBlank && lastBlank) continue;
+      cleaned.push(l);
+      lastBlank = isBlank;
+    }
+
+    const stubCount = cleaned.filter(l => l.stub).length;
+    return { lines: cleaned, stubCount };
+  }
+
+  return { reverse };
+})();
+
+// ── Lens panel UI ─────────────────────────────────────────────────────────────
+
+(function() {
+  const ep        = document.getElementById('ep');
+  const editorSub = document.getElementById('editor-sub');
+  const srcEl     = document.getElementById('src');
+
+  // ── Lens panel DOM ──────────────────────────────────────────────────────────
+  const lensPanel = document.createElement('div');
+  lensPanel.id = 'lens-panel';
+  lensPanel.style.display = 'none';
+  lensPanel.innerHTML = `
+    <div id="lens-hdr">
+      <span id="lens-title">Python Lens</span>
+      <div id="lens-import-wrap" style="display:none">
+        <div class="gs"></div>
+        <button class="kb lens-import-btn" id="lens-import">← Import to IVX</button>
+        <span id="lens-stub-count"></span>
+      </div>
+      <div style="flex:1"></div>
+      <button class="kb" id="lens-copy">Copy</button>
+      <button class="kb" id="lens-close">✕</button>
+    </div>
+    <div id="lens-body">
+      <div id="lens-gutter"><div id="lens-gutter-inner"></div></div>
+      <div id="lens-scroll">
+        <div id="lens-code" spellcheck="false"></div>
+      </div>
+    </div>
+    <div id="lens-import-confirm" style="display:none">
+      <span id="lens-import-msg"></span>
+      <button class="kb lens-import-btn" id="lens-import-ok">Replace IVX source</button>
+      <button class="kb" id="lens-import-cancel">Cancel</button>
+    </div>
+  `;
+
+  ep.insertBefore(lensPanel, ep.children[1]);
+
+  // ── Lens controls in graph panel ────────────────────────────────────────────
+  const cpEl      = document.getElementById('cp');
+  const exportWrap = document.getElementById('export-wrap');
+
+  const lensWrap = document.createElement('div');
+  lensWrap.id = 'lens-wrap';
+  lensWrap.innerHTML = `
+    <select class="gsel" id="lens-lang-sel">
+      <option value="python">Python</option>
+      <option value="javascript">JavaScript</option>
+      <option value="typescript">TypeScript</option>
+      <option value="pseudocode">Pseudocode</option>
+    </select>
+    <button class="gb" id="lens-btn">Lens</button>
+  `;
+  cpEl.insertBefore(lensWrap, exportWrap);
+  const sep = document.createElement('div');
+  sep.className = 'gs';
+  cpEl.insertBefore(sep, exportWrap);
+
+  // ── Element refs ────────────────────────────────────────────────────────────
+  const lensBtn        = document.getElementById('lens-btn');
+  const langSel        = document.getElementById('lens-lang-sel');
+  const lensCode       = document.getElementById('lens-code');
+  const lensGutter     = document.getElementById('lens-gutter-inner');
+  const lensScroll     = document.getElementById('lens-scroll');
+  const lensClose      = document.getElementById('lens-close');
+  const lensCopy       = document.getElementById('lens-copy');
+  const lensTitleEl    = document.getElementById('lens-title');
+  const lensImportWrap = document.getElementById('lens-import-wrap');
+  const lensImportBtn  = document.getElementById('lens-import');
+  const lensStubCount  = document.getElementById('lens-stub-count');
+  const lensConfirm    = document.getElementById('lens-import-confirm');
+  const lensImportMsg  = document.getElementById('lens-import-msg');
+  const lensImportOk   = document.getElementById('lens-import-ok');
+  const lensImportCancel = document.getElementById('lens-import-cancel');
+
+  // ── State ───────────────────────────────────────────────────────────────────
+  let lensOpen    = false;
+  let lensLang    = 'python';
+  let lensEdited  = false;  // user has manually edited the lens content
+  let lensMode    = 'forward';  // 'forward' = IVX→lang, 'import' = user pasted foreign code
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+  const LANG_LABELS = { python: 'Python', javascript: 'JavaScript', typescript: 'TypeScript', pseudocode: 'Pseudocode' };
+  const IMPORT_SUPPORTED = new Set(['python', 'javascript', 'typescript']);
+
+  function escHtmlLens(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function updateGutter(lineCount) {
+    let g = '';
+    for (let i = 1; i <= lineCount; i++) g += i + '\n';
+    lensGutter.textContent = g;
+  }
+
+  function syncGutter() {
+    lensGutter.style.top = -lensScroll.scrollTop + 'px';
+  }
+  lensScroll.addEventListener('scroll', syncGutter);
+
+  // ── Forward render: IVX → language ──────────────────────────────────────────
+  function renderLens() {
+    if (!lensOpen) return;
+    const code  = LensTranspiler.transpile(srcEl.value, lensLang);
+    // Plain text — no stubs in forward direction
+    lensCode.innerHTML = escHtmlLens(code);
+    updateGutter(code.split('\n').length);
+    lensTitleEl.textContent = LANG_LABELS[lensLang] + ' Lens';
+    // Show import button only for supported languages
+    lensImportWrap.style.display = IMPORT_SUPPORTED.has(lensLang) ? 'flex' : 'none';
+    lensStubCount.textContent = '';
+    lensConfirm.style.display = 'none';
+    lensMode   = 'forward';
+    lensEdited = false;
+  }
+
+  // ── Import render: parse lens content → show annotated IVX preview ──────────
+  function runImport() {
+    // Grab raw text from the editable lens div
+    const raw = lensCode.innerText;
+    const { lines, stubCount } = ReverseTranspiler.reverse(raw, lensLang);
+
+    // Build highlighted HTML — stub lines get a warning highlight
+    let html = '';
+    for (const l of lines) {
+      if (l.stub) {
+        html += `<span class="lens-stub-line" title="Could not convert: ${escHtmlLens(l.original.trim())}">${escHtmlLens(l.ivx)}</span>\n`;
+      } else {
+        html += escHtmlLens(l.ivx) + '\n';
+      }
+    }
+    lensCode.innerHTML = html;
+    updateGutter(lines.length);
+
+    // Update header
+    lensTitleEl.textContent = '← IVX Preview';
+    lensMode = 'import';
+
+    // Stub count badge
+    if (stubCount > 0) {
+      lensStubCount.textContent = `${stubCount} line${stubCount > 1 ? 's' : ''} need review`;
+      lensStubCount.className   = 'lens-stub-badge';
+    } else {
+      lensStubCount.textContent = '✓ clean';
+      lensStubCount.className   = 'lens-stub-badge lens-stub-ok';
+    }
+
+    // Confirmation bar
+    const msg = stubCount > 0
+      ? `${stubCount} highlighted line${stubCount > 1 ? 's' : ''} couldn't convert — they'll appear as notes in IVX.`
+      : 'All lines converted cleanly.';
+    lensImportMsg.textContent = msg;
+    lensConfirm.style.display = 'flex';
+
+    // Store converted lines for the confirm step
+    lensCode._pendingLines = lines;
+  }
+
+  // ── Confirm: write converted IVX into the source editor ─────────────────────
+  lensImportOk.addEventListener('click', () => {
+    const lines = lensCode._pendingLines;
+    if (!lines) return;
+    const ivxSource = lines.map(l => l.ivx).join('\n').trimEnd();
+    srcEl.value = ivxSource;
+    updateHighlight();
+    scheduleRender();
+    lensConfirm.style.display = 'none';
+    closeLens();
+  });
+
+  lensImportCancel.addEventListener('click', () => {
+    lensConfirm.style.display = 'none';
+    renderLens(); // go back to forward view
+  });
+
+  lensImportBtn.addEventListener('click', runImport);
+
+  // ── Open / close ────────────────────────────────────────────────────────────
+  function openLens() {
+    lensOpen = true;
+    lensBtn.classList.add('on');
+    editorSub.style.display = 'none';
+    const termResizer = document.getElementById('term-resizer');
+    const term        = document.getElementById('term');
+    if (termResizer) termResizer.style.display = 'none';
+    if (term)        term.style.display        = 'none';
+    ep.style.gridTemplateRows = '1fr';
+    lensPanel.style.display   = 'flex';
+    lensPanel.style.height    = '100%';
+    renderLens();
+  }
+
+  function closeLens() {
+    lensOpen = false;
+    lensBtn.classList.remove('on');
+    lensPanel.style.display   = 'none';
+    lensPanel.style.height    = '';
+    editorSub.style.display   = 'flex';
+    const termResizer = document.getElementById('term-resizer');
+    const term        = document.getElementById('term');
+    if (termResizer) termResizer.style.display = '';
+    if (term)        term.style.display        = '';
+    ep.style.gridTemplateRows = '';
+  }
+
+  lensBtn.addEventListener('click', () => { if (lensOpen) closeLens(); else openLens(); });
+  lensClose.addEventListener('click', closeLens);
+
+  langSel.addEventListener('change', () => {
+    lensLang = langSel.value;
+    if (lensOpen) renderLens();
+  });
+
+  lensCopy.addEventListener('click', () => {
+    navigator.clipboard.writeText(lensCode.innerText).then(() => {
+      lensCopy.textContent = 'Copied!';
+      setTimeout(() => { lensCopy.textContent = 'Copy'; }, 1500);
+    });
+  });
+
+  // Make lens content editable (user can paste foreign code)
+  lensCode.contentEditable = 'true';
+  lensCode.addEventListener('input', () => {
+    lensEdited = true;
+    // If they're editing, go back to showing the import button (not confirm bar)
+    if (lensMode === 'import') {
+      lensConfirm.style.display = 'none';
+      lensTitleEl.textContent   = LANG_LABELS[lensLang] + ' (edited)';
+      lensStubCount.textContent = '';
+    }
+  });
+
+  // Re-render on IVX source change, but only if user hasn't manually edited the lens
+  srcEl.addEventListener('input', () => {
+    if (lensOpen && !lensEdited) renderLens();
+  });
+
+  window._lensRender = renderLens;
+  window._lensOpen   = () => lensOpen;
+})();
+
 // ── Export ────────────────────────────────────────────────────────────────────
 function exportSVG() {
   const bbox = graphBounds;
@@ -6312,7 +7522,7 @@ function escHtml(s) {
 }
 
 // Keyword sets for the tokenizing highlighter
-const _KW_NODE     = new Set(['if','fork','loop','dot','con','take','say','give','fun','class','end','from','make','note','for','in','wait','del','ask','post','use']);
+const _KW_NODE     = new Set(['if','fork','loop','dot','con','take','say','give','fun','class','end','from','make','note','for','in','wait','del','ask','post','use','sheets','gmail','translate']);
 const _KW_FLOW     = new Set(['so','then','else']);
 const _KW_OUTGOING = new Set(['prev','next','use']);
 const _KW_LOGIC    = new Set(['not','and','or','xor','is','yes','no','none']);
@@ -6645,9 +7855,38 @@ termClear.addEventListener('click', () => {
   });
 })();
 
-// ── Google Drive Integration ──────────────────────────────────────────────────
+// ── Terminal minimize / restore ───────────────────────────────────────────────
+(function() {
+  const termEl      = document.getElementById('term');
+  const termMinBtn  = document.getElementById('term-minimize');
+  const ep          = document.getElementById('ep');
+  const COLLAPSED_H = 28; // just the header bar
+  let collapsed     = false;
+  let savedRows     = '';  // remember last grid height before collapsing
+
+  termMinBtn.addEventListener('click', () => {
+    collapsed = !collapsed;
+    if (collapsed) {
+      savedRows = ep.style.gridTemplateRows || '1fr 6px 200px';
+      ep.style.gridTemplateRows = `1fr 6px ${COLLAPSED_H}px`;
+      termEl.classList.add('collapsed');
+      termMinBtn.textContent    = '▲';
+      termMinBtn.title          = 'Restore terminal';
+    } else {
+      ep.style.gridTemplateRows = savedRows;
+      termEl.classList.remove('collapsed');
+      termMinBtn.textContent    = '—';
+      termMinBtn.title          = 'Minimize terminal';
+    }
+  });
+})();
 const DRIVE_CLIENT_ID = '857056430546-3o2o9mhula9lkm1vcpidu61919h3umev.apps.googleusercontent.com';
-const DRIVE_SCOPE     = 'https://www.googleapis.com/auth/drive.file';
+const DRIVE_SCOPE     = [
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/cloud-translation',
+].join(' ');
 const DRIVE_FOLDER    = 'IVX';
 
 let driveToken     = null;   // current access token
@@ -6657,18 +7896,27 @@ let driveCurrentName = null; // name of currently open file
 let driveUnsaved   = false;  // unsaved changes flag
 let driveTokenClient = null; // GIS token client
 
-const drivePanel       = document.getElementById('drive-panel');
-const driveConnectBtn  = document.getElementById('drive-connect-btn');
-const driveFileList    = document.getElementById('drive-file-list');
-const drivePanelFooter = document.getElementById('drive-panel-footer');
-const driveNewBtn      = document.getElementById('drive-new-btn');
-const driveSaveBtn     = document.getElementById('drive-save-btn');
-const driveSignoutBtn  = document.getElementById('drive-signout-btn');
-const driveFilename    = document.getElementById('drive-filename');
+const driveConnectBtn   = document.getElementById('drive-connect-btn');
+const driveFileList     = document.getElementById('drive-file-list');
+const driveSignedInEl   = document.getElementById('drive-hdr-signed-in');
+const driveNewBtn       = document.getElementById('drive-new-btn');
+const driveSaveBtn      = document.getElementById('drive-save-btn');
+const driveSignoutBtn   = document.getElementById('drive-signout-btn');
+const driveFilesBtn     = document.getElementById('drive-files-btn');
+const driveFilename     = document.getElementById('drive-filename');
+
+// ── Files dropdown toggle ─────────────────────────────────────────────────────
+driveFilesBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const open = driveFileList.style.display === 'block';
+  driveFileList.style.display = open ? 'none' : 'block';
+  if (!open) driveListFiles();
+});
+document.addEventListener('click', () => { driveFileList.style.display = 'none'; });
+driveFileList.addEventListener('click', e => e.stopPropagation());
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 function driveInit() {
-  // Wait for GSI to load
   if (typeof google === 'undefined') {
     setTimeout(driveInit, 200);
     return;
@@ -6679,9 +7927,8 @@ function driveInit() {
     callback:  (resp) => {
       if (resp.error) { console.error('Drive auth error:', resp); return; }
       driveToken = resp.access_token;
-      driveConnectBtn.textContent = 'Connected ✓';
-      driveConnectBtn.disabled = true;
-      drivePanelFooter.style.display = 'flex';
+      driveConnectBtn.style.display = 'none';
+      driveSignedInEl.style.display = 'flex';
       driveEnsureFolder().then(driveListFiles);
     },
   });
@@ -6696,10 +7943,10 @@ driveSignoutBtn.addEventListener('click', () => {
   if (driveToken) google.accounts.oauth2.revoke(driveToken);
   driveToken = null; driveFolderId = null;
   driveCurrentId = null; driveCurrentName = null;
-  driveConnectBtn.textContent = 'Sign in to Google';
-  driveConnectBtn.disabled = false;
-  drivePanelFooter.style.display = 'none';
-  driveFileList.innerHTML = '<div class="drive-empty">Sign in to access your IVX files in Google Drive</div>';
+  driveConnectBtn.style.display = '';
+  driveSignedInEl.style.display = 'none';
+  driveFileList.style.display = 'none';
+  driveFileList.innerHTML = '';
   driveFilename.textContent = '';
   driveFilename.className = 'drive-filename';
 });
@@ -6748,7 +7995,7 @@ async function driveListFiles() {
       item.dataset.id   = f.id;
       item.dataset.name = f.name;
       item.innerHTML = `<span class="drive-file-icon">◆</span><span class="drive-file-name">${escHtml(f.name.replace(/\.ivx$/, ''))}</span>`;
-      item.addEventListener('click', () => driveOpenFile(f.id, f.name));
+      item.addEventListener('click', () => { driveOpenFile(f.id, f.name); driveFileList.style.display = 'none'; });
       driveFileList.appendChild(item);
     }
   } catch(e) {

@@ -12,25 +12,23 @@
   <header id="hdr">
     <span class="logo">IVX</span>
     <div class="hsep"></div>
+    <div id="drive-hdr-controls">
+      <button id="drive-connect-btn" class="drive-btn drive-btn-primary drive-btn-hdr">Sign in to Google</button>
+      <div id="drive-hdr-signed-in" style="display:none">
+        <button id="drive-new-btn" class="drive-btn drive-btn-hdr">＋ New</button>
+        <button id="drive-save-btn" class="drive-btn drive-btn-hdr">↑ Save</button>
+        <div id="drive-file-dropdown-wrap">
+          <button id="drive-files-btn" class="drive-btn drive-btn-hdr">Files ▾</button>
+          <div id="drive-file-list" style="display:none"></div>
+        </div>
+        <button id="drive-signout-btn" class="drive-btn drive-btn-hdr drive-btn-muted">Sign out</button>
+      </div>
+    </div>
+    <div class="hsep"></div>
     <span id="drive-filename" class="drive-filename"></span>
     <div id="err"></div>
   </header>
   <div id="main-layout">
-    <!-- Google Drive file panel -->
-    <div id="drive-panel">
-      <div id="drive-panel-hdr">
-        <span class="drive-panel-title">Files</span>
-        <button id="drive-connect-btn" class="drive-btn drive-btn-primary">Sign in to Google</button>
-      </div>
-      <div id="drive-file-list">
-        <div class="drive-empty">Sign in to access your IVX files in Google Drive</div>
-      </div>
-      <div id="drive-panel-footer" style="display:none">
-        <button id="drive-new-btn" class="drive-btn">＋ New</button>
-        <button id="drive-save-btn" class="drive-btn">↑ Save</button>
-        <button id="drive-signout-btn" class="drive-btn drive-btn-muted">Sign out</button>
-      </div>
-    </div>
 
     <div id="ep">
       <div id="editor-sub">
@@ -69,6 +67,10 @@
         <span class="tbl"></span>
         <button class="kb teal-btn" data-ins="[]">[]</button>
         <button class="kb teal-btn" data-ins="{}">&#123;&#125;</button>
+        <span class="tbl"></span>
+        <button class="kb google-btn" data-ins="sheets ">sheets</button>
+        <button class="kb google-btn" data-ins="gmail to &quot;&quot; subject &quot;&quot; body ">gmail</button>
+        <button class="kb google-btn" data-ins='translate "" to "en"'>translate</button>
         <span style="flex:1"></span>
         <button class="kb" id="clr">Clear</button>
         </div>
@@ -85,6 +87,7 @@
             <button id="term-run">▶ Run</button>
             <button id="term-clear">Clear</button>
           </div>
+          <button id="term-minimize" title="Minimize terminal">—</button>
         </div>
         <div id="term-msgs"></div>
       </div>
@@ -124,6 +127,6 @@
   </div><!-- end main-layout -->
 </div>
 
-<script src="ivx.js"></script>
+<script src="ivx.js?v=2"></script>
 </body>
 </html>
