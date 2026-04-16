@@ -4994,7 +4994,7 @@ function renderBlockBg(blockBoxes, positions) {
     el('rect',{x,y:headerY,width:w,height:HEADER_H,rx:5,ry:5,
       fill:headerFill,'fill-opacity':headerFillOpacity,stroke:headerStroke,'stroke-opacity':headerStrokeOpacity,'stroke-width':1,'data-block-key':key,style:'cursor:grab'},g);
 
-    const lbl = el('text',{x:x+8,y:headerY+HEADER_H-5,'text-anchor':'start','font-size':10,fill:hasCustomColor?'#e5e7eb':'#9ca3af'},g);
+    const lbl = el('text',{x:x+8,y:headerY+HEADER_H-5,'text-anchor':'start','font-size':10,fill:hasCustomColor?'#e5e7eb':'#9ca3af','data-block-label-key':key,style:'cursor:text;user-select:none;'},g);
     const customLabel = (box.label || '').trim();
     lbl.textContent = customLabel || `Block ${key.split(',')[0]}…`;
   }
@@ -5150,6 +5150,9 @@ function renderGraph(graph) {
 
   renderEdges(graph, positions, hidden, [], blockBoxes);
 
+  // Stash blockBoxes so block label/color editing can find them
+  if (currentGraph) currentGraph.__blockBoxes = blockBoxes;
+
   let bbox;try{bbox=svg.getBBox();}catch(e){bbox={x:0,y:0,width:800,height:600};}if(!bbox||(!bbox.width&&!bbox.height))bbox={x:0,y:0,width:800,height:600};const pad=80;
   graphBounds={x:bbox.x-pad,y:bbox.y-pad,width:bbox.width+pad*2,height:bbox.height+pad*2};
   if (isFirstRender) { viewBox={...graphBounds}; isFirstRender=false; }
@@ -5224,6 +5227,14 @@ svg.addEventListener('mousedown', e => {
 });
 
 svg.addEventListener('contextmenu', e => {
+  // Block header right-click → color picker
+  const blockKey2 = e.target?.getAttribute?.('data-block-key');
+  if (blockKey2) {
+    const state = blockState.get(blockKey2);
+    showBlockColorPicker(e, blockKey2, state?.color ?? '');
+    return;
+  }
+
   const shape = e.target?.closest?.('ellipse,polygon,rect,circle');
   if (shape?.dataset.nodeId) {
     const nodeId = parseInt(shape.dataset.nodeId, 10);
@@ -5328,10 +5339,224 @@ function showEdgeMenu(e, fromId, toId) {
   setTimeout(()=>document.addEventListener('mousedown',function h(ev){ if(!menu.contains(ev.target)){menu.remove();document.removeEventListener('mousedown',h);} }),0);
 }
 
-// ─── Node click / edit ────────────────────────────────────────────────────────
+// ─── Block label + color write-back ──────────────────────────────────────────
+
+// Find the note line that controls a block and rewrite it.
+// The note line is the one immediately before the first node of the block
+// (possibly separated by blank lines), following the same logic as
+// readBlockDirectiveForPreprocessedLine.
+function commitBlockDirectiveToSource(key, newLabel, newColor) {
+  if (!currentGraph) return;
+  const sourceInfo = (typeof srcEl !== 'undefined' && srcEl)
+    ? buildPreprocessedToOriginalMap(srcEl.value) : null;
+  if (!sourceInfo) return;
+
+  const { originalLines, prepToOrig } = sourceInfo;
+
+  // Find first preprocessed line belonging to this block
+  const box = (currentGraph.__blockBoxes ?? []).find(b => b.key === key);
+  if (!box) return;
+
+  // Get the minimum graph line of nodes in this block
+  const ids = key.split(',').map(Number);
+  const lines = ids.map(id => currentGraph.nodes.find(n => n.id === id)?.line).filter(l => l != null);
+  if (!lines.length) return;
+  const firstPrepLine = Math.min(...lines);
+  const origLine = (firstPrepLine >= 0 && firstPrepLine < prepToOrig.length)
+    ? prepToOrig[firstPrepLine] : firstPrepLine;
+
+  // Walk backwards to find the note line (skip blanks)
+  let i = origLine - 1;
+  while (i >= 0 && isBlankLine(originalLines[i])) i--;
+  if (i < 0) return;
+
+  // Verify it's a note line, or find the first in a stack
+  let noteStart = i;
+  while (noteStart - 1 >= 0 && /^note\b/i.test(String(originalLines[noteStart - 1]).trim())) {
+    noteStart--;
+  }
+  if (!/^note\b/i.test(String(originalLines[noteStart]).trim())) return;
+
+  // Also verify there are 2+ blank lines above the note (block separator)
+  let blanksAbove = 0, j = noteStart - 1;
+  while (j >= 0 && isBlankLine(originalLines[j])) { blanksAbove++; j--; }
+  if (blanksAbove < 2) return;
+
+  // Build new note line: "note [color] label"
+  const parts = ['note'];
+  const trimColor = (newColor || '').trim();
+  const trimLabel = (newLabel || '').trim();
+  if (trimColor) parts.push(trimColor);
+  if (trimLabel) parts.push(trimLabel);
+  originalLines[noteStart] = parts.join(' ');
+
+  srcEl.value = originalLines.join('\n');
+  updateHighlight();
+  scheduleRender();
+
+  // Also update blockState so UI is instant
+  const state = blockState.get(key);
+  if (state) { state.label = trimLabel; state.color = trimColor; }
+}
+
+// ─── Block label click-to-edit ────────────────────────────────────────────────
+
+let activeBlockEdit = null;
+
+function startBlockLabelEdit(key, labelEl, currentLabel, currentColor) {
+  if (activeBlockEdit) activeBlockEdit.remove();
+
+  // Get SVG position of the label element
+  const bb = labelEl.getBBox();
+  const fo = el('foreignObject', {
+    x: bb.x - 4, y: bb.y - 2,
+    width: Math.max(bb.width + 60, 120), height: bb.height + 8
+  }, svg);
+
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.value = currentLabel;
+  inp.placeholder = 'Block label…';
+  Object.assign(inp.style, {
+    width: '100%', height: '100%', background: '#1e1e2e',
+    color: '#e5e7eb', border: '1px solid #89b4fa', borderRadius: '4px',
+    padding: '1px 4px', fontSize: '11px', fontFamily: 'inherit', outline: 'none',
+    boxSizing: 'border-box',
+  });
+
+  const commit = () => {
+    const newLabel = inp.value.trim();
+    fo.remove(); activeBlockEdit = null;
+    commitBlockDirectiveToSource(key, newLabel, currentColor);
+  };
+
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { fo.remove(); activeBlockEdit = null; }
+  });
+  inp.addEventListener('blur', commit);
+  fo.appendChild(inp);
+  activeBlockEdit = fo;
+  setTimeout(() => { inp.focus(); inp.select(); }, 10);
+}
+
+// ─── Block color right-click picker ──────────────────────────────────────────
+
+function showBlockColorPicker(e, key, currentColor) {
+  e.preventDefault();
+  // Remove any existing picker
+  document.getElementById('block-color-picker-popup')?.remove();
+
+  const popup = document.createElement('div');
+  popup.id = 'block-color-picker-popup';
+  Object.assign(popup.style, {
+    position: 'fixed', left: e.clientX + 'px', top: e.clientY + 'px',
+    background: '#1e1e2e', border: '1px solid #3a3a5c', borderRadius: '10px',
+    padding: '12px', boxShadow: '0 8px 24px rgba(0,0,0,.6)',
+    zIndex: '10000', display: 'flex', flexDirection: 'column', gap: '10px',
+    minWidth: '180px', fontFamily: 'system-ui, sans-serif',
+  });
+
+  // Title
+  const title = document.createElement('div');
+  title.textContent = 'Block color';
+  Object.assign(title.style, { fontSize: '11px', color: '#9ca3af', fontWeight: '600',
+    textTransform: 'uppercase', letterSpacing: '.06em' });
+  popup.appendChild(title);
+
+  // Color wheel input
+  const wheelRow = document.createElement('div');
+  Object.assign(wheelRow.style, { display: 'flex', alignItems: 'center', gap: '8px' });
+  const wheel = document.createElement('input');
+  wheel.type = 'color';
+  wheel.value = currentColor && /^#/.test(currentColor) ? currentColor : '#4f46e5';
+  Object.assign(wheel.style, { width: '48px', height: '48px', border: 'none',
+    borderRadius: '6px', cursor: 'pointer', background: 'none' });
+  wheelRow.appendChild(wheel);
+
+  // Hex input
+  const hexInp = document.createElement('input');
+  hexInp.type = 'text';
+  hexInp.value = wheel.value;
+  hexInp.maxLength = 7;
+  Object.assign(hexInp.style, { flex: '1', background: '#0f0f14', color: '#cdd6f4',
+    border: '1px solid #3a3a5c', borderRadius: '4px', padding: '4px 6px',
+    fontSize: '12px', fontFamily: 'monospace' });
+  wheelRow.appendChild(hexInp);
+  popup.appendChild(wheelRow);
+
+  // Sync wheel ↔ hex
+  wheel.addEventListener('input', () => { hexInp.value = wheel.value; });
+  hexInp.addEventListener('input', () => {
+    if (/^#[0-9a-fA-F]{6}$/.test(hexInp.value)) wheel.value = hexInp.value;
+  });
+
+  // Preset swatches
+  const presets = ['#4f46e5','#0891b2','#059669','#d97706','#dc2626','#7c3aed','#db2777','#374151'];
+  const swatchRow = document.createElement('div');
+  Object.assign(swatchRow.style, { display: 'flex', flexWrap: 'wrap', gap: '5px' });
+  for (const hex of presets) {
+    const sw = document.createElement('div');
+    Object.assign(sw.style, { width: '20px', height: '20px', borderRadius: '4px',
+      background: hex, cursor: 'pointer', border: '2px solid transparent',
+      transition: 'border-color .1s' });
+    sw.addEventListener('mouseenter', () => sw.style.borderColor = '#fff');
+    sw.addEventListener('mouseleave', () => sw.style.borderColor = 'transparent');
+    sw.addEventListener('click', () => { wheel.value = hex; hexInp.value = hex; });
+    swatchRow.appendChild(sw);
+  }
+  popup.appendChild(swatchRow);
+
+  // Clear color option
+  const clearBtn = document.createElement('button');
+  clearBtn.textContent = 'Clear color';
+  Object.assign(clearBtn.style, { background: 'none', border: '1px solid #3a3a5c',
+    color: '#9ca3af', borderRadius: '5px', padding: '4px 8px', cursor: 'pointer',
+    fontSize: '11px', fontFamily: 'inherit' });
+  clearBtn.addEventListener('click', () => {
+    const state = blockState.get(key);
+    const label = state?.label ?? '';
+    commitBlockDirectiveToSource(key, label, '');
+    popup.remove();
+  });
+  popup.appendChild(clearBtn);
+
+  // Apply button
+  const applyBtn = document.createElement('button');
+  applyBtn.textContent = 'Apply';
+  Object.assign(applyBtn.style, { background: '#1f4d6e', border: '1px solid #60a5fa',
+    color: '#93c5fd', borderRadius: '5px', padding: '5px 12px', cursor: 'pointer',
+    fontSize: '12px', fontFamily: 'inherit', fontWeight: '600' });
+  applyBtn.addEventListener('click', () => {
+    const state = blockState.get(key);
+    const label = state?.label ?? '';
+    commitBlockDirectiveToSource(key, label, hexInp.value.trim());
+    popup.remove();
+  });
+  popup.appendChild(applyBtn);
+
+  document.body.appendChild(popup);
+
+  // Close on outside click
+  setTimeout(() => {
+    document.addEventListener('mousedown', function handler(ev) {
+      if (!popup.contains(ev.target)) { popup.remove(); document.removeEventListener('mousedown', handler); }
+    });
+  }, 0);
+}
+
 svg.addEventListener('click', e => {
   // FIX: reset cancelNextClick atomically so one stale flag can't eat two events
   if (cancelNextClick) { cancelNextClick=false; return; }
+
+  // Block label text click → inline rename
+  const labelKey = e.target?.getAttribute?.('data-block-label-key');
+  if (labelKey) {
+    const state = blockState.get(labelKey);
+    startBlockLabelEdit(labelKey, e.target, state?.label ?? '', state?.color ?? '');
+    return;
+  }
+
   let el2=e.target;
   while (el2 && el2!==svg) {
     const id=el2.dataset?.nodeId;
