@@ -8063,7 +8063,6 @@ ${deleteSelf}
       if (node.trigger === 'sheets') services.add('sheets');
 
       // Scan body for everything else
-      console.log('[IVX scan] body nodes:', JSON.stringify((node.body||[]).map(n=>n?.type)));
       scanNode(node.body);
     });
 
@@ -8111,7 +8110,6 @@ ${setups.join('\n')}
     if (!token) throw new Error('Not signed in to Google');
 
     const { code, manifest } = buildProject(waitBlocks, globals);
-    console.log('[IVX deploy] manifest:', manifest);
 
     const API = 'https://script.googleapis.com/v1/projects';
     const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
@@ -8147,7 +8145,6 @@ ${setups.join('\n')}
     }
 
     const upJson = await upRes.json().catch(() => ({}));
-    console.log('[IVX deploy] upload response:', JSON.stringify(upJson).slice(0, 200));
 
     return { scriptId, triggerCount: waitBlocks.length };
   }
@@ -8571,14 +8568,9 @@ termRun.addEventListener('click', async () => {
   _running = false;
 
   // ── Deploy wait blocks to Apps Script ──────────────────────────────────────
-  console.log('[IVX deploy] starting, driveToken=', !!driveToken);
-  termInfo(`[debug] deploy check — driveToken=${!!driveToken}`);
   try {
     const parsed = parse(srcEl.value);
-    console.log('[IVX deploy] parsed, ast body length=', parsed.ast?.body?.length, 'types=', parsed.ast?.body?.map(n=>n.type));
     const waitBlocks = AppsScriptTranspiler.extractWaitBlocks(parsed.ast);
-    console.log('[IVX deploy] waitBlocks=', waitBlocks.length);
-    termInfo(`[debug] found ${waitBlocks.length} wait block(s)`);
     if (waitBlocks.length > 0 && driveToken) {
       termInfo(`⏳ Deploying ${waitBlocks.length} trigger${waitBlocks.length > 1 ? 's' : ''} to Google Apps Script…`);
       try {
