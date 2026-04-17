@@ -8530,9 +8530,12 @@ termRun.addEventListener('click', async () => {
   _running = false;
 
   // ── Deploy wait blocks to Apps Script ──────────────────────────────────────
+  termInfo(`[debug] deploy check running, driveToken=${!!driveToken}`);
   try {
     const parsed = parse(srcEl.value);
+    termInfo(`[debug] parsed ${parsed.ast?.body?.length} statements`);
     const waitBlocks = AppsScriptTranspiler.extractWaitBlocks(parsed.ast);
+    termInfo(`[debug] found ${waitBlocks.length} wait blocks`);
     if (waitBlocks.length > 0 && driveToken) {
       termInfo(`⏳ Deploying ${waitBlocks.length} trigger${waitBlocks.length > 1 ? 's' : ''} to Google Apps Script…`);
       try {
@@ -8550,10 +8553,16 @@ termRun.addEventListener('click', async () => {
       }
     } else if (waitBlocks.length > 0 && !driveToken) {
       termInfo(`ℹ Sign in to Google to deploy ${waitBlocks.length} wait trigger${waitBlocks.length > 1 ? 's' : ''}`);
+    } else if (waitBlocks.length === 0) {
+      // Debug: check if parse found any WaitBlock nodes
+      const allTypes = parsed.ast?.body?.map(n => n.type) ?? [];
+      if (srcEl.value.includes('wait ')) {
+        termInfo(`⚠ wait block detected in source but not parsed — node types: ${allTypes.join(', ')}`);
+      }
     }
   } catch(e) {
-    // Don't surface Apps Script errors as fatal — main program already ran
-    console.warn('Apps Script deploy error:', e);
+    termError(`Apps Script setup error: ${e.message}`);
+    console.error('Apps Script deploy error:', e);
   }
 
   // Hand recorded trace to the playback system
