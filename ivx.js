@@ -8154,19 +8154,82 @@ ${setups.join('\n')}
       throw new Error('Apps Script update failed: ' + (err?.error?.message ?? upRes.statusText));
     }
 
-    // ── Step 3: run ivxSetupTriggers() automatically ──────────────────────────
-    const runRes = await fetch('https://script.googleapis.com/v1/scripts/' + scriptId + ':run', {
-      method: 'POST', headers,
-      body: JSON.stringify({ function: 'ivxSetupTriggers', devMode: false }),
-    });
-    if (!runRes.ok) {
-      const err = await runRes.json().catch(() => ({}));
-      // Not fatal — user can still run it manually
-      throw new Error('Triggers installed but auto-run failed: ' + (err?.error?.message ?? runRes.statusText) + ' — open Apps Script and run ivxSetupTriggers() manually');
+    // ── Step 3: install triggers directly via API ─────────────────────────────
+    // First remove all existing IVX triggers for this project
+    const listRes = await fetch(API + '/' + scriptId + '/projects/triggers', { headers }).catch(() => null);
+
+    // Delete old triggers
+    const triggersRes = await fetch('https://script.googleapis.com/v1/projects/' + scriptId + '/triggers', { headers });
+    if (triggersRes.ok) {
+      const triggersData = await triggersRes.json();
+      for (const t of (triggersData.triggers || [])) {
+        if (t.functionName && t.functionName.startsWith('ivxTrigger_')) {
+          await fetch('https://script.googleapis.com/v1/projects/' + scriptId + '/triggers/' + t.triggerId, {
+            method: 'DELETE', headers,
+          });
+        }
+      }
     }
-    const runData = await runRes.json();
-    if (runData.error) {
-      throw new Error('ivxSetupTriggers failed: ' + (runData.error.message ?? JSON.stringify(runData.error)));
+
+    // Create new triggers for each wait block
+    for (let i = 0; i < waitBlocks.length; i++) {
+      const node = waitBlocks[i];
+      const fnName = 'ivxTrigger_' + i;
+      let triggerBody = null;
+
+      if (node.trigger === 'time') {
+        const timeStr = node.source?.value ?? '09:00';
+        const [hh, mm] = timeStr.split(':');
+        // Calculate the target time in UTC from the user's local timezone
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const now = new Date();
+        const target = new Date(now.toLocaleDateString('en-US', { timeZone: tz }) + ' ' + timeStr);
+        const localNow = new Date(now.toLocaleString('en-US', { timeZone: tz }));
+        const tzDiff = now - localNow;
+        let utcTarget = new Date(target.getTime() + tzDiff);
+        if (utcTarget < now) utcTarget.setDate(utcTarget.getDate() + 1);
+
+        triggerBody = {
+          scriptId,
+          functionName: fnName,
+          eventType: 'CLOCK',
+          scheduleConfig: {
+            scheduleType: node.recurring ? 'DAILY' : 'ONCE',
+            startTime: {
+              hours: utcTarget.getUTCHours(),
+              minutes: utcTarget.getUTCMinutes(),
+            },
+            endTime: node.recurring ? null : {
+              hours: utcTarget.getUTCHours(),
+              minutes: utcTarget.getUTCMinutes() + 1,
+            },
+          },
+        };
+      } else if (node.trigger === 'sheets') {
+        const sheetName = node.source?.value ?? '';
+        triggerBody = {
+          scriptId,
+          functionName: fnName,
+          eventType: 'ON_EDIT',
+        };
+      } else if (node.trigger === 'email') {
+        // Gmail has no push trigger — poll every minute
+        triggerBody = {
+          scriptId,
+          functionName: fnName,
+          eventType: 'CLOCK',
+          scheduleConfig: {
+            scheduleType: node.recurring ? 'EVERY_5_MINUTES' : 'EVERY_MINUTE',
+          },
+        };
+      }
+
+      if (triggerBody) {
+        await fetch('https://script.googleapis.com/v1/projects/' + scriptId + '/triggers', {
+          method: 'POST', headers,
+          body: JSON.stringify(triggerBody),
+        });
+      }
     }
 
     return { scriptId, triggerCount: waitBlocks.length };
