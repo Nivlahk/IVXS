@@ -8083,23 +8083,24 @@ ${setups.join('\n')}
     if (!token) throw new Error('Not signed in to Google');
 
     const { code, manifest } = buildProject(waitBlocks, globals);
+    console.log('[IVX deploy] manifest:', manifest);
 
     const API = 'https://script.googleapis.com/v1/projects';
     const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
 
-    let scriptId = sessionStorage.getItem('ivx_script_id');
-    if (!scriptId) {
-      const res = await fetch(API, {
-        method: 'POST', headers,
-        body: JSON.stringify({ title: 'IVX Triggers' }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(`Apps Script create failed: ${err?.error?.message ?? res.statusText}`);
-      }
-      scriptId = (await res.json()).scriptId;
-      sessionStorage.setItem('ivx_script_id', scriptId);
+    // Always create a fresh project to avoid stale cache issues
+    sessionStorage.removeItem('ivx_script_id');
+
+    const res = await fetch(API, {
+      method: 'POST', headers,
+      body: JSON.stringify({ title: 'IVX Triggers' }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(`Apps Script create failed: ${err?.error?.message ?? res.statusText}`);
     }
+    const scriptId = (await res.json()).scriptId;
+    sessionStorage.setItem('ivx_script_id', scriptId);
 
     const upRes = await fetch(`${API}/${scriptId}/content`, {
       method: 'PUT', headers,
@@ -8114,10 +8115,6 @@ ${setups.join('\n')}
     if (!upRes.ok) {
       const err = await upRes.json().catch(() => ({}));
       console.error('[IVX deploy] upload failed:', err);
-      if (err?.error?.code === 404) {
-        sessionStorage.removeItem('ivx_script_id');
-        throw new Error('Script project not found — will recreate on next run');
-      }
       throw new Error(`Apps Script update failed: ${err?.error?.message ?? upRes.statusText}`);
     }
 
