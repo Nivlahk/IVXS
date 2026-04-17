@@ -8060,7 +8060,7 @@ ${setups.join('\n')}
     if (services.has('sheets')) oauthScopes.push('https://www.googleapis.com/auth/spreadsheets');
 
     const manifest = JSON.stringify({
-      timeZone: 'America/New_York',
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       dependencies: {},
       exceptionLogging: 'STACKDRIVER',
       runtimeVersion: 'V8',

@@ -229,8 +229,19 @@ give x + 1
 ```
 class Dog
   fun init(name, size)
-    make self.name name
-    make self.size size
+
+  fun speak()
+    give "Woof! I am {self.name}"
+
+make d Dog("Rex", 3)
+say d.speak()
+```
+
+If you want to modify the parameters, do so directly
+```
+class Dog
+  fun init(name, size * 2)
+
   fun speak()
     give "Woof! I am {self.name}"
 
@@ -242,7 +253,7 @@ say d.speak()
 ```
 class Animal
   fun init(name)
-    make self.name name
+
   fun speak()
     give self.name
 
@@ -312,9 +323,7 @@ say response
 Call an AI model. Returns the response as a string.
 ```
 make key "your-api-key"
-use key
-
-make result ask gemini "Summarise the history of computing in 3 sentences"
+make result ask gemini "Summarise the history of computing in 3 sentences" use key
 say result
 ```
 
@@ -488,4 +497,19 @@ sheets "Name"         open spreadsheet
 use key               set API key
 end                   terminate path
 wait 5                pause
+```
+
+```
+Zen of IVX
+
+Simple is better than complex.
+Complex is better than complicated.
+Fast is better than slow.
+There is no conflict between speed and readability.
+There is no conflict between space and time.
+Special cases aren’t special enough to break the rules.
+Modularity is better than singularity.
+Visual clarity is as important as textual clarity.
+Flow should be obvious, not hidden.
+Tooling is part of the language, not an afterthought.
 ```
