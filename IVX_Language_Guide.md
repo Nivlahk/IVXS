@@ -507,9 +507,12 @@ Complex is better than complicated.
 Fast is better than slow.
 There is no conflict between speed and readability.
 There is no conflict between space and time.
-Special cases aren’t special enough to break the rules.
+Special cases are not special enough to break the rules.
 Modularity is better than singularity.
+But singularity is a foundation for modularity.
 Visual clarity is as important as textual clarity.
 Flow should be obvious, not hidden.
+Programming is language applied to a finite problem space.
+Programming languages are not languages, but lenses.
 Tooling is part of the language, not an afterthought.
 ```

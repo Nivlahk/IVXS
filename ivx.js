@@ -7967,7 +7967,7 @@ const AppsScriptTranspiler = (() => {
     if (trigger === 'time') {
       const timeStr = node.source?.value ?? '09:00';
       const [hh, mm] = timeStr.split(':');
-      const nearTime = `new Date(new Date().getTime() + 5000)`; // 5s from now for one-shot
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       if (recurring) {
         triggerSetup = `  ScriptApp.newTrigger('${fnName}')
     .timeBased()
@@ -7976,9 +7976,17 @@ const AppsScriptTranspiler = (() => {
     .everyDays(1)
     .create();`;
       } else {
-        // One-shot: schedule for the specific time today (or tomorrow if past)
-        triggerSetup = `  var _d = new Date();
+        // Build the target date string in the user's local timezone
+        // so Apps Script schedules it correctly regardless of server timezone
+        triggerSetup = `  // Target: ${timeStr} in ${tz}
+  var _now = new Date();
+  var _tzOffset = new Date().toLocaleString('en-US', {timeZone: '${tz}', hour12: false, hour: '2-digit', minute: '2-digit'});
+  var _d = new Date();
   _d.setHours(${parseInt(hh,10)}, ${parseInt(mm||'0',10)}, 0, 0);
+  // Adjust for timezone offset between UTC and ${tz}
+  var _localNow = new Date(_now.toLocaleString('en-US', {timeZone: '${tz}'}));
+  var _tzDiff = _now - _localNow;
+  _d = new Date(_d.getTime() + _tzDiff);
   if (_d < new Date()) _d.setDate(_d.getDate() + 1);
   ScriptApp.newTrigger('${fnName}').timeBased().at(_d).create();`;
       }
@@ -8105,12 +8113,16 @@ ${setups.join('\n')}
 
     if (!upRes.ok) {
       const err = await upRes.json().catch(() => ({}));
+      console.error('[IVX deploy] upload failed:', err);
       if (err?.error?.code === 404) {
         sessionStorage.removeItem('ivx_script_id');
         throw new Error('Script project not found — will recreate on next run');
       }
       throw new Error(`Apps Script update failed: ${err?.error?.message ?? upRes.statusText}`);
     }
+
+    const upJson = await upRes.json().catch(() => ({}));
+    console.log('[IVX deploy] upload response:', JSON.stringify(upJson).slice(0, 200));
 
     return { scriptId, triggerCount: waitBlocks.length };
   }
