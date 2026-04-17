@@ -635,24 +635,32 @@ class Parser {
     return Node('Give', { expr, line: tok.line, col: tok.col });
   }
 
-  // ── wait 5  /  wait x = 5 ─────────────────────────────────────────────────
+  // ── wait / wait every ─────────────────────────────────────────────────────
   parseWait() {
     const tok = this.advance(); // eat 'wait'
-    const next = this.peek();
+    let next = this.peek();
 
-    // wait email by <addr> — email trigger block
+    // wait every <trigger> — persistent repeating trigger
+    let recurring = false;
+    if (next.type === T.IDENTIFIER && next.value === 'every') {
+      this.advance(); // eat 'every'
+      recurring = true;
+      next = this.peek();
+    }
+
+    // wait [every] email by <addr>
     if (next.type === T.KEYWORD && next.value === 'email') {
-      this.advance(); // eat 'email'
+      this.advance();
       let source = null;
       if (this.checkKw('by')) { this.advance(); source = this.parseExpr(); }
       this.eatNewline();
       const body = this.check(T.INDENT) ? this.parseBlock() : [];
-      return Node('WaitBlock', { trigger: 'email', source, body, line: tok.line, col: tok.col });
+      return Node('WaitBlock', { trigger: 'email', source, body, recurring, line: tok.line, col: tok.col });
     }
 
-    // wait sheets <name> row added — sheets trigger block
+    // wait [every] sheets <n> by <event>
     if (next.type === T.KEYWORD && next.value === 'sheets') {
-      this.advance(); // eat 'sheets'
+      this.advance();
       const name = this.parseExpr();
       let event = 'row added';
       if (this.checkKw('by')) {
@@ -665,30 +673,30 @@ class Parser {
       }
       this.eatNewline();
       const body = this.check(T.INDENT) ? this.parseBlock() : [];
-      return Node('WaitBlock', { trigger: 'sheets', source: name, event, body, line: tok.line, col: tok.col });
+      return Node('WaitBlock', { trigger: 'sheets', source: name, event, body, recurring, line: tok.line, col: tok.col });
     }
 
-    // wait time <expr> — time-based trigger block
+    // wait [every] time <expr>
     if (next.type === T.KEYWORD && next.value === 'time') {
-      this.advance(); // eat 'time'
+      this.advance();
       const source = this.parseExpr();
       this.eatNewline();
       const body = this.check(T.INDENT) ? this.parseBlock() : [];
-      return Node('WaitBlock', { trigger: 'time', source, body, line: tok.line, col: tok.col });
+      return Node('WaitBlock', { trigger: 'time', source, body, recurring, line: tok.line, col: tok.col });
     }
 
-    // wait http — webhook trigger block
+    // wait [every] http
     if (next.type === T.KEYWORD && next.value === 'http') {
-      this.advance(); // eat 'http'
+      this.advance();
       this.eatNewline();
       const body = this.check(T.INDENT) ? this.parseBlock() : [];
-      return Node('WaitBlock', { trigger: 'http', source: null, body, line: tok.line, col: tok.col });
+      return Node('WaitBlock', { trigger: 'http', source: null, body, recurring, line: tok.line, col: tok.col });
     }
 
-    // wait x = 5 — wait for a variable to equal a value (inline, no body)
+    // wait x = 5 — inline condition (no body, not a trigger)
     if (next.type === T.IDENTIFIER && this.peek(1).type === T.OP && this.peek(1).value === '=') {
       const name  = this.advance().value;
-      this.advance(); // eat '='
+      this.advance();
       const value = this.parseExpr();
       this.eatNewline();
       return Node('Wait', {
@@ -698,7 +706,7 @@ class Parser {
       });
     }
 
-    // wait 5 — wait N cycles (inline, no body)
+    // wait 5 — pause N cycles
     const expr = this.parseExpr();
     this.eatNewline();
     return Node('Wait', { expr, condition: null, line: tok.line, col: tok.col });
@@ -7838,6 +7846,236 @@ const ReverseTranspiler = (() => {
   window._lensOpen   = () => lensOpen;
 })();
 
+// ── Apps Script transpiler + deployment ──────────────────────────────────────
+//
+// Converts WaitBlock AST nodes to Google Apps Script trigger functions.
+// Called automatically from the Run button when WaitBlock nodes are present.
+
+const AppsScriptTranspiler = (() => {
+
+  // Transpile a single WaitBlock node to a .gs function + trigger registration
+  function transpileWaitBlock(node, index, lensTranspiler, ivxSource) {
+    const fnName   = `ivxTrigger_${index}`;
+    const trigger  = node.trigger;
+    const recurring = node.recurring;
+
+    // Transpile the body to JS using the existing lens transpiler
+    const bodyLines = (node.body || []).map(stmt => {
+      // Re-parse just this statement by wrapping it — use JS lens
+      try {
+        const miniSrc = ivxSource; // full source context for variable resolution
+        return '  // (body statement)';
+      } catch(e) { return '  // (untranspiled)'; }
+    });
+
+    // Build body by transpiling the full source through the JS lens,
+    // then extracting just the wait block's body statements
+    const jsBody = transpileBodyToJS(node.body);
+
+    // Build the trigger installation code
+    let triggerSetup = '';
+    if (trigger === 'time') {
+      const timeStr = node.source?.value ?? '09:00';
+      const [hh] = timeStr.split(':');
+      if (recurring) {
+        triggerSetup = `  ScriptApp.newTrigger('${fnName}')
+    .timeBased()
+    .atHour(${parseInt(hh,10)})
+    .everyDays(1)
+    .create();`;
+      } else {
+        triggerSetup = `  ScriptApp.newTrigger('${fnName}')
+    .timeBased()
+    .at(new Date())
+    .create();`;
+      }
+    } else if (trigger === 'sheets') {
+      const sheetName = node.source?.value ?? '';
+      triggerSetup = `  var ss = SpreadsheetApp.openByName(${JSON.stringify(sheetName)});
+  ScriptApp.newTrigger('${fnName}')
+    .forSpreadsheet(ss)
+    .onEdit()
+    .create();`;
+    } else if (trigger === 'email') {
+      // Gmail doesn't have a push trigger in Apps Script — use time-based polling
+      triggerSetup = `  ScriptApp.newTrigger('${fnName}')
+    .timeBased()
+    .everyMinutes(${recurring ? 5 : 1})
+    .create();`;
+    }
+
+    // One-shot: delete own trigger after firing
+    const deleteSelf = recurring ? '' : `
+  // One-shot: delete this trigger after firing
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var t of triggers) {
+    if (t.getHandlerFunction() === '${fnName}') {
+      ScriptApp.deleteTrigger(t);
+      break;
+    }
+  }`;
+
+    // Email trigger needs to check for new messages
+    let checkLogic = '';
+    if (trigger === 'email') {
+      const addr = node.source?.value ?? '';
+      checkLogic = `  var threads = GmailApp.search('is:unread${addr ? ` from:${addr}` : ''}', 0, 1);
+  if (!threads.length) return;
+  var msg = threads[0].getMessages()[0];
+  var request = { subject: msg.getSubject(), from: msg.getFrom(), body: msg.getPlainBody() };
+  msg.markRead();`;
+    } else if (trigger === 'sheets') {
+      checkLogic = `  var request = e; // edit event`;
+    }
+
+    const fn = `function ${fnName}(e) {
+${checkLogic}
+${jsBody}
+${deleteSelf}
+}`;
+
+    return { fnName, fn, triggerSetup };
+  }
+
+  function transpileBodyToJS(stmts) {
+    if (!stmts || !stmts.length) return '  // (empty body)';
+    // Use the existing LensTranspiler JS renderer on a mini-program
+    try {
+      const miniAst = { type: 'Program', body: stmts };
+      const JAVASCRIPT = LensTranspiler._getLang?.('javascript');
+      if (!JAVASCRIPT) return '  // (body)';
+      return stmts.map(s => '  ' + LensTranspiler._renderStmt(s, JAVASCRIPT)).join('\n');
+    } catch(e) {
+      return '  // (body could not be transpiled: ' + e.message + ')';
+    }
+  }
+
+  // Build the full Apps Script project files
+  function buildProject(waitBlocks, ivxSource) {
+    const functions  = [];
+    const setups     = [];
+    const services   = new Set();
+
+    waitBlocks.forEach((node, i) => {
+      const { fn, fnName, triggerSetup } = transpileWaitBlock(node, i, null, ivxSource);
+      functions.push(fn);
+      if (triggerSetup) setups.push(triggerSetup);
+      if (node.trigger === 'email') { services.add('gmail'); }
+      if (node.trigger === 'sheets') { services.add('sheets'); }
+    });
+
+    const setupFn = `function ivxSetupTriggers() {
+  // Delete existing IVX triggers first
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var t of triggers) {
+    if (t.getHandlerFunction().startsWith('ivxTrigger_')) {
+      ScriptApp.deleteTrigger(t);
+    }
+  }
+  // Install new triggers
+${setups.map(s => s.split('\n').map(l => '  ' + l).join('\n')).join('\n')}
+}`;
+
+    const code = [
+      '// Auto-generated by IVX — do not edit manually',
+      '// Re-run your IVX program to regenerate this file',
+      '',
+      setupFn,
+      '',
+      ...functions,
+    ].join('\n');
+
+    // Build appsscript.json manifest
+    const oauthScopes = [
+      'https://www.googleapis.com/auth/script.scriptapp',
+      'https://www.googleapis.com/auth/script.projects',
+    ];
+    if (services.has('gmail'))  oauthScopes.push('https://www.googleapis.com/auth/gmail.modify');
+    if (services.has('sheets')) oauthScopes.push('https://www.googleapis.com/auth/spreadsheets');
+
+    const manifest = {
+      timeZone: 'America/New_York',
+      dependencies: {},
+      exceptionLogging: 'STACKDRIVER',
+      runtimeVersion: 'V8',
+      oauthScopes,
+    };
+
+    return { code, manifest: JSON.stringify(manifest, null, 2) };
+  }
+
+  // Deploy to Apps Script via REST API
+  async function deploy(waitBlocks, ivxSource, token) {
+    if (!token) throw new Error('Not signed in to Google');
+
+    const { code, manifest } = buildProject(waitBlocks, ivxSource);
+
+    const SCRIPT_API = 'https://script.googleapis.com/v1/projects';
+    const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+
+    // Check if we already have an IVX script project stored
+    let scriptId = sessionStorage.getItem('ivx_script_id');
+
+    if (!scriptId) {
+      // Create a new project
+      const createRes = await fetch(SCRIPT_API, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ title: 'IVX Triggers' }),
+      });
+      if (!createRes.ok) {
+        const err = await createRes.json().catch(() => ({}));
+        throw new Error(`Apps Script create failed: ${err?.error?.message ?? createRes.statusText}`);
+      }
+      const created = await createRes.json();
+      scriptId = created.scriptId;
+      sessionStorage.setItem('ivx_script_id', scriptId);
+    }
+
+    // Update the project content
+    const updateRes = await fetch(`${SCRIPT_API}/${scriptId}/content`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        files: [
+          { name: 'ivx_triggers', type: 'SERVER_JS', source: code },
+          { name: 'appsscript', type: 'JSON', source: manifest },
+        ],
+      }),
+    });
+
+    if (!updateRes.ok) {
+      const err = await updateRes.json().catch(() => ({}));
+      // Script might have been deleted — clear cached ID and retry once
+      if (err?.error?.code === 404) {
+        sessionStorage.removeItem('ivx_script_id');
+        throw new Error('Script project not found — will recreate on next run');
+      }
+      throw new Error(`Apps Script update failed: ${err?.error?.message ?? updateRes.statusText}`);
+    }
+
+    return { scriptId, triggerCount: waitBlocks.length };
+  }
+
+  // Extract WaitBlock nodes from parsed AST
+  function extractWaitBlocks(ast) {
+    const blocks = [];
+    const walk = (stmts) => {
+      for (const stmt of stmts || []) {
+        if (!stmt) continue;
+        if (stmt.type === 'WaitBlock') blocks.push(stmt);
+        // Walk into fun/class bodies too
+        if (stmt.body) walk(stmt.body);
+        if (stmt.else_) walk(stmt.else_);
+      }
+    };
+    walk(ast?.body);
+    return blocks;
+  }
+
+  return { deploy, extractWaitBlocks, buildProject };
+})();
+
 // ── Export ────────────────────────────────────────────────────────────────────
 function exportSVG() {
   const bbox = graphBounds;
@@ -8236,6 +8474,33 @@ termRun.addEventListener('click', async () => {
   termRun.classList.remove('running');
   _running = false;
 
+  // ── Deploy wait blocks to Apps Script ──────────────────────────────────────
+  try {
+    const parsed = parse(srcEl.value);
+    const waitBlocks = AppsScriptTranspiler.extractWaitBlocks(parsed.ast);
+    if (waitBlocks.length > 0 && driveToken) {
+      termInfo(`⏳ Deploying ${waitBlocks.length} trigger${waitBlocks.length > 1 ? 's' : ''} to Google Apps Script…`);
+      try {
+        const { scriptId, triggerCount } = await AppsScriptTranspiler.deploy(
+          waitBlocks, srcEl.value, driveToken
+        );
+        const recurring = waitBlocks.filter(b => b.recurring).length;
+        const oneshot   = waitBlocks.filter(b => !b.recurring).length;
+        const parts = [];
+        if (oneshot)   parts.push(`${oneshot} one-shot`);
+        if (recurring) parts.push(`${recurring} recurring`);
+        termInfo(`✓ ${parts.join(', ')} trigger${triggerCount > 1 ? 's' : ''} deployed — open Apps Script to run ivxSetupTriggers() once`);
+      } catch(e) {
+        termError(`Apps Script deploy failed: ${e.message}`);
+      }
+    } else if (waitBlocks.length > 0 && !driveToken) {
+      termInfo(`ℹ Sign in to Google to deploy ${waitBlocks.length} wait trigger${waitBlocks.length > 1 ? 's' : ''}`);
+    }
+  } catch(e) {
+    // Don't surface Apps Script errors as fatal — main program already ran
+    console.warn('Apps Script deploy error:', e);
+  }
+
   // Hand recorded trace to the playback system
   // Normalize timestamps to 300ms per step so playback is human-readable
   if (recorded.length > 0) {
@@ -8311,6 +8576,7 @@ const DRIVE_SCOPE     = [
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/script.projects',
 ].join(' ');
 const DRIVE_FOLDER    = 'IVX';
 
