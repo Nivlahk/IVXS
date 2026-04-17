@@ -8117,6 +8117,10 @@ ${setups.join('\n')}
     const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
 
     // Get or create the persistent IVX script project
+    // Seed localStorage with known script ID if not already set
+    if (!localStorage.getItem('ivx_script_id')) {
+      localStorage.setItem('ivx_script_id', '1ozcWRzBjlR8fltP3yM5WK2EJryw57mKJq9xgKdaq6iMOjK1spLib1VJf');
+    }
     let scriptId = await _loadScriptId(token, DRIVE);
     if (scriptId) {
       const check = await fetch(API + '/' + scriptId, { headers });
@@ -8124,14 +8128,18 @@ ${setups.join('\n')}
     }
     // If no stored ID, search Apps Script for existing 'IVX Triggers' project
     if (!scriptId) {
-      const searchRes = await fetch(API + '?pageSize=50', { headers });
-      if (searchRes.ok) {
-        const searchData = await searchRes.json();
-        const existing = (searchData.projects || []).find(p => p.title === 'IVX Triggers');
-        if (existing) {
-          scriptId = existing.scriptId;
-          await _saveScriptId(scriptId, token, DRIVE, UPLOAD);
+      try {
+        const searchRes = await fetch(API + '?pageSize=50', { headers });
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          const existing = (searchData.projects || []).find(p => p.title === 'IVX Triggers');
+          if (existing) {
+            scriptId = existing.scriptId;
+            await _saveScriptId(scriptId, token, DRIVE, UPLOAD);
+          }
         }
+      } catch(e) {
+        console.warn('[IVX] project search failed (CORS?):', e.message);
       }
     }
     if (!scriptId) {
