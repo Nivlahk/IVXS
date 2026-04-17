@@ -8038,9 +8038,41 @@ ${deleteSelf}
       const { fn, fnName, triggerSetup } = transpileWaitBlock(node, i, globals);
       functions.push(fn);
       if (triggerSetup) setups.push(triggerSetup);
+
+      // Scan trigger type AND entire body recursively for every service used
+      const scanNode = n => {
+        if (!n || typeof n !== 'object') return;
+        if (Array.isArray(n)) { n.forEach(scanNode); return; }
+        switch (n.type) {
+          case 'Gmail':       services.add('gmail');  break;
+          case 'SheetsOpen':  services.add('sheets'); break;
+          case 'Save':        services.add('drive');  break;
+        }
+        // Recurse into all child arrays
+        if (Array.isArray(n.body))    n.body.forEach(scanNode);
+        if (Array.isArray(n.else_))   n.else_.forEach(scanNode);
+        if (Array.isArray(n.params))  n.params.forEach(scanNode);
+        if (n.expr)      scanNode(n.expr);
+        if (n.condition) scanNode(n.condition);
+        if (n.left)      scanNode(n.left);
+        if (n.right)     scanNode(n.right);
+      };
+
+      // Trigger type adds its own service
       if (node.trigger === 'email')  services.add('gmail');
       if (node.trigger === 'sheets') services.add('sheets');
+
+      // Scan body for everything else
+      scanNode(node.body);
     });
+
+    const oauthScopes = [
+      'https://www.googleapis.com/auth/script.scriptapp',
+      'https://www.googleapis.com/auth/script.projects',
+    ];
+    if (services.has('gmail'))  oauthScopes.push('https://www.googleapis.com/auth/gmail.modify');
+    if (services.has('sheets')) oauthScopes.push('https://www.googleapis.com/auth/spreadsheets');
+    if (services.has('drive'))  oauthScopes.push('https://www.googleapis.com/auth/drive.file');
 
     const setupFn = `function ivxSetupTriggers() {
   // Remove existing IVX triggers
@@ -8060,12 +8092,7 @@ ${setups.join('\n')}
       ...functions,
     ].join('\n');
 
-    const oauthScopes = [
-      'https://www.googleapis.com/auth/script.scriptapp',
-      'https://www.googleapis.com/auth/script.projects',
-    ];
-    if (services.has('gmail'))  oauthScopes.push('https://www.googleapis.com/auth/gmail.modify');
-    if (services.has('sheets')) oauthScopes.push('https://www.googleapis.com/auth/spreadsheets');
+    // Scopes populated by body scanner above
 
     const manifest = JSON.stringify({
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
