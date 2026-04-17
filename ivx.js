@@ -8111,24 +8111,32 @@ ${setups.join('\n')}
 
     const { code, manifest } = buildProject(waitBlocks, globals);
 
-    const API = 'https://script.googleapis.com/v1/projects';
+    const API    = 'https://script.googleapis.com/v1/projects';
+    const DRIVE  = 'https://www.googleapis.com/drive/v3';
+    const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
     const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
 
-    // Always create a fresh project to avoid stale cache issues
-    sessionStorage.removeItem('ivx_script_id');
-
-    const res = await fetch(API, {
-      method: 'POST', headers,
-      body: JSON.stringify({ title: 'IVX Triggers' }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(`Apps Script create failed: ${err?.error?.message ?? res.statusText}`);
+    // Get or create the persistent IVX script project
+    let scriptId = await _loadScriptId(token, DRIVE);
+    if (scriptId) {
+      const check = await fetch(API + '/' + scriptId, { headers });
+      if (!check.ok) scriptId = null;
     }
-    const scriptId = (await res.json()).scriptId;
-    sessionStorage.setItem('ivx_script_id', scriptId);
+    if (!scriptId) {
+      const res = await fetch(API, {
+        method: 'POST', headers,
+        body: JSON.stringify({ title: 'IVX Triggers' }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error('Apps Script create failed: ' + (err?.error?.message ?? res.statusText));
+      }
+      scriptId = (await res.json()).scriptId;
+      await _saveScriptId(scriptId, token, DRIVE, UPLOAD);
+    }
 
-    const upRes = await fetch(`${API}/${scriptId}/content`, {
+    // Update project content
+    const upRes = await fetch(API + '/' + scriptId + '/content', {
       method: 'PUT', headers,
       body: JSON.stringify({
         files: [
@@ -8137,16 +8145,55 @@ ${setups.join('\n')}
         ],
       }),
     });
-
     if (!upRes.ok) {
       const err = await upRes.json().catch(() => ({}));
-      console.error('[IVX deploy] upload failed:', err);
-      throw new Error(`Apps Script update failed: ${err?.error?.message ?? upRes.statusText}`);
+      if (err?.error?.code === 404) {
+        await _saveScriptId(null, token, DRIVE, UPLOAD);
+        throw new Error('Script project was deleted — run again to recreate');
+      }
+      throw new Error('Apps Script update failed: ' + (err?.error?.message ?? upRes.statusText));
     }
 
-    const upJson = await upRes.json().catch(() => ({}));
-
     return { scriptId, triggerCount: waitBlocks.length };
+  }
+
+  // Persist script ID in Drive as ivx_config.json
+  async function _loadScriptId(token, DRIVE) {
+    const h = { 'Authorization': 'Bearer ' + token };
+    const q = encodeURIComponent("name='ivx_config.json' and trashed=false");
+    const res = await fetch(DRIVE + '/files?q=' + q + '&fields=files(id)&spaces=drive', { headers: h });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.files || !data.files.length) return null;
+    const content = await fetch(DRIVE + '/files/' + data.files[0].id + '?alt=media', { headers: h });
+    if (!content.ok) return null;
+    try { const j = await content.json(); return j.scriptId || null; } catch(e) { return null; }
+  }
+
+  async function _saveScriptId(scriptId, token, DRIVE, UPLOAD) {
+    const h = { 'Authorization': 'Bearer ' + token };
+    const body = JSON.stringify({ scriptId: scriptId });
+    const q = encodeURIComponent("name='ivx_config.json' and trashed=false");
+    const res = await fetch(DRIVE + '/files?q=' + q + '&fields=files(id)&spaces=drive', { headers: h });
+    const data = res.ok ? await res.json() : {};
+    if (data.files && data.files.length) {
+      await fetch(UPLOAD + '/files/' + data.files[0].id + '?uploadType=media', {
+        method: 'PATCH',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: body,
+      });
+    } else {
+      const meta = JSON.stringify({ name: 'ivx_config.json', mimeType: 'application/json' });
+      const boundary = 'ivxboundary';
+      const form = '--' + boundary + '\r\nContent-Type: application/json\r\n\r\n' + meta +
+                   '\r\n--' + boundary + '\r\nContent-Type: application/json\r\n\r\n' + body +
+                   '\r\n--' + boundary + '--';
+      await fetch(UPLOAD + '/files?uploadType=multipart', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'multipart/related; boundary=' + boundary },
+        body: form,
+      });
+    }
   }
 
   function extractWaitBlocks(ast) {
