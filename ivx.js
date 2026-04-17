@@ -8154,6 +8154,21 @@ ${setups.join('\n')}
       throw new Error('Apps Script update failed: ' + (err?.error?.message ?? upRes.statusText));
     }
 
+    // ── Step 3: run ivxSetupTriggers() automatically ──────────────────────────
+    const runRes = await fetch('https://script.googleapis.com/v1/scripts/' + scriptId + ':run', {
+      method: 'POST', headers,
+      body: JSON.stringify({ function: 'ivxSetupTriggers', devMode: false }),
+    });
+    if (!runRes.ok) {
+      const err = await runRes.json().catch(() => ({}));
+      // Not fatal — user can still run it manually
+      throw new Error('Triggers installed but auto-run failed: ' + (err?.error?.message ?? runRes.statusText) + ' — open Apps Script and run ivxSetupTriggers() manually');
+    }
+    const runData = await runRes.json();
+    if (runData.error) {
+      throw new Error('ivxSetupTriggers failed: ' + (runData.error.message ?? JSON.stringify(runData.error)));
+    }
+
     return { scriptId, triggerCount: waitBlocks.length };
   }
 
@@ -8629,7 +8644,7 @@ termRun.addEventListener('click', async () => {
         const parts = [];
         if (oneshot)   parts.push(`${oneshot} one-shot`);
         if (recurring) parts.push(`${recurring} recurring`);
-        termInfo(`✓ ${parts.join(', ')} trigger${triggerCount > 1 ? 's' : ''} deployed — open Apps Script to run ivxSetupTriggers() once`);
+        termInfo(`✓ ${parts.join(', ')} trigger${triggerCount > 1 ? 's' : ''} deployed and active`);
       } catch(e) {
         termError(`Apps Script deploy failed: ${e.message}`);
       }
