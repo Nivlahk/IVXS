@@ -72,7 +72,9 @@ const KEYWORDS = new Set([
   // Network / AI
   'ask', 'post', 'use',
   // Google services
-  'sheets', 'gmail', 'to', 'subject', 'body',
+  'sheets', 'email', 'to', 'subject', 'body',
+  // Wait block triggers and by keyword
+  'http', 'time', 'by',
   // Implicit loop variables
   'i', 'ii', 'iii', 'j', 'jj', 'jjj', 'k', 'kk', 'kkk',
 ]);
@@ -422,7 +424,7 @@ class Parser {
       ask:  () => this.parseExprStatement(), // ask is an expression
       post: () => this.parsePost(),
       use:  () => this.parseUse(),
-      gmail: () => this.parseGmail(),
+      email: () => this.parseGmail(),
       sheets:    () => this.parseExprStatement(), // sheets is an expression
       class: () => this.parseClass(),
       if:   () => this.parseIf(),
@@ -638,7 +640,52 @@ class Parser {
     const tok = this.advance(); // eat 'wait'
     const next = this.peek();
 
-    // wait x = 5 — wait for a variable to equal a value
+    // wait email by <addr> — email trigger block
+    if (next.type === T.KEYWORD && next.value === 'email') {
+      this.advance(); // eat 'email'
+      let source = null;
+      if (this.checkKw('by')) { this.advance(); source = this.parseExpr(); }
+      this.eatNewline();
+      const body = this.check(T.INDENT) ? this.parseBlock() : [];
+      return Node('WaitBlock', { trigger: 'email', source, body, line: tok.line, col: tok.col });
+    }
+
+    // wait sheets <name> row added — sheets trigger block
+    if (next.type === T.KEYWORD && next.value === 'sheets') {
+      this.advance(); // eat 'sheets'
+      const name = this.parseExpr();
+      let event = 'row added';
+      if (this.checkKw('by')) {
+        this.advance();
+        const parts = [];
+        while (!this.check(T.NEWLINE) && !this.check(T.EOF) && !this.check(T.DEDENT)) {
+          parts.push(this.advance().value ?? '');
+        }
+        if (parts.length) event = parts.join(' ');
+      }
+      this.eatNewline();
+      const body = this.check(T.INDENT) ? this.parseBlock() : [];
+      return Node('WaitBlock', { trigger: 'sheets', source: name, event, body, line: tok.line, col: tok.col });
+    }
+
+    // wait time <expr> — time-based trigger block
+    if (next.type === T.KEYWORD && next.value === 'time') {
+      this.advance(); // eat 'time'
+      const source = this.parseExpr();
+      this.eatNewline();
+      const body = this.check(T.INDENT) ? this.parseBlock() : [];
+      return Node('WaitBlock', { trigger: 'time', source, body, line: tok.line, col: tok.col });
+    }
+
+    // wait http — webhook trigger block
+    if (next.type === T.KEYWORD && next.value === 'http') {
+      this.advance(); // eat 'http'
+      this.eatNewline();
+      const body = this.check(T.INDENT) ? this.parseBlock() : [];
+      return Node('WaitBlock', { trigger: 'http', source: null, body, line: tok.line, col: tok.col });
+    }
+
+    // wait x = 5 — wait for a variable to equal a value (inline, no body)
     if (next.type === T.IDENTIFIER && this.peek(1).type === T.OP && this.peek(1).value === '=') {
       const name  = this.advance().value;
       this.advance(); // eat '='
@@ -651,7 +698,7 @@ class Parser {
       });
     }
 
-    // wait 5 — wait N cycles
+    // wait 5 — wait N cycles (inline, no body)
     const expr = this.parseExpr();
     this.eatNewline();
     return Node('Wait', { expr, condition: null, line: tok.line, col: tok.col });
@@ -668,11 +715,13 @@ class Parser {
     return Node('Post', { url, body, credential, line: tok.line, col: tok.col });
   }
 
-  // ── gmail to <addr> subject <subj> body <body> ────────────────────────────
+  // ── email <addr> subject <subj> body <body> ──────────────────────────────
   parseGmail() {
-    const tok = this.advance(); // eat 'gmail'
+    const tok = this.advance(); // eat 'email'
     let to = null, subject = null, body = null;
-    if (this.checkKw('to')) { this.advance(); to = this.parseExpr(); }
+    // Accept optional 'to' for backwards compat, but not required
+    if (this.checkKw('to')) { this.advance(); }
+    to = this.parseExpr();
     if (this.checkKw('subject')) { this.advance(); subject = this.parseExpr(); }
     if (this.checkKw('body')) { this.advance(); body = this.parseExpr(); }
     this.eatNewline();
@@ -689,17 +738,17 @@ class Parser {
 
   _parseSavePayload(target, line, col) {
     if (this.check(T.NEWLINE) || this.check(T.EOF) || this.check(T.DEDENT)) {
-      this.error("Expected filename after 'save'", this.peek());
+      this.error("Expected value or filename after 'save'", this.peek());
       return null;
     }
 
     const first = this.parseExpr();
     if (!first) {
-      this.error("Expected filename after 'save'", this.peek());
+      this.error("Expected value or filename after 'save'", this.peek());
       return null;
     }
 
-    // save user.txt — first token parsed as Identifier('user') and dot-tail remains.
+    // save user.txt — identifier followed immediately by a dot extension
     if (first.type === 'Identifier' && this.checkOp('.')) {
       const filenameExpr = this._parseBareFilename(first.name, first.line, first.col);
       if (!filenameExpr) return null;
@@ -707,15 +756,36 @@ class Parser {
       return Node('Save', { valueExpr: null, filenameExpr, target, line, col });
     }
 
-    let valueExpr = null;
-    let filenameExpr = first;
-    if (!this.check(T.NEWLINE) && !this.check(T.EOF) && !this.check(T.DEDENT)) {
-      valueExpr = first;
-      filenameExpr = this._parseSaveFilenameExpr();
-      if (!filenameExpr) {
-        this.error("Expected filename after value in 'save'", this.peek());
-        return null;
-      }
+    // save "report.txt" — string literal with no second argument → save response to that file
+    if (first.type === 'StringLit' &&
+        !this.check(T.NEWLINE) && !this.check(T.EOF) && !this.check(T.DEDENT)) {
+      // save "title" value  — string is the filename, next expr is the value
+      const valueExpr = this._parseSaveFilenameExpr();
+      this.eatNewline();
+      return Node('Save', { valueExpr, filenameExpr: first, target, line, col });
+    }
+    if (first.type === 'StringLit') {
+      // lone string → filename, no explicit value (use response)
+      this.eatNewline();
+      return Node('Save', { valueExpr: null, filenameExpr: first, target, line, col });
+    }
+
+    // save x — bare identifier with nothing after it → x is the VALUE,
+    // auto-generate filename as the variable name
+    if (first.type === 'Identifier' &&
+        (this.check(T.NEWLINE) || this.check(T.EOF) || this.check(T.DEDENT))) {
+      // Auto-filename: use the variable name; _executeSave will pick extension by type
+      const autoFilename = Node('StringLit', { value: first.name, line: first.line, col: first.col });
+      this.eatNewline();
+      return Node('Save', { valueExpr: first, filenameExpr: autoFilename, autoName: true, target, line, col });
+    }
+
+    // save x report.txt  or  save <expr> <filename>
+    let valueExpr = first;
+    const filenameExpr = this._parseSaveFilenameExpr();
+    if (!filenameExpr) {
+      this.error("Expected filename after value in 'save'", this.peek());
+      return null;
     }
 
     this.eatNewline();
@@ -796,9 +866,20 @@ class Parser {
         // else followed directly by indented block
         else_ = this.parseBlock();
       } else {
-        // inline else — e.g. "else give x" — wrap in synthetic block
+        // inline else — e.g. "else give x" or "else say x"
+        // If there's a newline + indent after, the inline expr is the first
+        // statement of the else block and the indented body follows
         const s = this.parseStatement();
-        if (s) else_ = [s];
+        if (s) {
+          this.skipNewlines();
+          if (this.check(T.INDENT)) {
+            // Block follows — inline statement + indented block together
+            const blockStmts = this.parseBlock();
+            else_ = [s, ...blockStmts];
+          } else {
+            else_ = [s];
+          }
+        }
       }
     }
 
@@ -923,26 +1004,38 @@ class Parser {
   // ── end [message] ──────────────────────────────────────────────────────────
   parseEnd() {
     const tok = this.advance(); // eat 'end'
-    let message = null;
-    // Consume optional message (anything until newline)
-    const parts = [];
-    while (!this.check(T.NEWLINE) && !this.check(T.EOF) && !this.check(T.DEDENT)) {
-      parts.push(this.advance().value ?? '');
+    // Optional trailing statement — e.g. "end say 'done'" or bare "end"
+    let stmt = null;
+    if (!this.check(T.NEWLINE) && !this.check(T.EOF) && !this.check(T.DEDENT)) {
+      stmt = this.parseStatement();
+    } else {
+      this.eatNewline();
     }
-    if (parts.length) message = parts.join(' ');
-    this.eatNewline();
-    return Node('End', { message, line: tok.line, col: tok.col });
+    return Node('End', { stmt, line: tok.line, col: tok.col });
   }
 
-  // ── from <module> ──────────────────────────────────────────────────────────
+  // ── from <module> [by <package>] ──────────────────────────────────────────
+  // Examples:
+  //   from Database by pandas
+  //   from "https://api.example.com"
   parseFrom() {
     const tok = this.advance(); // eat 'from'
-    const parts = [];
+    const pathParts = [];
+    let via = null;
     while (!this.check(T.NEWLINE) && !this.check(T.EOF)) {
-      parts.push(this.advance().value ?? '');
+      if (this.checkKw('by')) {
+        this.advance(); // eat 'by'
+        const viaParts = [];
+        while (!this.check(T.NEWLINE) && !this.check(T.EOF)) {
+          viaParts.push(this.advance().value ?? '');
+        }
+        via = viaParts.join(' ');
+        break;
+      }
+      pathParts.push(this.advance().value ?? '');
     }
     this.eatNewline();
-    return Node('Import', { path: parts.join(' '), line: tok.line, col: tok.col });
+    return Node('Import', { path: pathParts.join(' '), via, line: tok.line, col: tok.col });
   }
 
   // ── Expression statement (function call or bare expression) ────────────────
@@ -1995,6 +2088,7 @@ const NONE = null;
 class ReturnSignal  { constructor(value) { this.value = value; } }
 class BreakSignal   {}
 class ContinueSignal {}
+class EndSignal     {}
 
 // ── Runtime error ─────────────────────────────────────────────────────────────
 class RuntimeError extends Error {
@@ -2714,12 +2808,6 @@ class Interpreter {
   }
 
   async _executeSave(node, env) {
-    const rawName = await this.evalExpr(node.filenameExpr, env);
-    const filename = String(rawName ?? '').trim();
-    if (!filename) {
-      throw new RuntimeError("save: filename cannot be empty", node.line);
-    }
-
     let value;
     if (node.valueExpr) {
       value = await this.evalExpr(node.valueExpr, env);
@@ -2729,6 +2817,21 @@ class Interpreter {
       value = this.globals.get('err');
     } else {
       value = NONE;
+    }
+
+    let rawName = await this.evalExpr(node.filenameExpr, env);
+    let filename = String(rawName ?? '').trim();
+    if (!filename) {
+      throw new RuntimeError("save: filename cannot be empty", node.line);
+    }
+
+    // Auto-name: no extension was given — pick one based on value type
+    if (node.autoName && !filename.includes('.')) {
+      if (Array.isArray(value) || value instanceof Map) {
+        filename += '.json';
+      } else {
+        filename += '.txt';
+      }
     }
 
     const payload = this._serializeForSave(value, filename);
@@ -2753,7 +2856,8 @@ class Interpreter {
     }
 
     try {
-      await this.execBlock(parsed.ast.body, this.globals);
+      const result = await this.execBlock(parsed.ast.body, this.globals);
+      // EndSignal is a clean stop — no error, stmt already executed inside End case
     } catch (e) {
       if (e instanceof RuntimeError) this.onError(e);
       else throw e;
@@ -2769,6 +2873,7 @@ class Interpreter {
       if (result instanceof ReturnSignal)   return result;
       if (result instanceof BreakSignal)    return result;
       if (result instanceof ContinueSignal) return result;
+      if (result instanceof EndSignal)      return result;
     }
   }
 
@@ -2924,6 +3029,13 @@ class Interpreter {
         break;
       }
 
+      case 'WaitBlock': {
+        // Level 1: browser polling. Registers trigger, polls until condition met,
+        // then executes body. The trigger runs once then stops (use loop for repeat).
+        await this._executeWaitBlock(node, env);
+        break;
+      }
+
       case 'If': {
         const cond = await this.evalExpr(node.condition, env);
         const bodyEnv = env.child();
@@ -3012,8 +3124,8 @@ class Interpreter {
       }
 
       case 'End': {
-        const msg = node.message ?? 'Program ended';
-        throw new RuntimeError(msg, node.line);
+        if (node.stmt) await this.execStmt(node.stmt, env);
+        return new EndSignal();
       }
 
       case 'Dot':
@@ -3256,7 +3368,7 @@ class Interpreter {
     const subject = node.subject ? String(await this.evalExpr(node.subject, env)) : '';
     const body    = node.body    ? String(await this.evalExpr(node.body, env))     : '';
 
-    if (!to) throw new RuntimeError("gmail: missing 'to' address", node.line);
+    if (!to) throw new RuntimeError("email: missing recipient address", node.line);
 
     // Build RFC 2822 message and base64url-encode it
     const raw = [
@@ -3277,6 +3389,89 @@ class Interpreter {
     );
 
     this.onOutput?.(`Email sent to ${to}`);
+  }
+
+  // ── wait block: Level 1 polling execution ────────────────────────────────
+  async _executeWaitBlock(node, env) {
+    const POLL_MS    = 5000;  // poll every 5 seconds
+    const MAX_POLLS  = 720;   // give up after 1 hour (720 × 5s)
+    const trigger    = node.trigger;
+    const interp     = this;
+
+    const poll = async () => {
+      if (trigger === 'email') {
+        // Poll Gmail for unread messages from the source address
+        const from = node.source ? String(await this.evalExpr(node.source, env)) : '';
+        const q    = encodeURIComponent(`is:unread${from ? ` from:${from}` : ''}`);
+        const data = await this._googleAPI(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${q}&maxResults=1`
+        );
+        if (data?.messages?.length > 0) {
+          // Fetch the message and expose it as 'request'
+          const msg = await this._googleAPI(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${data.messages[0].id}`
+          );
+          const headers = msg?.payload?.headers ?? [];
+          const subject = headers.find(h => h.name === 'Subject')?.value ?? '';
+          const fromAddr = headers.find(h => h.name === 'From')?.value ?? '';
+          const bodyPart = msg?.payload?.parts?.[0]?.body?.data ?? msg?.payload?.body?.data ?? '';
+          const bodyText = bodyPart ? atob(bodyPart.replace(/-/g,'+').replace(/_/g,'/')) : '';
+          const triggerEnv = env.child();
+          triggerEnv.set('request', new Map([
+            ['subject', subject], ['from', fromAddr], ['body', bodyText], ['id', data.messages[0].id]
+          ]));
+          return triggerEnv;
+        }
+        return null;
+      }
+
+      if (trigger === 'sheets') {
+        // Poll a sheet for new rows since last check
+        const name = node.source ? String(await this.evalExpr(node.source, env)) : '';
+        const handle = await this._evalSheetsOpenExpr({ ...node, name: node.source }, env);
+        const rows = await handle.get('read')('A1:Z1000');
+        const lastSeen = this.globals.get('__waitSheetRows__') ?? 0;
+        const current  = (rows?.length ?? 1) - 1; // subtract header
+        if (current > lastSeen) {
+          this.globals.set('__waitSheetRows__', current);
+          const newRows = rows.slice(lastSeen + 1);
+          const triggerEnv = env.child();
+          triggerEnv.set('request', newRows);
+          return triggerEnv;
+        }
+        // Initialise baseline on first poll
+        if (lastSeen === 0) this.globals.set('__waitSheetRows__', current);
+        return null;
+      }
+
+      if (trigger === 'time') {
+        // Check if current time matches (simple HH:MM match)
+        const timeStr = node.source ? String(await this.evalExpr(node.source, env)) : '';
+        const now = new Date();
+        const nowStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+        if (nowStr === timeStr) return env.child();
+        return null;
+      }
+
+      return null;
+    };
+
+    this.onOutput?.(`⏳ Waiting for ${trigger} trigger…`);
+
+    let polls = 0;
+    while (polls < MAX_POLLS) {
+      const triggerEnv = await poll();
+      if (triggerEnv) {
+        this.onOutput?.(`✓ ${trigger} trigger fired`);
+        const r = await this.execBlock(node.body, triggerEnv);
+        if (r instanceof EndSignal || r instanceof ReturnSignal) return r;
+        return;
+      }
+      polls++;
+      await new Promise(res => setTimeout(res, POLL_MS));
+    }
+
+    this.onOutput?.(`⚠ wait ${trigger}: timed out after ${MAX_POLLS * POLL_MS / 1000}s`);
   }
 
   async _evalListLit(node, env) {
@@ -3936,7 +4131,8 @@ const LINE_H = 14, CELL_PAD_X = 6, CELL_H = 22;
 const BLOCK_GAP_Y = 28, BLOCK_PAD = 12, BLANK_LINE_THRESH = 2;
 
 const NODE_FILL = { Decision:'#004b8d', Predictive:'#6a00a3', Function:'#92700a',
-                    Start:'#007f00', End:'#7f0000', Input:'#007f00', Output:'#ED8936' };
+                    Start:'#007f00', End:'#7f0000', Input:'#007f00', Output:'#ED8936',
+                    WaitBlock:'#7c4d00' };
 const TYPE_FILL = { string:'#b45309', integer:'#60a5fa', float:'#14b8a6',
                     boolean:'#1e3a8a', range:'#ec4899', none:'#ef4444', list:'#6b7280', dict:'#7a4d2e' };
 
@@ -4454,7 +4650,7 @@ function computeBranchInfo(graph, byId, childOf, parentOf) {
 }
 
 function computeLayering(graph, byId) {
-  const depth = new Map(graph.nodes.map(n => [n.id, (n.kind==='Start'||n.kind==='Function') ? 0 : Infinity]));
+  const depth = new Map(graph.nodes.map(n => [n.id, (n.kind==='Start'||n.kind==='Function'||n.kind==='WaitBlock') ? 0 : Infinity]));
   const fwdEdges = graph.edges.filter(e => { const a=byId.get(e.from),b=byId.get(e.to); return a&&b&&fwd(a,b); });
   for (let pass = 0; pass < 50; pass++) {
     let changed = false;
@@ -4468,7 +4664,7 @@ function computeLayering(graph, byId) {
   graph.nodes.slice()
     .sort((a,b) => a.line!==b.line ? a.line-b.line : a.segmentIndex!==b.segmentIndex ? a.segmentIndex-b.segmentIndex : a.id-b.id)
     .forEach(n => {
-      if (n.kind==='Function') depth.set(n.id, 0);
+      if (n.kind==='Function' || n.kind==='WaitBlock') depth.set(n.id, 0);
       else if (!isFinite(depth.get(n.id))) depth.set(n.id, fallback++);
     });
   return depth;
@@ -4491,17 +4687,22 @@ function computeLayout(graph) {
 
   for (const node of graph.nodes) {
     const depth = isFinite(depthMap.get(node.id)) ? depthMap.get(node.id) : 0;
-    const isFn = node.kind === 'Function';
-    const cx = isFn ? centerX0 + fnOffset : centerX0;
-    if (isFn) fnOffset += XSTEP * 3;
+    const isFn   = node.kind === 'Function';
+    const isWait = node.kind === 'WaitBlock';
+    const cx = (isFn || isWait) ? centerX0 + fnOffset : centerX0;
+    if (isFn || isWait) fnOffset += XSTEP * 3;
     positions.set(node.id, { id:node.id, kind:node.kind, centerX:cx, centerY:BASEY+depth*YSTEP, x:cx, y:BASEY+depth*YSTEP, width:0, height:0 });
   }
 
-  // Function body column alignment
+  // Function and WaitBlock body column alignment
   const fnXMap = new Map();
-  for (const n of graph.nodes) if (n.kind==='Function') fnXMap.set(n.id, positions.get(n.id).centerX);
   for (const n of graph.nodes) {
-    const m = n.meta?.match(/fun-body-of=(\d+)/);
+    if (n.kind==='Function' || n.kind==='WaitBlock') fnXMap.set(n.id, positions.get(n.id).centerX);
+  }
+  for (const n of graph.nodes) {
+    const mFun  = n.meta?.match(/fun-body-of=(\d+)/);
+    const mWait = n.meta?.match(/wait-body-of=(\d+)/);
+    const m = mFun || mWait;
     if (m && !n.meta?.includes('fun-call-inline')) {
       const p = positions.get(n.id), fnX = fnXMap.get(parseInt(m[1],10));
       if (fnX!=null && p) p.centerX = fnX;
@@ -4685,6 +4886,9 @@ function applyCollapseShift(blockBoxes, positions) {
 function makeShape(node, cx, cy, w, h, x, y) {
   const isRet = node.kind==='Process' && node.meta?.includes('return-node');
   if (['Start','End','Function'].includes(node.kind) || isRet)
+    return el('ellipse', {cx,cy,rx:w/2,ry:h/2});
+  if (node.kind==='WaitBlock')
+    // Stadium shape — ellipse with extra width for the trigger label
     return el('ellipse', {cx,cy,rx:w/2,ry:h/2});
   if (node.kind==='Decision')
     return el('polygon', { points:[[cx,cy-h/2],[cx+w/2,cy],[cx,cy+h/2],[cx-w/2,cy]].map(p=>p.join(',')).join(' ') });
@@ -5878,7 +6082,7 @@ const INCOMING_KEYWORDS = ['then', 'else']; // 'then' is accepted but has no eff
 // in NODE_KEYWORDS, otherwise parseLine sets nodeKey='note' and the main loop's
 // else-branch silently creates a spurious Process node for every standalone
 // 'note ...' line, and KIND_TO_KEY has no entry for it so round-trips break.
-const NODE_KEYWORDS = ['if', 'fork', 'loop', 'dot', 'take', 'say', 'give', 'fun', 'end', 'from'];
+const NODE_KEYWORDS = ['if', 'fork', 'loop', 'dot', 'take', 'say', 'give', 'fun', 'end', 'from', 'wait'];
 const OUTGOING_KEYWORDS = ['prev', 'next', 'use'];
 const NODE_KEYS = new Set(NODE_KEYWORDS);
 const IN_KEYS = new Set(INCOMING_KEYWORDS);
@@ -5910,12 +6114,16 @@ function parseivx(source) {
     return { lineNum: i, indent, raw: trimmed, incoming, nodeKey, content: remaining.join(' '), outgoing };
   });
 
-  // Pass 2: assign fun-body-of meta based on indentation after Function node
+  // Pass 2: assign fun-body-of and wait-body-of meta based on indentation
   let funStack = [];
   let lastFun = null;
   let lastFunIndent = -1;
+  let waitStack = [];
+  let lastWait = null;
+  let lastWaitIndent = -1;
   for (let i = 0; i < parsedLines.length; i++) {
     const pl = parsedLines[i];
+    // Fun tracking
     if (pl.nodeKey === 'fun' || pl.nodeKey === 'Function') {
       lastFun = i;
       lastFunIndent = pl.indent;
@@ -5924,7 +6132,6 @@ function parseivx(source) {
     } else if (lastFun !== null && pl.indent > lastFunIndent) {
       pl._funBodyOf = lastFun;
     } else if (lastFun !== null && pl.indent <= lastFunIndent) {
-      // Exiting function scope
       funStack.pop();
       if (funStack.length > 0) {
         lastFun = funStack[funStack.length - 1].funLine;
@@ -5932,6 +6139,26 @@ function parseivx(source) {
       } else {
         lastFun = null;
         lastFunIndent = -1;
+      }
+    }
+    // Wait block tracking — detect wait with a trigger keyword after it
+    const isWaitBlock = pl.nodeKey === 'wait' &&
+      /^(email|sheets|time|http)\b/.test(pl.content);
+    if (isWaitBlock) {
+      lastWait = i;
+      lastWaitIndent = pl.indent;
+      waitStack.push({ waitLine: i, indent: pl.indent });
+      pl._waitHeader = true;
+    } else if (lastWait !== null && pl.indent > lastWaitIndent) {
+      pl._waitBodyOf = lastWait;
+    } else if (lastWait !== null && pl.indent <= lastWaitIndent) {
+      waitStack.pop();
+      if (waitStack.length > 0) {
+        lastWait = waitStack[waitStack.length - 1].waitLine;
+        lastWaitIndent = waitStack[waitStack.length - 1].indent;
+      } else {
+        lastWait = null;
+        lastWaitIndent = -1;
       }
     }
   }
@@ -6180,13 +6407,15 @@ function parseivx(source) {
     // ── Main loop (using parsedLines) ─────────────────────────────────────────────
     let processedLine = new Set();
     for (const pl of parsedLines) {
-        const { lineNum, incoming, nodeKey, content, outgoing, _funHeader, _funBodyOf } = pl;
+        const { lineNum, incoming, nodeKey, content, outgoing, _funHeader, _funBodyOf, _waitHeader, _waitBodyOf } = pl;
         const indent = pl.indent;
         if (processedLine.has(lineNum)) continue;
-        // Set fun-body-of meta if in function scope
+        // Set fun-body-of / wait-body-of meta if in function or wait-block scope
         let meta = '';
         if (_funHeader) meta = 'fun-header';
         if (_funBodyOf !== undefined) meta = `fun-body-of=${_funBodyOf}`;
+        if (_waitHeader) meta = 'wait-header';
+        if (_waitBodyOf !== undefined) meta = `wait-body-of=${_waitBodyOf}`;
         while (ctxStack.length > 0 && indent <= ctx.baseIndent) {
             closeFunCtx();
         }
@@ -6378,22 +6607,20 @@ function parseivx(source) {
             }
             else if (nodeKey === 'fun') {
                 node = addNode('Function', lineNum, content, 'fun-header');
-                // A function definition is not part of the sequential flow — it is a
-                // named declaration that sits outside the execution path.  We must NOT
-                // wire any predecessor (sequential or branch tail) into the Function
-                // node itself.  flushUntil is called with null so pending decision tails
-                // are left intact to wire forward to the first node after the function.
-                // savedLastExec preserves the pre-fun lastExec so sequential flow
-                // resumes correctly once closeFunCtx fires.
                 const savedBeforeFun = getLastExec();
                 flushUntil(indent, null);
                 ctxStack.push(ctx);
-                // firstLast = node (the Function header) so that the first body node
-                // receives a wireSeq(Function → firstBodyNode) edge, giving the
-                // function block a visible connecting edge from its header.
-                // savedBeforeFun is passed as savedLastExec so closeFunCtx restores
-                // the pre-fun sequential position when the body scope closes.
                 ctx = makeCtx(indent, node, savedBeforeFun);
+                continue;
+            }
+            else if (nodeKey === 'wait' && /^(email|sheets|time|http)\b/.test(content)) {
+                // Wait block — like fun, sits outside sequential flow
+                // Build a display label: "wait email by addr" etc.
+                node = addNode('WaitBlock', lineNum, `wait ${content}`, 'wait-header');
+                const savedBeforeWait = getLastExec();
+                flushUntil(indent, null);
+                ctxStack.push(ctx);
+                ctx = makeCtx(indent, node, savedBeforeWait);
                 continue;
             }
             else {
@@ -7553,27 +7780,25 @@ const ReverseTranspiler = (() => {
     lensOpen = true;
     lensBtn.classList.add('on');
     editorSub.style.display = 'none';
-    const termResizer = document.getElementById('term-resizer');
-    const term        = document.getElementById('term');
-    if (termResizer) termResizer.style.display = 'none';
-    if (term)        term.style.display        = 'none';
-    ep.style.gridTemplateRows = '1fr';
+    ep.style.gridTemplateRows = '1fr 6px 200px';
     lensPanel.style.display   = 'flex';
-    lensPanel.style.height    = '100%';
+    lensPanel.style.height    = '';
+    lensCode.contentEditable  = 'true';
+    lensEdited = false;
     renderLens();
   }
 
   function closeLens() {
-    lensOpen = false;
+    lensOpen   = false;
+    lensEdited = false;
     lensBtn.classList.remove('on');
-    lensPanel.style.display   = 'none';
-    lensPanel.style.height    = '';
-    editorSub.style.display   = 'flex';
-    const termResizer = document.getElementById('term-resizer');
-    const term        = document.getElementById('term');
-    if (termResizer) termResizer.style.display = '';
-    if (term)        term.style.display        = '';
+    lensPanel.style.display  = 'none';
+    lensCode.contentEditable = 'false';  // prevent focus stealing when hidden
+    editorSub.style.display  = 'flex';
     ep.style.gridTemplateRows = '';
+    lensConfirm.style.display = 'none';
+    // Return focus to the source editor
+    srcEl.focus();
   }
 
   lensBtn.addEventListener('click', () => { if (lensOpen) closeLens(); else openLens(); });
@@ -7591,8 +7816,9 @@ const ReverseTranspiler = (() => {
     });
   });
 
-  // Make lens content editable (user can paste foreign code)
-  lensCode.contentEditable = 'true';
+  // contentEditable is enabled in openLens and disabled in closeLens
+  // to prevent focus stealing when the lens panel is hidden
+  lensCode.contentEditable = 'false';
   lensCode.addEventListener('input', () => {
     lensEdited = true;
     // If they're editing, go back to showing the import button (not confirm bar)
@@ -7722,7 +7948,7 @@ function escHtml(s) {
 }
 
 // Keyword sets for the tokenizing highlighter
-const _KW_NODE     = new Set(['if','fork','loop','dot','con','take','say','give','fun','class','end','from','make','note','for','in','wait','del','ask','post','use','sheets','gmail']);
+const _KW_NODE     = new Set(['if','fork','loop','dot','con','take','say','give','fun','class','end','from','make','note','for','in','wait','del','ask','post','use','sheets','email','by']);
 const _KW_FLOW     = new Set(['so','then','else']);
 const _KW_OUTGOING = new Set(['prev','next','use']);
 const _KW_LOGIC    = new Set(['not','and','or','xor','is','yes','no','none']);
@@ -7835,8 +8061,8 @@ function highlightSource(src) {
   const allVars = new Set();
   const makeMatches = src.match(/\bmake\s+([A-Za-z_]\w*)/g);
   if (makeMatches) makeMatches.forEach(m => { const v = m.match(/make\s+(\w+)/); if (v) allVars.add(v[1]); });
-  const takeMatches = src.match(/\btake\s+(?:int|flt|str|bin|list|dict\s*\(\s*)?([A-Za-z_]\w*)/g);
-  if (takeMatches) takeMatches.forEach(m => { const v = m.match(/([A-Za-z_]\w*)$/); if (v) allVars.add(v[1]); });
+  const takeMatches = src.match(/\btake\s+(?:(?:int|flt|str|bin|list|dict)\s*\(\s*)?([A-Za-z_]\w*)/g);
+  if (takeMatches) takeMatches.forEach(m => { const v = m.match(/([A-Za-z_]\w*)(?:\s*\))?$/); if (v) allVars.add(v[1]); });
   // Also collect lazy-declared variables (name?) so they color as vars
   const lazyMatches = src.match(/\b([A-Za-z_]\w*)\?/g);
   if (lazyMatches) lazyMatches.forEach(m => { allVars.add(m.slice(0, -1)); });
@@ -8305,3 +8531,107 @@ driveNewBtn .addEventListener('click', driveNewFile);
 driveSaveBtn.addEventListener('click', driveSaveFile);
 
 window.addEventListener('load', driveInit);
+
+// ── Bug report ────────────────────────────────────────────────────────────────
+document.getElementById('bug-btn').addEventListener('click', () => {
+  // Remove any existing modal
+  document.getElementById('bug-modal')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'bug-modal';
+  Object.assign(overlay.style, {
+    position: 'fixed', inset: '0', background: 'rgba(0,0,0,.6)',
+    zIndex: '20000', display: 'flex', alignItems: 'center', justifyContent: 'center',
+  });
+
+  const box = document.createElement('div');
+  Object.assign(box.style, {
+    background: '#1c1c28', border: '1px solid #3a3a5c', borderRadius: '10px',
+    padding: '20px', width: '460px', maxWidth: '90vw',
+    display: 'flex', flexDirection: 'column', gap: '12px',
+    fontFamily: 'system-ui, sans-serif', boxShadow: '0 16px 48px rgba(0,0,0,.6)',
+  });
+
+  // Title
+  const title = document.createElement('div');
+  title.textContent = '🐛 Report a Bug';
+  Object.assign(title.style, { fontSize: '15px', fontWeight: '700', color: '#cdd6f4' });
+  box.appendChild(title);
+
+  // Description label + textarea
+  const lbl = document.createElement('label');
+  lbl.textContent = 'What went wrong?';
+  Object.assign(lbl.style, { fontSize: '12px', color: '#9ca3af' });
+  box.appendChild(lbl);
+
+  const desc = document.createElement('textarea');
+  desc.placeholder = 'Describe the bug — what you did, what you expected, what happened instead…';
+  desc.rows = 5;
+  Object.assign(desc.style, {
+    background: '#0f0f14', color: '#cdd6f4', border: '1px solid #3a3a5c',
+    borderRadius: '6px', padding: '8px 10px', fontSize: '12px',
+    fontFamily: 'inherit', resize: 'vertical', outline: 'none', width: '100%',
+    boxSizing: 'border-box',
+  });
+  box.appendChild(desc);
+
+  // Include source checkbox
+  const srcRow = document.createElement('label');
+  Object.assign(srcRow.style, { display: 'flex', alignItems: 'center', gap: '8px',
+    fontSize: '12px', color: '#9ca3af', cursor: 'pointer' });
+  const srcCheck = document.createElement('input');
+  srcCheck.type = 'checkbox';
+  srcCheck.checked = true;
+  srcRow.appendChild(srcCheck);
+  srcRow.appendChild(document.createTextNode('Include current program source'));
+  box.appendChild(srcRow);
+
+  // Buttons
+  const btnRow = document.createElement('div');
+  Object.assign(btnRow.style, { display: 'flex', gap: '8px', justifyContent: 'flex-end' });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  Object.assign(cancelBtn.style, {
+    background: 'none', border: '1px solid #3a3a5c', color: '#6b7280',
+    borderRadius: '5px', padding: '6px 14px', cursor: 'pointer', fontSize: '12px',
+    fontFamily: 'inherit',
+  });
+  cancelBtn.addEventListener('click', () => overlay.remove());
+
+  const sendBtn = document.createElement('button');
+  sendBtn.textContent = 'Open in Email';
+  Object.assign(sendBtn.style, {
+    background: '#1f4d6e', border: '1px solid #60a5fa', color: '#93c5fd',
+    borderRadius: '5px', padding: '6px 14px', cursor: 'pointer', fontSize: '12px',
+    fontFamily: 'inherit', fontWeight: '600',
+  });
+
+  sendBtn.addEventListener('click', () => {
+    const userDesc  = desc.value.trim() || '(no description provided)';
+    const ivxSource = srcCheck.checked && typeof srcEl !== 'undefined'
+      ? srcEl.value.trim() : '';
+    const browserInfo = `Browser: ${navigator.userAgent}`;
+    const ivxVersion  = 'IVX Build v3';
+
+    let body = `Bug Report\n${'─'.repeat(40)}\n\n${userDesc}\n\n`;
+    body += `${browserInfo}\n${ivxVersion}\n`;
+    if (ivxSource) body += `\nProgram Source:\n${'─'.repeat(40)}\n${ivxSource}\n`;
+
+    const subject = encodeURIComponent('IVX Bug Report');
+    const bodyEnc = encodeURIComponent(body);
+    window.location.href = `mailto:iceboltstartup@gmail.com?subject=${subject}&body=${bodyEnc}`;
+    overlay.remove();
+  });
+
+  btnRow.appendChild(cancelBtn);
+  btnRow.appendChild(sendBtn);
+  box.appendChild(btnRow);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  // Close on outside click
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  setTimeout(() => desc.focus(), 50);
+});
