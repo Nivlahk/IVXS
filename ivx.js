@@ -8115,11 +8115,12 @@ ${setups.join('\n')}
   function extractWaitBlocks(ast) {
     const blocks = [];
     const walk = stmts => {
-      for (const stmt of stmts || []) {
+      if (!Array.isArray(stmts)) return;
+      for (const stmt of stmts) {
         if (!stmt) continue;
         if (stmt.type === 'WaitBlock') blocks.push(stmt);
-        if (stmt.body)  walk(stmt.body);
-        if (stmt.else_) walk(stmt.else_);
+        if (Array.isArray(stmt.body))  walk(stmt.body);
+        if (Array.isArray(stmt.else_)) walk(stmt.else_);
       }
     };
     walk(ast?.body);
