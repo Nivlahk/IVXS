@@ -8530,12 +8530,14 @@ termRun.addEventListener('click', async () => {
   _running = false;
 
   // ── Deploy wait blocks to Apps Script ──────────────────────────────────────
-  termInfo(`[debug] deploy check running, driveToken=${!!driveToken}`);
+  console.log('[IVX deploy] starting, driveToken=', !!driveToken);
+  termInfo(`[debug] deploy check — driveToken=${!!driveToken}`);
   try {
     const parsed = parse(srcEl.value);
-    termInfo(`[debug] parsed ${parsed.ast?.body?.length} statements`);
+    console.log('[IVX deploy] parsed, ast body length=', parsed.ast?.body?.length, 'types=', parsed.ast?.body?.map(n=>n.type));
     const waitBlocks = AppsScriptTranspiler.extractWaitBlocks(parsed.ast);
-    termInfo(`[debug] found ${waitBlocks.length} wait blocks`);
+    console.log('[IVX deploy] waitBlocks=', waitBlocks.length);
+    termInfo(`[debug] found ${waitBlocks.length} wait block(s)`);
     if (waitBlocks.length > 0 && driveToken) {
       termInfo(`⏳ Deploying ${waitBlocks.length} trigger${waitBlocks.length > 1 ? 's' : ''} to Google Apps Script…`);
       try {
