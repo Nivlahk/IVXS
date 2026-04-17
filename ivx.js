@@ -7908,7 +7908,7 @@ const AppsScriptTranspiler = (() => {
     if (!node) return '';
     const E = n => emitExpr(n, globals);
     const S = (n, ind) => emitStmt(n, globals, ind ?? indent);
-    const B = (stmts, ind) => (stmts || []).map(s => emitStmt(s, globals, ind ?? indent + '  ')).join('\n');
+    const B = (stmts, ind) => (Array.isArray(stmts) ? stmts : []).map(s => emitStmt(s, globals, ind ?? indent + '  ')).join('\n');
 
     switch (node.type) {
       case 'Assign': {
@@ -7947,8 +7947,11 @@ const AppsScriptTranspiler = (() => {
   }
 
   function transpileBodyToJS(stmts, globals) {
-    if (!stmts || !stmts.length) return '  // (empty body)';
-    return stmts.map(s => emitStmt(s, globals, '  ')).filter(Boolean).join('\n');
+    if (!Array.isArray(stmts) || !stmts.length) return '  // (empty body)';
+    return stmts.map(s => {
+      try { return emitStmt(s, globals, '  '); }
+      catch(e) { return `  // (could not transpile ${s?.type}: ${e.message})`; }
+    }).filter(Boolean).join('\n');
   }
 
   // Transpile a single WaitBlock node to a .gs function + trigger registration
