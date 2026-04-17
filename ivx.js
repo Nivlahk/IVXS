@@ -3038,9 +3038,8 @@ class Interpreter {
       }
 
       case 'WaitBlock': {
-        // Level 1: browser polling. Registers trigger, polls until condition met,
-        // then executes body. The trigger runs once then stops (use loop for repeat).
-        await this._executeWaitBlock(node, env);
+        // WaitBlock is a declaration — deployed to Apps Script automatically.
+        // The browser never executes it directly, just like 'fun' doesn't run its body.
         break;
       }
 
