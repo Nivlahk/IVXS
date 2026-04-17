@@ -8122,6 +8122,18 @@ ${setups.join('\n')}
       const check = await fetch(API + '/' + scriptId, { headers });
       if (!check.ok) scriptId = null;
     }
+    // If no stored ID, search Apps Script for existing 'IVX Triggers' project
+    if (!scriptId) {
+      const searchRes = await fetch(API + '?pageSize=50', { headers });
+      if (searchRes.ok) {
+        const searchData = await searchRes.json();
+        const existing = (searchData.projects || []).find(p => p.title === 'IVX Triggers');
+        if (existing) {
+          scriptId = existing.scriptId;
+          await _saveScriptId(scriptId, token, DRIVE, UPLOAD);
+        }
+      }
+    }
     if (!scriptId) {
       const res = await fetch(API, {
         method: 'POST', headers,
@@ -8154,89 +8166,22 @@ ${setups.join('\n')}
       throw new Error('Apps Script update failed: ' + (err?.error?.message ?? upRes.statusText));
     }
 
-    // ── Step 3: install triggers directly via API ─────────────────────────────
-    // First remove all existing IVX triggers for this project
-    const listRes = await fetch(API + '/' + scriptId + '/projects/triggers', { headers }).catch(() => null);
-
-    // Delete old triggers
+    // Check if this is the first deploy (no triggers installed yet)
     const triggersRes = await fetch('https://script.googleapis.com/v1/projects/' + scriptId + '/triggers', { headers });
-    if (triggersRes.ok) {
-      const triggersData = await triggersRes.json();
-      for (const t of (triggersData.triggers || [])) {
-        if (t.functionName && t.functionName.startsWith('ivxTrigger_')) {
-          await fetch('https://script.googleapis.com/v1/projects/' + scriptId + '/triggers/' + t.triggerId, {
-            method: 'DELETE', headers,
-          });
-        }
-      }
-    }
+    const triggersData = triggersRes.ok ? await triggersRes.json() : {};
+    const existingTriggers = (triggersData.triggers || []).filter(t => t.functionName && t.functionName.startsWith('ivxTrigger_'));
+    const firstDeploy = existingTriggers.length === 0;
 
-    // Create new triggers for each wait block
-    for (let i = 0; i < waitBlocks.length; i++) {
-      const node = waitBlocks[i];
-      const fnName = 'ivxTrigger_' + i;
-      let triggerBody = null;
-
-      if (node.trigger === 'time') {
-        const timeStr = node.source?.value ?? '09:00';
-        const [hh, mm] = timeStr.split(':');
-        // Calculate the target time in UTC from the user's local timezone
-        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        const now = new Date();
-        const target = new Date(now.toLocaleDateString('en-US', { timeZone: tz }) + ' ' + timeStr);
-        const localNow = new Date(now.toLocaleString('en-US', { timeZone: tz }));
-        const tzDiff = now - localNow;
-        let utcTarget = new Date(target.getTime() + tzDiff);
-        if (utcTarget < now) utcTarget.setDate(utcTarget.getDate() + 1);
-
-        triggerBody = {
-          scriptId,
-          functionName: fnName,
-          eventType: 'CLOCK',
-          scheduleConfig: {
-            scheduleType: node.recurring ? 'DAILY' : 'ONCE',
-            startTime: {
-              hours: utcTarget.getUTCHours(),
-              minutes: utcTarget.getUTCMinutes(),
-            },
-            endTime: node.recurring ? null : {
-              hours: utcTarget.getUTCHours(),
-              minutes: utcTarget.getUTCMinutes() + 1,
-            },
-          },
-        };
-      } else if (node.trigger === 'sheets') {
-        const sheetName = node.source?.value ?? '';
-        triggerBody = {
-          scriptId,
-          functionName: fnName,
-          eventType: 'ON_EDIT',
-        };
-      } else if (node.trigger === 'email') {
-        // Gmail has no push trigger — poll every minute
-        triggerBody = {
-          scriptId,
-          functionName: fnName,
-          eventType: 'CLOCK',
-          scheduleConfig: {
-            scheduleType: node.recurring ? 'EVERY_5_MINUTES' : 'EVERY_MINUTE',
-          },
-        };
-      }
-
-      if (triggerBody) {
-        await fetch('https://script.googleapis.com/v1/projects/' + scriptId + '/triggers', {
-          method: 'POST', headers,
-          body: JSON.stringify(triggerBody),
-        });
-      }
-    }
-
-    return { scriptId, triggerCount: waitBlocks.length };
+    return { scriptId, triggerCount: waitBlocks.length, firstDeploy };
   }
 
-  // Persist script ID in Drive as ivx_config.json
+  // Persist script ID — localStorage first (reliable), Drive as backup
   async function _loadScriptId(token, DRIVE) {
+    // Try localStorage first — fastest and most reliable
+    const local = localStorage.getItem('ivx_script_id');
+    if (local) return local;
+
+    // Fall back to Drive
     const h = { 'Authorization': 'Bearer ' + token };
     const q = encodeURIComponent("name='ivx_config.json' and trashed=false");
     const res = await fetch(DRIVE + '/files?q=' + q + '&fields=files(id)&spaces=drive', { headers: h });
@@ -8245,10 +8190,25 @@ ${setups.join('\n')}
     if (!data.files || !data.files.length) return null;
     const content = await fetch(DRIVE + '/files/' + data.files[0].id + '?alt=media', { headers: h });
     if (!content.ok) return null;
-    try { const j = await content.json(); return j.scriptId || null; } catch(e) { return null; }
+    try {
+      const j = await content.json();
+      if (j.scriptId) {
+        localStorage.setItem('ivx_script_id', j.scriptId); // cache locally
+        return j.scriptId;
+      }
+      return null;
+    } catch(e) { return null; }
   }
 
   async function _saveScriptId(scriptId, token, DRIVE, UPLOAD) {
+    // Always save to localStorage immediately
+    if (scriptId) {
+      localStorage.setItem('ivx_script_id', scriptId);
+    } else {
+      localStorage.removeItem('ivx_script_id');
+    }
+
+    // Also persist to Drive for cross-device/cross-browser access
     const h = { 'Authorization': 'Bearer ' + token };
     const body = JSON.stringify({ scriptId: scriptId });
     const q = encodeURIComponent("name='ivx_config.json' and trashed=false");
@@ -8699,7 +8659,7 @@ termRun.addEventListener('click', async () => {
     if (waitBlocks.length > 0 && driveToken) {
       termInfo(`⏳ Deploying ${waitBlocks.length} trigger${waitBlocks.length > 1 ? 's' : ''} to Google Apps Script…`);
       try {
-        const { scriptId, triggerCount } = await AppsScriptTranspiler.deploy(
+        const { scriptId, triggerCount, firstDeploy } = await AppsScriptTranspiler.deploy(
           waitBlocks, interpGlobals, driveToken
         );
         const recurring = waitBlocks.filter(b => b.recurring).length;
@@ -8707,7 +8667,11 @@ termRun.addEventListener('click', async () => {
         const parts = [];
         if (oneshot)   parts.push(`${oneshot} one-shot`);
         if (recurring) parts.push(`${recurring} recurring`);
-        termInfo(`✓ ${parts.join(', ')} trigger${triggerCount > 1 ? 's' : ''} deployed and active`);
+        if (firstDeploy) {
+          termInfo(`✓ ${parts.join(', ')} trigger${triggerCount > 1 ? 's' : ''} deployed — open Apps Script and run ivxSetupTriggers() once to activate`);
+        } else {
+          termInfo(`✓ ${parts.join(', ')} trigger${triggerCount > 1 ? 's' : ''} updated and active`);
+        }
       } catch(e) {
         termError(`Apps Script deploy failed: ${e.message}`);
       }
