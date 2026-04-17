@@ -8063,6 +8063,7 @@ ${deleteSelf}
       if (node.trigger === 'sheets') services.add('sheets');
 
       // Scan body for everything else
+      console.log('[IVX scan] body nodes:', JSON.stringify((node.body||[]).map(n=>n?.type)));
       scanNode(node.body);
     });
 
