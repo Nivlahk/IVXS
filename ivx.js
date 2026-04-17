@@ -6868,7 +6868,24 @@ document.querySelectorAll('[data-ins]').forEach(function(btn) {
     srcEl.focus();
     updateHighlight();
     scheduleRender();
+    // Close dropdown after inserting
+    helpMenu.style.display = 'none';
+    helpMenuBtn.classList.remove('active');
   });
+});
+
+// Help menu dropdown toggle
+const helpMenuBtn = document.getElementById('help-menu-btn');
+const helpMenu    = document.getElementById('help-menu');
+helpMenuBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  const open = helpMenu.style.display !== 'none';
+  helpMenu.style.display = open ? 'none' : 'flex';
+  helpMenuBtn.classList.toggle('active', !open);
+});
+document.addEventListener('click', () => {
+  helpMenu.style.display = 'none';
+  helpMenuBtn.classList.remove('active');
 });
 document.getElementById('clr').addEventListener('click', function handleClearClick() {
   srcEl.value = '';
@@ -6929,7 +6946,21 @@ document.getElementById('cmtbtn').addEventListener('click', function toggleComme
 });
 
 // ── Called by renderer after load ─────────────────────────────────────────────
-function _ivxInit() { doRender(); }
+function _ivxInit() {
+  doRender();
+  // Dismiss loading screen
+  const loader = document.getElementById('ivx-loader');
+  const app    = document.getElementById('app');
+  if (loader) {
+    setTimeout(() => {
+      loader.classList.add('done');
+      app.style.opacity = '1';
+      setTimeout(() => loader.remove(), 450);
+    }, 200);
+  } else {
+    app.style.opacity = '1';
+  }
+}
 
 // ── Lenses: AST → target language transpiler ──────────────────────────────────
 //
@@ -7641,27 +7672,33 @@ const ReverseTranspiler = (() => {
     </div>
   `;
 
-  ep.insertBefore(lensPanel, ep.children[1]);
+  ep.appendChild(lensPanel);
 
-  // ── Lens controls in graph panel ────────────────────────────────────────────
-  const cpEl      = document.getElementById('cp');
-  const exportWrap = document.getElementById('export-wrap');
+  // ── Lens controls — inject into editor panel header ────────────────────────
+  const epHdr = document.getElementById('ep-hdr');
+  const epMinimizeBtn = document.getElementById('ep-minimize');
+
+  // Insert a separator then the lens controls before the spacer div
+  const lensSep = document.createElement('div');
+  lensSep.className = 'panel-hdr-sep';
 
   const lensWrap = document.createElement('div');
   lensWrap.id = 'lens-wrap';
+  lensWrap.style.cssText = 'display:flex;align-items:center;gap:4px;';
   lensWrap.innerHTML = `
-    <select class="gsel" id="lens-lang-sel">
+    <select class="gsel panel-hdr-sel" id="lens-lang-sel">
       <option value="python">Python</option>
       <option value="javascript">JavaScript</option>
       <option value="typescript">TypeScript</option>
       <option value="pseudocode">Pseudocode</option>
     </select>
-    <button class="gb" id="lens-btn">Lens</button>
+    <button class="kb panel-hdr-btn" id="lens-btn">Lens</button>
   `;
-  cpEl.insertBefore(lensWrap, exportWrap);
-  const sep = document.createElement('div');
-  sep.className = 'gs';
-  cpEl.insertBefore(sep, exportWrap);
+
+  // Insert before the flex spacer (second-to-last child) and minimize button
+  const spacer = epHdr.querySelector('div[style*="flex:1"]');
+  epHdr.insertBefore(lensSep, spacer);
+  epHdr.insertBefore(lensWrap, spacer);
 
   // ── Element refs ────────────────────────────────────────────────────────────
   const lensBtn        = document.getElementById('lens-btn');
@@ -7786,10 +7823,11 @@ const ReverseTranspiler = (() => {
   function openLens() {
     lensOpen = true;
     lensBtn.classList.add('on');
-    editorSub.style.display = 'none';
-    ep.style.gridTemplateRows = '1fr 6px 200px';
+    // Hide ep-body entirely, show lens panel in its place
+    document.getElementById('ep-body').style.display = 'none';
     lensPanel.style.display   = 'flex';
-    lensPanel.style.height    = '';
+    lensPanel.style.flex      = '1';
+    lensPanel.style.minHeight = '0';
     lensCode.contentEditable  = 'true';
     lensEdited = false;
     renderLens();
@@ -7800,11 +7838,10 @@ const ReverseTranspiler = (() => {
     lensEdited = false;
     lensBtn.classList.remove('on');
     lensPanel.style.display  = 'none';
-    lensCode.contentEditable = 'false';  // prevent focus stealing when hidden
-    editorSub.style.display  = 'flex';
-    ep.style.gridTemplateRows = '';
+    lensPanel.style.flex     = '';
+    lensCode.contentEditable = 'false';
+    document.getElementById('ep-body').style.display = '';
     lensConfirm.style.display = 'none';
-    // Return focus to the source editor
     srcEl.focus();
   }
 
@@ -8117,46 +8154,13 @@ ${setups.join('\n')}
     const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
 
     // Get or create the persistent IVX script project
-    // Seed localStorage with known script ID if not already set
     if (!localStorage.getItem('ivx_script_id')) {
       localStorage.setItem('ivx_script_id', '1ozcWRzBjlR8fltP3yM5WK2EJryw57mKJq9xgKdaq6iMOjK1spLib1VJf');
     }
-    let scriptId = await _loadScriptId(token, DRIVE);
-    if (scriptId) {
-      const check = await fetch(API + '/' + scriptId, { headers });
-      if (!check.ok) scriptId = null;
-    }
-    // If no stored ID, search Apps Script for existing 'IVX Triggers' project
-    if (!scriptId) {
-      try {
-        const searchRes = await fetch(API + '?pageSize=50', { headers });
-        if (searchRes.ok) {
-          const searchData = await searchRes.json();
-          const existing = (searchData.projects || []).find(p => p.title === 'IVX Triggers');
-          if (existing) {
-            scriptId = existing.scriptId;
-            await _saveScriptId(scriptId, token, DRIVE, UPLOAD);
-          }
-        }
-      } catch(e) {
-        console.warn('[IVX] project search failed (CORS?):', e.message);
-      }
-    }
-    if (!scriptId) {
-      const res = await fetch(API, {
-        method: 'POST', headers,
-        body: JSON.stringify({ title: 'IVX Triggers' }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error('Apps Script create failed: ' + (err?.error?.message ?? res.statusText));
-      }
-      scriptId = (await res.json()).scriptId;
-      await _saveScriptId(scriptId, token, DRIVE, UPLOAD);
-    }
+    let scriptId = localStorage.getItem('ivx_script_id');
 
-    // Update project content
-    const upRes = await fetch(API + '/' + scriptId + '/content', {
+    // Try to update existing project — if it fails with 404, create a new one
+    let upRes = await fetch(API + '/' + scriptId + '/content', {
       method: 'PUT', headers,
       body: JSON.stringify({
         files: [
@@ -8165,13 +8169,39 @@ ${setups.join('\n')}
         ],
       }),
     });
+
     if (!upRes.ok) {
       const err = await upRes.json().catch(() => ({}));
-      if (err?.error?.code === 404) {
-        await _saveScriptId(null, token, DRIVE, UPLOAD);
-        throw new Error('Script project was deleted — run again to recreate');
+      if (err?.error?.code === 404 || err?.error?.status === 'NOT_FOUND') {
+        // Project was deleted — create a new one
+        const createRes = await fetch(API, {
+          method: 'POST', headers,
+          body: JSON.stringify({ title: 'IVX Triggers' }),
+        });
+        if (!createRes.ok) {
+          const cerr = await createRes.json().catch(() => ({}));
+          throw new Error('Apps Script create failed: ' + (cerr?.error?.message ?? createRes.statusText));
+        }
+        scriptId = (await createRes.json()).scriptId;
+        localStorage.setItem('ivx_script_id', scriptId);
+
+        // Retry the update with the new project
+        upRes = await fetch(API + '/' + scriptId + '/content', {
+          method: 'PUT', headers,
+          body: JSON.stringify({
+            files: [
+              { name: 'ivx_triggers', type: 'SERVER_JS', source: code },
+              { name: 'appsscript',   type: 'JSON',       source: manifest },
+            ],
+          }),
+        });
+        if (!upRes.ok) {
+          const uerr = await upRes.json().catch(() => ({}));
+          throw new Error('Apps Script update failed: ' + (uerr?.error?.message ?? upRes.statusText));
+        }
+      } else {
+        throw new Error('Apps Script update failed: ' + (err?.error?.message ?? upRes.statusText));
       }
-      throw new Error('Apps Script update failed: ' + (err?.error?.message ?? upRes.statusText));
     }
 
     // Check if this is the first deploy (no triggers installed yet)
@@ -8554,6 +8584,37 @@ function termInfo(text)   { termAppend(text, 'info');   }
 function termOutput(text) { termAppend(text, 'output'); }
 function termError(text)  { termAppend(text, 'error');  }
 
+// Show an error with line number — clicking jumps to that line in the editor
+function termErrorLine(message, lineNum) {
+  const el = document.createElement('div');
+  el.className = 'term-msg error';
+  if (lineNum != null && lineNum > 0) {
+    el.innerHTML = `<span class="term-err-line">Line ${lineNum}</span><span class="term-err-msg"> — ${_escHtml(message)}</span>`;
+    el.style.cursor = 'pointer';
+    el.title = 'Click to jump to line ' + lineNum;
+    el.addEventListener('click', () => {
+      const src = document.getElementById('src');
+      if (!src) return;
+      const lines = src.value.split('\n');
+      let pos = 0;
+      for (let i = 0; i < Math.min(lineNum - 1, lines.length); i++) pos += lines[i].length + 1;
+      src.focus();
+      src.setSelectionRange(pos, pos + (lines[lineNum - 1]?.length ?? 0));
+      // Scroll the line into view
+      const lineH = src.scrollHeight / (lines.length || 1);
+      src.scrollTop = Math.max(0, (lineNum - 3) * lineH);
+    });
+  } else {
+    el.textContent = 'Error: ' + message;
+  }
+  termMsgs.appendChild(el);
+  termMsgs.scrollTop = termMsgs.scrollHeight;
+}
+
+function _escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
 // ── Inline input — returns a Promise that resolves when user hits Enter ───────
 function termInput(varName) {
   return new Promise(resolve => {
@@ -8629,7 +8690,8 @@ termRun.addEventListener('click', async () => {
       return raw.trim() === '' ? null : isNaN(num) ? raw : num;
     },
     onError: (e) => {
-      termError('Error: ' + (e.message ?? String(e)));
+      const line = e.ivxLine ?? e.line ?? null;
+      termErrorLine(e.message ?? String(e), line ? line + 1 : null);
     },
     onWait: (n) => new Promise(r => setTimeout(r, n * 100)),
     onStep: (srcLine) => {
@@ -8652,7 +8714,8 @@ termRun.addEventListener('click', async () => {
     await interp.run(srcEl.value, { ignoreTypeErrors: true });
     interpGlobals = interp.globals;
   } catch(e) {
-    termError('Fatal: ' + (e.message ?? String(e)));
+    const line = e.ivxLine ?? e.line ?? null;
+    termErrorLine(e.message ?? String(e), line ? line + 1 : null);
   }
 
   termInfo('─── run finished ───');
@@ -8754,13 +8817,13 @@ termClear.addEventListener('click', () => {
   termMinBtn.addEventListener('click', () => {
     collapsed = !collapsed;
     if (collapsed) {
-      savedRows = ep.style.gridTemplateRows || '1fr 6px 200px';
-      ep.style.gridTemplateRows = `1fr 6px ${COLLAPSED_H}px`;
+      savedRows = document.getElementById("ep-body").style.gridTemplateRows || '1fr 6px 200px';
+      document.getElementById("ep-body").style.gridTemplateRows = `1fr 6px ${COLLAPSED_H}px`;
       termEl.classList.add('collapsed');
       termMinBtn.textContent    = '▲';
       termMinBtn.title          = 'Restore terminal';
     } else {
-      ep.style.gridTemplateRows = savedRows;
+      document.getElementById("ep-body").style.gridTemplateRows = savedRows;
       termEl.classList.remove('collapsed');
       termMinBtn.textContent    = '—';
       termMinBtn.title          = 'Minimize terminal';
@@ -8993,6 +9056,58 @@ driveNewBtn .addEventListener('click', driveNewFile);
 driveSaveBtn.addEventListener('click', driveSaveFile);
 
 window.addEventListener('load', driveInit);
+
+// ── Panel collapse (editor + graph) ──────────────────────────────────────────
+(function() {
+  const COLLAPSED_HDR = 32;
+
+  // Editor panel
+  const epEl       = document.getElementById('ep');
+  const epMinBtn   = document.getElementById('ep-minimize');
+  let epCollapsed  = false;
+
+  epMinBtn.addEventListener('click', () => {
+    epCollapsed = !epCollapsed;
+    epEl.classList.toggle('collapsed', epCollapsed);
+    epMinBtn.textContent = epCollapsed ? '▶' : '—';
+    epMinBtn.title = epCollapsed ? 'Expand editor' : 'Collapse editor';
+    window.dispatchEvent(new Event('resize')); // trigger SVG resize
+  });
+
+  // Graph panel
+  const gpEl       = document.getElementById('gp');
+  const gpMinBtn   = document.getElementById('gp-minimize');
+  let gpCollapsed  = false;
+
+  gpMinBtn.addEventListener('click', () => {
+    gpCollapsed = !gpCollapsed;
+    gpEl.classList.toggle('collapsed', gpCollapsed);
+    gpMinBtn.textContent = gpCollapsed ? '◀' : '—';
+    gpMinBtn.title = gpCollapsed ? 'Expand flowchart' : 'Collapse flowchart';
+    window.dispatchEvent(new Event('resize'));
+  });
+})();
+
+// ── Mobile tabs ───────────────────────────────────────────────────────────────
+(function() {
+  const tabs = document.querySelectorAll('.mob-tab');
+  const epEl = document.getElementById('ep');
+  const gpEl = document.getElementById('gp');
+
+  function switchTab(panel) {
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.panel === panel));
+    epEl.classList.toggle('mob-hidden', panel !== 'ep');
+    gpEl.classList.toggle('mob-hidden', panel !== 'gp');
+    if (panel === 'gp') window.dispatchEvent(new Event('resize'));
+  }
+
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => switchTab(tab.dataset.panel));
+  });
+
+  // Default: show editor on mobile
+  if (window.innerWidth <= 700) switchTab('ep');
+})();
 
 // ── Bug report ────────────────────────────────────────────────────────────────
 document.getElementById('bug-btn').addEventListener('click', () => {

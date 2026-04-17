@@ -3,12 +3,57 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>IVX Editor</title>
+  <title>IVX</title>
   <link rel="stylesheet" href="styles.css">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230f0f14'/%3E%3Cellipse cx='16' cy='9' rx='9' ry='6' fill='%23007f00'/%3E%3Crect x='15' y='15' width='2' height='8' fill='%23ffffff'/%3E%3Cellipse cx='16' cy='26' rx='9' ry='6' fill='%237f0000'/%3E%3C/svg%3E">
 </head>
 <body>
-<div id="app">
+
+<!-- Loading screen — hidden once ivx.js initialises -->
+<div id="ivx-loader">
+  <svg id="ivx-loader-svg" viewBox="0 0 120 200" xmlns="http://www.w3.org/2000/svg">
+    <!-- Start node -->
+    <ellipse cx="60" cy="24" rx="28" ry="14" fill="#007f00" opacity="0"/>
+    <text x="60" y="28" text-anchor="middle" font-size="10" fill="white" font-family="system-ui">START</text>
+    <!-- Edge -->
+    <line x1="60" y1="38" x2="60" y2="58" stroke="#4a9eff" stroke-width="1.5" opacity="0"/>
+    <!-- Process node -->
+    <rect x="28" y="58" width="64" height="28" rx="4" fill="#1e2d3e" stroke="#4a9eff" stroke-width="1" opacity="0"/>
+    <text x="60" y="76" text-anchor="middle" font-size="9" fill="#cdd6f4" font-family="monospace">make x 0</text>
+    <!-- Edge -->
+    <line x1="60" y1="86" x2="60" y2="106" stroke="#4a9eff" stroke-width="1.5" opacity="0"/>
+    <!-- Decision node -->
+    <polygon points="60,106 92,122 60,138 28,122" fill="#004b8d" opacity="0"/>
+    <text x="60" y="126" text-anchor="middle" font-size="8" fill="white" font-family="monospace">x &lt; 10</text>
+    <!-- True edge -->
+    <line x1="60" y1="138" x2="60" y2="158" stroke="#4ade80" stroke-width="1.5" opacity="0"/>
+    <!-- End node -->
+    <ellipse cx="60" cy="172" rx="28" ry="14" fill="#7f0000" opacity="0"/>
+    <text x="60" y="176" text-anchor="middle" font-size="10" fill="white" font-family="system-ui">END</text>
+  </svg>
+  <div id="ivx-loader-logo">IVX</div>
+  <div id="ivx-loader-sub">Loading…</div>
+</div>
+<script>
+// Animate loader flowchart nodes in sequence
+(function() {
+  const svg = document.getElementById('ivx-loader-svg');
+  if (!svg) return;
+  const nodes = svg.querySelectorAll('ellipse, rect, polygon, line');
+  let i = 0;
+  function showNext() {
+    if (i < nodes.length) {
+      nodes[i].style.opacity = '1';
+      i++;
+      setTimeout(showNext, 120);
+    }
+  }
+  setTimeout(showNext, 100);
+})();
+</script>
+
+<div id="app" style="opacity:0;transition:opacity .3s">
   <header id="hdr">
     <span class="logo">IVX</span>
     <div class="hsep"></div>
@@ -29,107 +74,141 @@
     <div id="err"></div>
     <button id="bug-btn" class="drive-btn drive-btn-hdr" style="margin-left:auto;margin-right:8px">🐛 Report Bug</button>
   </header>
-  <div id="main-layout">
 
+  <!-- Mobile tab bar -->
+  <div id="mobile-tabs">
+    <button class="mob-tab active" data-panel="ep">✏️ Editor</button>
+    <button class="mob-tab" data-panel="gp">📊 Flowchart</button>
+  </div>
+
+  <div id="main-layout">
     <div id="ep">
-      <div id="editor-sub">
-        <div id="tb">
-        <button class="kb incoming-btn" data-ins="  ">then</button>
-        <button class="kb incoming-btn" data-ins="else ">else</button>
-        <button class="kb so-btn" data-ins="so ">so</button>
-        <span class="tbl"></span>
-        <button class="kb" data-ins="if ">if</button>
-        <button class="kb" data-ins="fork ">fork</button>
-        <button class="kb" data-ins="loop ">loop</button>
-        <button class="kb" data-ins="dot ">dot</button>
-        <button class="kb" data-ins="take ">take</button>
-        <button class="kb" data-ins="say ">say</button>
-        <button class="kb" data-ins="make ">make</button>
-        <button class="kb" data-ins="fun ">fun</button>
-        <button class="kb" data-ins="end ">end</button>
-        <button class="kb" data-ins="note ">note</button>
-        <button class="kb" data-ins="for ">for</button>
-        <button class="kb" data-ins="in ">in</button>
-        <button class="kb" data-ins="give ">give</button>
-        <button class="kb" data-ins="wait ">wait</button>
-        <button class="kb" data-ins="del ">del</button>
-        <button class="kb outgoing-btn" data-ins="prev ">prev</button>
-        <button class="kb outgoing-btn" data-ins="next ">next</button>
-        <span class="tbl"></span>
-        <button class="kb logic-btn" data-ins="not ">not</button>
-        <button class="kb logic-btn" data-ins=" and ">and</button>
-        <button class="kb logic-btn" data-ins=" or ">or</button>
-        <button class="kb logic-btn" data-ins=" xor ">xor</button>
-        <button class="kb logic-btn" data-ins=" is ">is</button>
-        <span class="tbl"></span>
-        <button class="kb logic-btn" data-ins="yes">yes</button>
-        <button class="kb logic-btn" data-ins="no">no</button>
-        <button class="kb logic-btn" data-ins="none">none</button>
-        <span class="tbl"></span>
-        <button class="kb teal-btn" data-ins="[]">[]</button>
-        <button class="kb teal-btn" data-ins="{}">&#123;&#125;</button>
-        <span class="tbl"></span>
-        <button class="kb google-btn" data-ins="sheets ">sheets</button>
-        <button class="kb google-btn" data-ins="email &quot;&quot; subject &quot;&quot; body ">email</button>
-        <button class="kb google-btn" data-ins='wait email by ""&#10;  '>wait email</button>
-        <button class="kb google-btn" data-ins='wait sheets "" by "row added"&#10;  '>wait sheets</button>
-        <button class="kb google-btn" data-ins='wait time "09:00"&#10;  '>wait time</button>
-        <span style="flex:1"></span>
-        <button class="kb" id="clr">Clear</button>
-        </div>
-        <div id="src-wrap"><div id="src-gutter"><div id="src-gutter-inner"></div></div><div id="src-scroll">
-          <div id="src-hl" aria-hidden="true"></div>
-          <textarea id="src" spellcheck="false" autocorrect="off" autocomplete="off" autocapitalize="off"></textarea></div>
-        </div>
-      </div><!-- end editor-sub -->
-      <div id="term-resizer"></div>
-      <div id="term">
-        <div id="term-hdr">
-          <div id="term-hdr-left">
-            <span id="term-title">Terminal</span>
-            <button id="term-run">▶ Run</button>
-            <button id="term-clear">Clear</button>
+      <!-- Editor panel header — contains title, keywords, clear, collapse -->
+      <div id="ep-hdr" class="panel-hdr">
+        <span class="panel-hdr-title">Editor</span>
+        <div id="help-menu-wrap">
+          <button id="help-menu-btn" class="kb panel-hdr-btn">Keywords ▾</button>
+          <div id="help-menu" style="display:none">
+            <div class="hm-section">
+              <div class="hm-label">Control Flow</div>
+              <button class="kb hm-btn" data-ins="if ">if</button>
+              <button class="kb hm-btn" data-ins="else ">else</button>
+              <button class="kb hm-btn incoming-btn" data-ins="  ">then</button>
+              <button class="kb hm-btn" data-ins="loop ">loop</button>
+              <button class="kb hm-btn" data-ins="for ">for</button>
+              <button class="kb hm-btn" data-ins="in ">in</button>
+              <button class="kb hm-btn" data-ins="fork ">fork</button>
+              <button class="kb hm-btn" data-ins="end ">end</button>
+              <button class="kb hm-btn" data-ins="dot ">dot</button>
+              <button class="kb hm-btn outgoing-btn" data-ins="prev ">prev</button>
+              <button class="kb hm-btn outgoing-btn" data-ins="next ">next</button>
+            </div>
+            <div class="hm-section">
+              <div class="hm-label">Data</div>
+              <button class="kb hm-btn" data-ins="make ">make</button>
+              <button class="kb hm-btn" data-ins="take ">take</button>
+              <button class="kb hm-btn" data-ins="say ">say</button>
+              <button class="kb hm-btn" data-ins="give ">give</button>
+              <button class="kb hm-btn" data-ins="del ">del</button>
+              <button class="kb hm-btn" data-ins="save ">save</button>
+              <button class="kb hm-btn teal-btn" data-ins="[]">[]</button>
+              <button class="kb hm-btn teal-btn" data-ins="{}">&#123;&#125;</button>
+            </div>
+            <div class="hm-section">
+              <div class="hm-label">Functions</div>
+              <button class="kb hm-btn" data-ins="fun ">fun</button>
+              <button class="kb hm-btn" data-ins="class ">class</button>
+              <button class="kb hm-btn" data-ins="note ">note</button>
+              <button class="kb hm-btn so-btn" data-ins="so ">so</button>
+              <button class="kb hm-btn" data-ins="wait ">wait</button>
+            </div>
+            <div class="hm-section">
+              <div class="hm-label">Logic</div>
+              <button class="kb hm-btn logic-btn" data-ins="not ">not</button>
+              <button class="kb hm-btn logic-btn" data-ins=" and ">and</button>
+              <button class="kb hm-btn logic-btn" data-ins=" or ">or</button>
+              <button class="kb hm-btn logic-btn" data-ins=" xor ">xor</button>
+              <button class="kb hm-btn logic-btn" data-ins=" is ">is</button>
+              <button class="kb hm-btn logic-btn" data-ins="yes">yes</button>
+              <button class="kb hm-btn logic-btn" data-ins="no">no</button>
+              <button class="kb hm-btn logic-btn" data-ins="none">none</button>
+            </div>
+            <div class="hm-section">
+              <div class="hm-label">Google</div>
+              <button class="kb hm-btn google-btn" data-ins="sheets ">sheets</button>
+              <button class="kb hm-btn google-btn" data-ins="email &quot;&quot; subject &quot;&quot; body ">email</button>
+              <button class="kb hm-btn google-btn" data-ins='wait email by ""&#10;  '>wait email</button>
+              <button class="kb hm-btn google-btn" data-ins='wait sheets "" by "row added"&#10;  '>wait sheets</button>
+              <button class="kb hm-btn google-btn" data-ins='wait time "09:00"&#10;  '>wait time</button>
+              <button class="kb hm-btn google-btn" data-ins='wait every time "09:00"&#10;  '>wait every time</button>
+            </div>
           </div>
-          <button id="term-minimize" title="Minimize terminal">—</button>
         </div>
-        <div id="term-msgs"></div>
+        <button class="kb panel-hdr-btn" id="clr">Clear</button>
+        <div style="flex:1"></div>
+        <button id="ep-minimize" class="panel-minimize-btn" title="Collapse editor">—</button>
       </div>
+      <div id="ep-body">
+        <div id="editor-sub">
+          <div id="src-wrap"><div id="src-gutter"><div id="src-gutter-inner"></div></div><div id="src-scroll">
+            <div id="src-hl" aria-hidden="true"></div>
+            <textarea id="src" spellcheck="false" autocorrect="off" autocomplete="off" autocapitalize="off"></textarea></div>
+          </div>
+        </div><!-- end editor-sub -->
+        <div id="term-resizer"></div>
+        <div id="term">
+          <div id="term-hdr">
+            <div id="term-hdr-left">
+              <span id="term-title">Terminal</span>
+              <button id="term-run">▶ Run</button>
+              <button id="term-clear">Clear</button>
+            </div>
+            <button id="term-minimize" title="Minimize terminal">—</button>
+          </div>
+          <div id="term-msgs"></div>
+        </div>
+      </div><!-- end ep-body -->
     </div><!-- end ep -->
 
     <div id="gp">
-      <div id="gc" class="pui">
-        <button class="gb" id="sprev">‹</button>
-        <button class="gb" id="splay">Play</button>
-        <button class="gb" id="spause">Pause</button>
-        <button class="gb" id="snext">›</button>
-        <div class="gs"></div>
-        <select class="gsel" id="spd">
+      <!-- Graph panel header — contains title, playback, export, collapse -->
+      <div id="gp-hdr" class="panel-hdr">
+        <span class="panel-hdr-title">Flowchart</span>
+        <div class="panel-hdr-sep"></div>
+        <button class="gb panel-hdr-btn" id="sprev">‹</button>
+        <button class="gb panel-hdr-btn" id="splay">Play</button>
+        <button class="gb panel-hdr-btn" id="spause">Pause</button>
+        <button class="gb panel-hdr-btn" id="snext">›</button>
+        <select class="gsel panel-hdr-sel" id="spd">
           <option value="0.25">0.25×</option>
           <option value="0.5">0.5×</option>
           <option value="1" selected>1×</option>
           <option value="1.5">1.5×</option>
           <option value="2">2×</option>
         </select>
-        <div class="gs"></div>
-        <button class="gb" id="cmtbtn">Comments</button>
+        <div class="panel-hdr-sep"></div>
+        <button class="gb panel-hdr-btn" id="cmtbtn">Comments</button>
+        <div class="panel-hdr-sep"></div>
+        <select class="gsel panel-hdr-sel" id="export-fmt">
+          <option value="json">JSON</option>
+          <option value="svg">SVG</option>
+          <option value="png">PNG</option>
+        </select>
+        <button class="gb panel-hdr-btn" id="export-btn">Export</button>
+        <div style="flex:1"></div>
+        <button id="gp-minimize" class="panel-minimize-btn" title="Collapse flowchart">—</button>
       </div>
-      <div id="cp" class="pui">
-        <div id="export-wrap">
-          <select class="gsel" id="export-fmt">
-            <option value="json">JSON</option>
-            <option value="svg">SVG</option>
-            <option value="png">PNG</option>
-          </select>
-          <button class="gb" id="export-btn">Export</button>
-        </div>
-      </div>
-      <div id="controls" style="display:none"></div>
-      <svg id="canvas"></svg>
-      <div id="minimap"><svg id="minimap-canvas"></svg></div>
-    </div>
+      <div id="gp-body">
+        <div id="gc" class="pui" style="display:none"></div>
+        <div id="cp" class="pui" style="display:none"></div>
+        <div id="controls" style="display:none"></div>
+        <svg id="canvas"></svg>
+        <div id="minimap"><svg id="minimap-canvas"></svg></div>
+      </div><!-- end gp-body -->
+    </div><!-- end gp -->
   </div><!-- end main-layout -->
 </div>
 
-<script src="ivx.js?v=2"></script>
+<script src="ivx.js?v=3"></script>
 </body>
 </html>
