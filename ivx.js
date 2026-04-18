@@ -6795,11 +6795,9 @@ function parseivx(source) {
 const srcEl  = /** @type {HTMLTextAreaElement} */ (document.getElementById('src'));
 const errEl  = document.getElementById('err');
 
-const STARTER = `take user input
-if input > 0
-then give positive result
-else give non-positive result
-end`;
+const STARTER = `if x? = 0
+  say "zero"
+else say "more than zero"`;
 
 srcEl.value = STARTER;
 
