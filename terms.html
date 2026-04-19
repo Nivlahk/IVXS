@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IVX — Terms of Service</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><ellipse cx='16' cy='8' rx='10' ry='6' fill='%234ade80'/><line x1='16' y1='14' x2='16' y2='18' stroke='%23fff' stroke-width='2'/><ellipse cx='16' cy='24' rx='10' ry='6' fill='%23f87171'/></svg>">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap');
+
+  :root {
+    --bg: #0f0f14;
+    --surface: #1c1c28;
+    --border: #2a2a3e;
+    --border2: #3a3a5c;
+    --text: #cdd6f4;
+    --muted: #6b7280;
+    --accent: #89b4fa;
+    --accent2: #4ade80;
+    --danger: #f87171;
+    --amber: #fbbf24;
+    --purple: #c084fc;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', system-ui, sans-serif;
+    font-weight: 300;
+    line-height: 1.7;
+    min-height: 100vh;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(137,180,250,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(137,180,250,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(15,15,20,0.9);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 40px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .logo {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  .nav-back {
+    font-size: 11px;
+    color: var(--muted);
+    text-decoration: none;
+    letter-spacing: .05em;
+    transition: color .2s;
+  }
+  .nav-back:hover { color: var(--accent); }
+
+  main {
+    position: relative;
+    z-index: 1;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 80px 40px 120px;
+  }
+
+  .hero {
+    margin-bottom: 64px;
+    animation: fadeUp .6s ease both;
+  }
+
+  .hero-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: .2em;
+    color: var(--accent2);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .hero-label::before {
+    content: '';
+    display: inline-block;
+    width: 20px;
+    height: 1px;
+    background: var(--accent2);
+  }
+
+  h1 {
+    font-family: 'Space Mono', monospace;
+    font-size: clamp(28px, 5vw, 40px);
+    font-weight: 700;
+    line-height: 1.2;
+    color: #fff;
+    margin-bottom: 20px;
+  }
+
+  .hero-sub {
+    font-size: 15px;
+    color: var(--muted);
+    max-width: 540px;
+  }
+
+  .updated {
+    margin-top: 12px;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--border2);
+    letter-spacing: .05em;
+  }
+
+  /* Commitments card */
+  .commitments {
+    background: rgba(137,180,250,0.06);
+    border: 1px solid rgba(137,180,250,0.2);
+    border-radius: 10px;
+    padding: 24px 28px;
+    margin-bottom: 56px;
+    animation: fadeUp .6s .1s ease both;
+  }
+
+  .commitments-header {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: .2em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+
+  .commitments ul {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .commitments li {
+    font-size: 14px;
+    color: var(--text);
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .commitments li::before {
+    content: '→';
+    color: var(--accent);
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  /* Tier cards */
+  .tiers {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 20px 0;
+  }
+
+  .tier {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+
+  .tier.flow {
+    border-color: rgba(192,132,252,0.3);
+    background: rgba(192,132,252,0.04);
+  }
+
+  .tier-name {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: .12em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .tier.flow .tier-name { color: var(--purple); }
+
+  .tier-price {
+    font-family: 'Space Mono', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 14px;
+  }
+
+  .tier ul {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .tier li {
+    font-size: 13px;
+    color: var(--text);
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .tier li::before {
+    content: '·';
+    color: var(--muted);
+    flex-shrink: 0;
+  }
+
+  .tier.flow li::before { color: var(--purple); }
+
+  /* Sections */
+  .section {
+    margin-bottom: 48px;
+    animation: fadeUp .6s ease both;
+  }
+
+  .section-num {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--border2);
+    letter-spacing: .15em;
+    margin-bottom: 6px;
+  }
+
+  h2 {
+    font-family: 'Space Mono', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: .06em;
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  p {
+    font-size: 14px;
+    color: var(--text);
+    margin-bottom: 12px;
+  }
+
+  p:last-child { margin-bottom: 0; }
+
+  code {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    color: var(--accent);
+  }
+
+  a { color: var(--accent); }
+
+  .notice {
+    background: rgba(251,191,36,0.06);
+    border: 1px solid rgba(251,191,36,0.2);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    font-size: 13px;
+    color: var(--amber);
+  }
+
+  .contact-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  .contact-card p { margin: 0; }
+
+  .contact-link {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    color: var(--accent);
+    text-decoration: none;
+    border: 1px solid var(--border2);
+    border-radius: 5px;
+    padding: 6px 14px;
+    transition: border-color .2s, color .2s;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .contact-link:hover { border-color: var(--accent); }
+
+  footer {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+    padding: 32px 40px;
+    border-top: 1px solid var(--border);
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--border2);
+    letter-spacing: .08em;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  @media (max-width: 600px) {
+    nav { padding: 0 20px; }
+    main { padding: 48px 24px 80px; }
+    .tiers { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="logo" href="index.html">IVX</a>
+  <a class="nav-back" href="index.html">← Back to Editor</a>
+</nav>
+
+<main>
+
+  <div class="hero">
+    <div class="hero-label">Legal</div>
+    <h1>Terms of Service</h1>
+    <p class="hero-sub">Plain language terms for using IVX. We've tried to make this readable, not terrifying.</p>
+    <p class="updated">Last updated: April 2026 · Governing law: State of Utah, United States</p>
+  </div>
+
+  <div class="commitments">
+    <div class="commitments-header">Our commitments to you — unconditionally</div>
+    <ul>
+      <li>IVX will never show advertisements of any kind.</li>
+      <li>IVX will never collect, store, or sell your personal data. We will make this architecturally impossible, not just a policy promise.</li>
+      <li>IVX will never use dark patterns, forced upgrade prompts, or manipulative design.</li>
+      <li>Running your programs is always free. That will not change.</li>
+    </ul>
+  </div>
+
+  <div class="sections">
+
+    <div class="section">
+      <div class="section-num">01</div>
+      <h2>Acceptance of Terms</h2>
+      <p>By using IVX — whether through the web editor, exported files, or any associated tools — you agree to these Terms of Service. If you do not agree, please discontinue use.</p>
+      <p>These terms apply to your use of IVX as a web application. The IVX source code (the interpreter, lexer, parser, and layout algorithm) is separately licensed under the Apache License 2.0, available in the project repository.</p>
+    </div>
+
+    <div class="section">
+      <div class="section-num">02</div>
+      <h2>What IVX Is</h2>
+      <p>IVX is a browser-based programming language where every program renders as a live animated flowchart. IVX runs entirely in your browser and interacts with Google services on your behalf. There are no IVX servers that process or store your data.</p>
+      <p>IVX consists of two components with different licensing:</p>
+      <p><strong style="color:#cdd6f4;font-weight:500">Open source</strong> — The IVX language itself: the interpreter, lexer, parser, and flowchart layout algorithm. Licensed under Apache 2.0. Free to use, modify, and redistribute under those terms.</p>
+      <p><strong style="color:#cdd6f4;font-weight:500">Proprietary</strong> — The visual rendering layer: the SVG output, exported JSON and other collapsed representations, and the visual style of rendered flowcharts. These are owned by IVX and are not covered by the Apache license.</p>
+      <div class="notice">Note: The proprietary visual layer is currently bundled within the open source codebase for technical reasons. This does not grant any rights to that layer beyond what these Terms describe. The proprietary elements will be separated into an encrypted closed module in a future release.</div>
+    </div>
+
+    <div class="section">
+      <div class="section-num">03</div>
+      <h2>Your Programs and Outputs</h2>
+      <p>You own your IVX programs — the source code you write in the editor. You own the outputs of running your programs, such as emails sent, files saved to your Google Drive, and data written to your spreadsheets.</p>
+      <p>You do not own the visual flowchart rendering of your programs. The SVG files, exported JSON, and other visual representations generated by IVX are proprietary to IVX and are licensed to you under the terms described in Section 4.</p>
+    </div>
+
+    <div class="section">
+      <div class="section-num">04</div>
+      <h2>Plans and Flowchart Exports</h2>
+      <p>Running your programs is always free and unlimited. Flowchart exports — SVG files, JSON representations, and other collapsed formats — are subject to the following limits:</p>
+
+      <div class="tiers">
+        <div class="tier">
+          <div class="tier-name">Free</div>
+          <div class="tier-price">$0</div>
+          <ul>
+            <li>Unlimited program runs</li>
+            <li>3 flowchart exports per day, resets midnight UTC</li>
+            <li>Commercial use of exports permitted</li>
+            <li>Full Google integration</li>
+            <li>All language features</li>
+          </ul>
+        </div>
+        <div class="tier flow">
+          <div class="tier-name">IVX Flow</div>
+          <div class="tier-price">$5 / mo</div>
+          <ul>
+            <li>Everything in Free</li>
+            <li>Unlimited flowchart exports</li>
+            <li>Commercial use of exports permitted</li>
+            <li>Priority support</li>
+          </ul>
+        </div>
+      </div>
+
+      <p>Pricing and plan features may change. Any changes will be communicated before taking effect and will not apply retroactively to active billing periods.</p>
+      <p>Free tier export limits are currently enforced on a best-effort basis. IVX reserves the right to implement technical enforcement in the future.</p>
+    </div>
+
+    <div class="section">
+      <div class="section-num">05</div>
+      <h2>Acceptable Use</h2>
+      <p>You may use IVX for any lawful purpose, personal or commercial. You may not:</p>
+      <p>Attempt to reverse engineer, extract, or reproduce the proprietary visual style or rendering system of IVX outside of what these Terms permit. Scrape, systematically copy, or reproduce the SVG renderer or visual output beyond normal use. Circumvent or attempt to circumvent export limits. Use IVX to send unsolicited bulk communications or otherwise abuse the Google API integrations it provides access to.</p>
+      <p>IVX reserves the right to terminate or restrict access for violations of these terms. Because IVX does not collect user data, enforcement may be carried out in cooperation with Google through OAuth access revocation.</p>
+    </div>
+
+    <div class="section">
+      <div class="section-num">06</div>
+      <h2>Open Source License</h2>
+      <p>The IVX language core — including the lexer, parser, interpreter, type checker, graph builder, and layout algorithm — is open source software licensed under the <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank">Apache License, Version 2.0</a>.</p>
+      <p>Under Apache 2.0, you are free to use, reproduce, modify, and distribute the language core, including for commercial purposes, subject to the conditions of that license. The Apache license governs the source code only and does not grant any rights to the proprietary visual layer described in Section 2.</p>
+    </div>
+
+    <div class="section">
+      <div class="section-num">07</div>
+      <h2>Disclaimer of Warranty</h2>
+      <p>IVX is provided "as is" without warranty of any kind, express or implied. We do not guarantee that IVX will be available at all times, error-free, or suitable for any particular purpose. You use IVX at your own risk.</p>
+      <p>IVX interacts with third-party services including Google APIs. We are not responsible for the availability, accuracy, or behavior of those services.</p>
+    </div>
+
+    <div class="section">
+      <div class="section-num">08</div>
+      <h2>Limitation of Liability</h2>
+      <p>To the fullest extent permitted by applicable law, IVX and its contributors shall not be liable for any indirect, incidental, special, consequential, or punitive damages arising from your use of IVX, even if advised of the possibility of such damages.</p>
+    </div>
+
+    <div class="section">
+      <div class="section-num">09</div>
+      <h2>Changes to These Terms</h2>
+      <p>We may update these Terms from time to time. The date at the top of this page reflects the most recent revision. Because IVX does not collect contact information, we cannot notify you directly — please check this page periodically. Continued use of IVX after changes constitutes acceptance of the updated Terms.</p>
+    </div>
+
+    <div class="section">
+      <div class="section-num">10</div>
+      <h2>Governing Law</h2>
+      <p>These Terms are governed by the laws of the State of Utah, United States, without regard to conflict of law principles. Any disputes arising under these Terms shall be resolved in the courts of Utah.</p>
+    </div>
+
+    <div class="section">
+      <div class="section-num">11</div>
+      <h2>Contact</h2>
+      <div class="contact-card">
+        <p>Questions about these terms? We're a small team and we read our email.</p>
+        <a class="contact-link" href="mailto:iceboltstartup@gmail.com">iceboltstartup@gmail.com</a>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+<footer>
+  IVX · Terms of Service · No lawyers were harmed in the making of this document
+</footer>
+
+</body>
+</html>
