@@ -194,6 +194,20 @@ if x < 0
   end say "x must be positive"
 ```
 
+### try / err
+Catch runtime errors and handle them gracefully.
+```
+try
+  make data "https://api.example.com/data"
+  say data
+err e
+  say "Failed: {e}"
+
+say "program continues"
+```
+
+The variable after `err` holds the error message. Execution continues after the try/err block regardless of whether an error occurred.
+
 ### wait
 Pause execution or block until a trigger fires.
 
@@ -218,6 +232,11 @@ fun add(a, b)
   give a + b
 
 say add(3, 4)      note 7
+```
+
+Inline with `then`:
+```
+fun double(x) then give x * 2
 ```
 
 Recursive:
@@ -248,6 +267,17 @@ Combine defaults and transforms:
 ```
 fun invest(amount? 100 * 1.05)   note default 100, apply 5% growth
   give amount
+```
+
+### Higher-order functions
+Pass named functions to builtins like `map`, `filter`, and `reduce`:
+```
+fun double(x) then give x * 2
+fun isEven(x) then give x % 2 = 0
+
+make nums [1, 2, 3, 4, 5]
+say map(nums, double)      note [2, 4, 6, 8, 10]
+say filter(nums, isEven)   note [2, 4]
 ```
 
 ---
@@ -365,9 +395,9 @@ loop x < 100
 ## Network
 
 ### HTTP GET
-Any string that starts with `https://` auto-fetches when evaluated:
+Any bare URL starting with `https://` auto-fetches when evaluated:
 ```
-make data "https://jsonplaceholder.typicode.com/todos/1"
+make data https://jsonplaceholder.typicode.com/todos/1
 say data
 ```
 
@@ -380,7 +410,14 @@ say response
 
 With a credential:
 ```
-post "https://api.example.com/submit" {"key": "value"} use key
+post "https://api.example.com/submit" {"key": "value"} key mykey
+```
+
+### Imports
+Fetch and run an IVX module from a URL, importing named functions:
+```
+from https://ivxs.tech/std/strings use slugify, truncate
+say slugify("Hello World")
 ```
 
 ---
@@ -390,8 +427,9 @@ post "https://api.example.com/submit" {"key": "value"} use key
 ### ask
 Call an AI model. Returns the response as a string.
 ```
-make key "your-api-key"
-make result ask gemini "Summarise the history of computing" use key
+make k "your-api-key"
+key k
+make result ask gemini "Summarise the history of computing"
 say result
 ```
 
@@ -401,16 +439,15 @@ say result
 | OpenAI GPT-4o Mini | `chatgpt` or `gpt` | No |
 | Anthropic Claude Haiku | `claude` or `anthropic` | No |
 
-### use
-Set a global API key for all subsequent AI calls.
+### key
+Set a global credential for AI and API calls.
 ```
-make key "your-key"
-use key
+key "your-api-key"
 ```
 
-Inline credential (this call only):
+Inline (this call only):
 ```
-make result ask gemini "Hello" use key
+make result ask gemini "Hello" key "your-key"
 ```
 
 ---
@@ -472,6 +509,101 @@ wait sheets "Sales" by "row added"
 
 ---
 
+## Built-in functions
+
+### Type conversion
+```
+int(x)       note to integer
+flt(x)       note to float
+str(x)       note to string
+bin(x)       note to boolean
+list(x)      note to list
+dict(x)      note to dict
+```
+
+### Math
+```
+abs(x)          round(x)        floor(x)       ceil(x)
+min(a, b)       max(a, b)       sqrt(x)
+```
+
+### String
+```
+upper(s)                       note "hello" → "HELLO"
+lower(s)                       note "HELLO" → "hello"
+trim(s)                        note remove whitespace
+split(s, sep)                  note "a,b,c" → ["a","b","c"]
+join(list, sep)                note ["a","b"] → "a,b"
+replace(s, from, to)           note replace all occurrences
+contains(s, sub)               note yes/no
+starts(s, prefix)              note yes/no
+ends(s, suffix)                note yes/no
+index(s, sub)                  note position, or none if not found
+slice(s, start, end)           note substring
+pad(s, len, char)              note left-pad to length
+padend(s, len, char)           note right-pad to length
+chars(s)                       note string to list of characters
+repeat(s, n)                   note repeat string n times
+size(x)                        note length of string, list, or dict
+length(x)                      note alias for size
+```
+
+### List
+```
+push(list, val)                note add to end (mutates)
+pop(list)                      note remove from end (mutates)
+sort(list)                     note sorted copy
+sort(list, fun)                note sorted by custom function
+reverse(list)                  note reversed copy
+unique(list)                   note remove duplicates
+flat(list)                     note flatten one level
+first(list)                    note first element
+last(list)                     note last element
+head(list, n)                  note first n elements
+drop(list, n)                  note skip first n elements
+zip(a, b)                      note [[a0,b0], [a1,b1], ...]
+map(list, fun)                 note transform each element
+filter(list, fun)              note keep matching elements
+reduce(list, fun, init)        note fold to single value
+```
+
+### 2D list
+```
+rows(grid)                     note number of rows
+cols(grid)                     note number of columns
+row(grid, n)                   note nth row as list
+col(grid, n)                   note nth column as list
+transpose(grid)                note flip rows and columns
+colnames(table)                note column names from dict table
+```
+
+### Table (list of dicts)
+```
+where(table, col, op, value)   note filter rows
+order(table, col, dir)         note sort rows ("asc" or "desc")
+group(table, cols)             note group by column(s)
+agg(grouped, col, fn, as)      note aggregate (sum/avg/count/min/max)
+join(left, right, lcol, rcol)  note inner join two tables
+```
+
+### Date / time
+```
+now()                          note today's date as "YYYY-MM-DD"
+time()                         note current time as "HH:mm:ss"
+timestamp()                    note milliseconds since epoch
+year(date)                     note extract year
+month(date)                    note extract month (1-12)
+day(date)                      note extract day of month
+hour(date)                     note extract hour
+minute(date)                   note extract minute
+weekday(date)                  note "Monday", "Tuesday", etc.
+dateadd(date, n, unit)         note add days/months/years/hours/minutes
+datediff(d1, d2, unit)         note difference in days/months/years etc.
+format(date, pattern)          note "YYYY-MM-DD HH:mm:ss dddd"
+```
+
+---
+
 ## Practical examples
 
 ### Hello world
@@ -522,6 +654,38 @@ loop guess? != secret
 say "correct in {tries} tries!"
 ```
 
+### List processing
+```
+make nums [3, 1, 4, 1, 5, 9, 2, 6]
+say sort(nums)
+say unique(nums)
+say reverse(nums)
+
+fun double(x) then give x * 2
+fun isOdd(x) then give x % 2 != 0
+
+say map(nums, double)
+say filter(nums, isOdd)
+```
+
+### 2D list
+```
+make grid [1, 2, 3; 4, 5, 6; 7, 8, 9]
+say rows(grid)          note 3
+say col(grid, 0)        note [1, 4, 7]
+say transpose(grid)
+```
+
+### Error handling
+```
+try
+  make result "https://api.example.com/data"
+  say result
+err e
+  say "Request failed: {e}"
+  make result none
+```
+
 ### Bank account (OOP)
 ```
 class BankAccount
@@ -548,10 +712,17 @@ acc.withdraw(30)
 acc.status()
 ```
 
+### Date calculations
+```
+make today now()
+say "Today is {weekday(today)}, {today}"
+say dateadd(today, 30, "days")
+say datediff("2026-01-01", today, "days")
+```
+
 ### AI loop
 ```
-make key "your-gemini-key"
-use key
+key "your-gemini-key"
 make topic "renewable energy"
 loop y? < 3
   make result ask gemini "Give me one surprising fact about {topic}"
@@ -578,6 +749,12 @@ wait every time "08:00"
   for tasks
     make summary summary + "- {i[0]}\n"
   email "you@example.com" subject "Daily digest" body summary
+```
+
+### Import a module
+```
+from https://ivxs.tech/std/math use fibonacci
+say fibonacci(10)
 ```
 
 ---
@@ -619,23 +796,28 @@ for list                     iterate
 fun name(a, b)               define function
 fun name(a, b? 0)            parameter with default
 fun name(a, b * 2)           parameter with transform
+fun name(x) then give x * 2  inline function
 class Name                   define class
 init(a, b)                   constructor — auto-assigns to self
 init(a, b? 0)                constructor with default
 init(a, b * 2)               constructor with transform
+try / err e                  error handling
 note ...                     comment / block label
 ask gemini "..."             AI call
+key "..."                    set global credential
+from URL use name            import from URL
 email addr subj body         send email
 sheets "Name"                open spreadsheet
 save x                       save to Google Drive
 local save x                 save to local machine
-use key                      set API key
 end                          terminate path
 wait 5                       pause
 wait email by "addr"         wait for email trigger
 wait time "09:00"            wait for time trigger
 wait every time "09:00"      recurring time trigger
 by "source"                  trigger qualifier
+now()  time()  weekday()     date and time
+sort() filter() map()        list operations
 ```
 
 ---

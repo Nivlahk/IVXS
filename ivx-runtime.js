@@ -496,6 +496,119 @@ const BUILTIN_DEFS = {
     if(u==='year'||u==='years')return d2.getFullYear()-d1.getFullYear();
     return Math.round(ms/86400000);
   }},
+  // ── Dict operations ─────────────────────────────────────────────────────
+  merge: {
+    params: ['a', 'b'],
+    call: (args) => {
+      const a = args[0]; const b = args[1];
+      if (!(a instanceof Map) || !(b instanceof Map)) return a ?? NONE;
+      const result = new Map(a);
+      for (const [k, v] of b) result.set(k, v);
+      return result;
+    },
+  },
+  pick: {
+    params: ['d', 'keys'],
+    call: (args) => {
+      const d = args[0]; const keys = args[1];
+      if (!(d instanceof Map)) return new Map();
+      const result = new Map();
+      const ks = Array.isArray(keys) ? keys : [keys];
+      for (const k of ks) if (d.has(k)) result.set(k, d.get(k));
+      return result;
+    },
+  },
+  omit: {
+    params: ['d', 'keys'],
+    call: (args) => {
+      const d = args[0]; const keys = args[1];
+      if (!(d instanceof Map)) return new Map();
+      const result = new Map(d);
+      const ks = Array.isArray(keys) ? keys : [keys];
+      for (const k of ks) result.delete(k);
+      return result;
+    },
+  },
+  update: {
+    params: ['d', 'key', 'val'],
+    call: (args) => {
+      const d = args[0];
+      if (!(d instanceof Map)) return d;
+      const result = new Map(d);
+      result.set(args[1], args[2]);
+      return result;
+    },
+  },
+  entries: {
+    params: ['d'],
+    call: (args) => {
+      const d = args[0];
+      if (!(d instanceof Map)) return [];
+      return [...d.entries()]
+        .filter(([k]) => !String(k).startsWith('__'))
+        .map(([k, v]) => [k, v]);
+    },
+  },
+  fromkeys: {
+    params: ['keys', 'val'],
+    call: (args) => {
+      const keys = args[0]; const val = args[1] ?? NONE;
+      if (!Array.isArray(keys)) return new Map();
+      const result = new Map();
+      for (const k of keys) result.set(k, val);
+      return result;
+    },
+  },
+
+  // ── Regular expressions ───────────────────────────────────────────────────
+  match: {
+    params: ['s', 'pattern'],
+    call: (args, node) => {
+      try {
+        return new RegExp(String(args[1])).test(String(args[0]));
+      } catch(e) { throw new RuntimeError(`match: invalid pattern: ${e.message}`, node?.line); }
+    },
+  },
+  findall: {
+    params: ['s', 'pattern'],
+    call: (args, node) => {
+      try {
+        const matches = String(args[0]).match(new RegExp(String(args[1]), 'g'));
+        return matches ?? [];
+      } catch(e) { throw new RuntimeError(`findall: invalid pattern: ${e.message}`, node?.line); }
+    },
+  },
+  search: {
+    params: ['s', 'pattern'],
+    call: (args, node) => {
+      try {
+        const m = String(args[0]).match(new RegExp(String(args[1])));
+        if (!m) return NONE;
+        const result = new Map();
+        result.set('match', m[0]);
+        result.set('index', m.index);
+        result.set('groups', m.slice(1));
+        return result;
+      } catch(e) { throw new RuntimeError(`search: invalid pattern: ${e.message}`, node?.line); }
+    },
+  },
+  sub: {
+    params: ['s', 'pattern', 'replacement'],
+    call: (args, node) => {
+      try {
+        return String(args[0]).replace(new RegExp(String(args[1]), 'g'), String(args[2]));
+      } catch(e) { throw new RuntimeError(`sub: invalid pattern: ${e.message}`, node?.line); }
+    },
+  },
+  split_re: {
+    params: ['s', 'pattern'],
+    call: (args, node) => {
+      try {
+        return String(args[0]).split(new RegExp(String(args[1])));
+      } catch(e) { throw new RuntimeError(`split_re: invalid pattern: ${e.message}`, node?.line); }
+    },
+  },
+
   format: { params: ['date','pattern'], call: (args) => {
     const d=new Date(args[0]);
     return String(args[1]??'YYYY-MM-DD')

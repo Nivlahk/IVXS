@@ -1809,6 +1809,10 @@ const BUILTIN_NAMES = new Set([
   // Date/time
   'now','time','timestamp','year','month','day','hour','minute','weekday',
   'dateadd','datediff','format',
+  // Dict
+  'merge','pick','omit','update','entries','fromkeys',
+  // Regex
+  'match','findall','search','sub','split_re',
   // Misc
   'range','type','error',
 ]);
