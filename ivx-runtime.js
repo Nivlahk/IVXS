@@ -693,20 +693,15 @@ class IVXRuntime {
 
   // ── Execute a program from source ─────────────────────────────────────────
   async run(source, options = {}) {
-    // Parse once and reuse for type checking and execution.
     const parsed = parse(source);
-
-    // Type-check first — surface errors without running
     const { errors: typeErrors } = typecheck(parsed);
     const hasParseErrors = parsed.errors.length > 0;
     if (typeErrors.length > 0 && (hasParseErrors || !options.ignoreTypeErrors)) {
       for (const e of typeErrors) this.onError(e);
       return;
     }
-
     try {
-      const result = await this._interp.execBlock(parsed.ast.body, this._interp.globals);
-      // EndSignal is a clean stop — no error, stmt already executed inside End case
+      await this.execBlock(parsed.ast.body, this.globals);
     } catch (e) {
       if (e instanceof RuntimeError) this.onError(e);
       else throw e;
