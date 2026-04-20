@@ -1815,6 +1815,7 @@ class Interpreter {
   // ── Function calls ─────────────────────────────────────────────────────────
   async evalCall(node, env) {
     const callee = env.get(node.name);
+    console.log("evalCall:", node.name, "callee:", callee, "isIVXClass:", callee instanceof IVXClass, "isIVXFunction:", callee instanceof IVXFunction);
 
     // Evaluate arguments
     const args = [];
