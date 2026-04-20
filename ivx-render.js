@@ -1968,8 +1968,8 @@ const INCOMING_KEYWORDS = ['then', 'else']; // 'then' is accepted but has no eff
 // in NODE_KEYWORDS, otherwise parseLine sets nodeKey='note' and the main loop's
 // else-branch silently creates a spurious Process node for every standalone
 // 'note ...' line, and KIND_TO_KEY has no entry for it so round-trips break.
-const NODE_KEYWORDS = ['if', 'fork', 'loop', 'dot', 'take', 'say', 'give', 'fun', 'end', 'from', 'wait'];
-const OUTGOING_KEYWORDS = ['prev', 'next', 'use'];
+const NODE_KEYWORDS = ['if', 'fork', 'loop', 'dot', 'take', 'say', 'give', 'fun', 'end', 'from', 'wait', 'try'];
+const OUTGOING_KEYWORDS = ['prev', 'next'];
 const NODE_KEYS = new Set(NODE_KEYWORDS);
 const IN_KEYS = new Set(INCOMING_KEYWORDS);
 const OUT_KEYS = new Set(OUTGOING_KEYWORDS);
@@ -2027,6 +2027,31 @@ function parseivx(source) {
         lastFunIndent = -1;
       }
     }
+    // Try block tracking
+    if (pl.nodeKey === 'try') {
+      pl._tryHeader = true;
+      pl._tryId = i;
+    } else if (pl.raw === 'err' || pl.raw?.startsWith('err ')) {
+      pl._errHandler = true;
+      // Find most recent try header at same or lower indent
+      for (let k = i - 1; k >= 0; k--) {
+        if (parsedLines[k]._tryHeader && parsedLines[k].indent <= pl.indent) {
+          pl._errHandlerOf = k;
+          parsedLines[k]._errHandlerLine = i;
+          break;
+        }
+      }
+    } else {
+      // Check if inside a try block
+      for (let k = i - 1; k >= 0; k--) {
+        if (parsedLines[k]._tryHeader && parsedLines[k].indent < pl.indent) {
+          pl._tryBodyOf = k;
+          break;
+        }
+        if (parsedLines[k].indent <= pl.indent) break;
+      }
+    }
+
     // Wait block tracking — detect wait with a trigger keyword after it
     const isWaitBlock = pl.nodeKey === 'wait' &&
       /^(email|sheets|time|http)\b/.test(pl.content);
@@ -2293,15 +2318,18 @@ function parseivx(source) {
     // ── Main loop (using parsedLines) ─────────────────────────────────────────────
     let processedLine = new Set();
     for (const pl of parsedLines) {
-        const { lineNum, incoming, nodeKey, content, outgoing, _funHeader, _funBodyOf, _waitHeader, _waitBodyOf } = pl;
+        const { lineNum, incoming, nodeKey, content, outgoing, _funHeader, _funBodyOf, _waitHeader, _waitBodyOf, _tryHeader, _tryBodyOf, _errHandler, _errHandlerOf } = pl;
         const indent = pl.indent;
         if (processedLine.has(lineNum)) continue;
-        // Set fun-body-of / wait-body-of meta if in function or wait-block scope
+        // Set fun-body-of / wait-body-of / try meta if in scope
         let meta = '';
         if (_funHeader) meta = 'fun-header';
         if (_funBodyOf !== undefined) meta = `fun-body-of=${_funBodyOf}`;
         if (_waitHeader) meta = 'wait-header';
         if (_waitBodyOf !== undefined) meta = `wait-body-of=${_waitBodyOf}`;
+        if (_tryHeader) meta = `try-block`;
+        if (_tryBodyOf !== undefined) meta = `try-body-of=${_tryBodyOf}`;
+        if (_errHandler) meta = `error-handler-of=${_errHandlerOf ?? ''}`;
         while (ctxStack.length > 0 && indent <= ctx.baseIndent) {
             closeFunCtx();
         }
@@ -2667,6 +2695,16 @@ function parseivx(source) {
       if (imp) pushEdge(finalLast.id, imp.id);
     }
 
+    // Post-process: build try-body=[ids] on each try-block node
+    for (const n of nodes) {
+      if (n.meta === 'try-block') {
+        const bodyIds = nodes
+          .filter(b => b.meta === `try-body-of=${n.id}` || b.meta?.startsWith(`try-body-of=${n.id}`))
+          .map(b => b.id);
+        if (bodyIds.length) n.meta = `try-block try-body=[${bodyIds.join(',')}]`;
+      }
+    }
+
     return { nodes, edges, startNodeId: startNode.id, segments: [], validationErrors };
 }
 
@@ -3004,7 +3042,7 @@ const LensTranspiler = (() => {
       case 'Wait':
         return lang.wait ? lang.wait(node, E) : `# wait`;
       case 'Use':
-        return lang.use ? lang.use(E(node.key)) : `# use ${E(node.key)}`;
+        return lang.use ? lang.use(E(node.key)) : `# key ${E(node.key)}`;
       case 'Post':
         return lang.post ? lang.post(node, E) : `# post ${E(node.url)}`;
       case 'Import':
@@ -3075,7 +3113,7 @@ const LensTranspiler = (() => {
     wait:      (node, E) => node.condition
       ? `while not (${E(node.condition).replace('==', '==')}):\n    pass`
       : `import time; time.sleep(${E(node.expr)})`,
-    use:       key => `_api_key = ${key}`,
+    use:       key => `_api_key = ${key}  # key`,
     post:      (node, E) => `import requests\nresponse = requests.post(${E(node.url)}, json=${E(node.body)})`,
     ask:       node => `ask_ai("${node.model}", ${renderExpr(node.prompt, PYTHON)})`,
     header:    () => '',
@@ -3120,7 +3158,7 @@ const LensTranspiler = (() => {
     wait:      (node, E) => node.condition
       ? `// wait until: ${E(node.condition)}`
       : `await new Promise(r => setTimeout(r, ${E(node.expr)} * 1000));`,
-    use:       key => `const _apiKey = ${key};`,
+    use:       key => `const _apiKey = ${key}; // key`,
     post:      (node, E) => `const response = await fetch(${E(node.url)}, { method: 'POST', body: JSON.stringify(${E(node.body)}) });`,
     ask:       node => `await askAI("${node.model}", ${renderExpr(node.prompt, JAVASCRIPT)})`,
     header:    () => `'use strict';`,
@@ -3166,7 +3204,7 @@ const LensTranspiler = (() => {
     pass:      () => '(empty)',
     end:       msg => msg ? `STOP "${msg}"` : 'STOP',
     wait:      (node, E) => node.condition ? `WAIT UNTIL ${E(node.condition)}` : `WAIT ${E(node.expr)}`,
-    use:       key => `USE API KEY ${key}`,
+    use:       key => `KEY ${key}`,
     post:      (node, E) => `POST ${E(node.url)} WITH ${E(node.body)}`,
     ask:       node => `ASK ${node.model.toUpperCase()} "${renderExpr(node.prompt, PSEUDOCODE)}"`,
     header:    () => '',
@@ -4279,9 +4317,9 @@ function escHtml(s) {
 }
 
 // Keyword sets for the tokenizing highlighter
-const _KW_NODE     = new Set(['if','fork','loop','dot','con','take','say','give','fun','class','init','end','from','make','note','for','in','wait','del','ask','post','use','sheets','email','by']);
+const _KW_NODE     = new Set(['if','fork','loop','dot','con','take','say','give','fun','class','init','end','from','make','note','for','in','wait','del','ask','post','use','key','sheets','email','by','try','err']);
 const _KW_FLOW     = new Set(['so','then','else']);
-const _KW_OUTGOING = new Set(['prev','next','use']);
+const _KW_OUTGOING = new Set(['prev','next']);
 const _KW_LOGIC    = new Set(['not','and','or','xor','is','yes','no','none']);
 
 // Tokenize a raw source line into typed spans, then emit HTML.

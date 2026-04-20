@@ -1,6 +1,6 @@
 # IVX Language Guide
 
-IVX is a browser-based programming language where every program renders as a live flowchart. Write code on the left, watch the graph update on the right. No install. No server. Open `index.html` and start writing.
+IVX is a browser-based programming language where every program renders as a live flowchart. Write code on the left, watch the graph update on the right. No install. No server. Visit [ivxs.tech](https://ivxs.tech) and start writing.
 
 ---
 
@@ -61,7 +61,7 @@ loop guess? != secret
 
 | Type | Example | Notes |
 |------|---------|-------|
-| string | `"hello"` | Use `{var}` for interpolation |
+| string | `"hello"` | Use `{expr}` for interpolation |
 | integer | `42` | |
 | float | `3.14` | |
 | boolean | `yes` / `no` | |
@@ -70,9 +70,13 @@ loop guess? != secret
 | none | `none` | Universal unset value |
 
 ### String interpolation
+Braces evaluate any expression inline:
 ```
 make name "Alice"
 say "Hello {name}, welcome!"
+say "Balance: {self.balance}"
+say "Area: {c.area()}"
+say "Next: {x + 1}"
 ```
 
 ### 2D lists
@@ -161,7 +165,7 @@ loop i < 10
 
 ### for
 Iterates over a list. Binds `i` (value) and `ii` (index).
-For a dictionary, Binds `i` (key) and `ii` (value)
+For a dictionary, binds `i` (key) and `ii` (value).
 ```
 make colors ["red", "green", "blue"]
 for colors
@@ -174,7 +178,7 @@ for color in colors
   say color
 ```
 
-2d list
+2D list:
 ```
 make grid [1, 2, 3; 4, 5, 6; 7, 8, 9]
 for grid
@@ -191,11 +195,18 @@ if x < 0
 ```
 
 ### wait
-Pause execution.
+Pause execution or block until a trigger fires.
+
 ```
-wait 5             note pause for 5 steps
-wait x = 10        note block until x equals 10
+wait 5                               note pause for 5 steps
+wait x = 10                          note block until x equals 10
+wait email by "addr@example.com"     note block until email from that address
+wait sheets "Budget" by "row added"  note block until a row is added
+wait time "09:00"                    note block until 9am
+wait every time "09:00"              note recurring — fires every day at 9am
 ```
+
+`wait` blocks with Google triggers deploy automatically to Apps Script when your program runs. After the first deploy, run `ivxSetupTriggers()` once in the Apps Script editor to activate them.
 
 ---
 
@@ -216,43 +227,93 @@ fun factorial(n)
   give n * factorial(n - 1)
 ```
 
-### give
-Return a value from a function.
+### Parameter defaults
+Use `?` after a parameter name to set a default value:
 ```
-give x + 1
+fun greet(name, greeting? "Hello")
+  say "{greeting}, {name}!"
+
+greet("Alice")          note Hello, Alice!
+greet("Bob", "Hi")      note Hi, Bob!
+```
+
+### Parameter transforms
+Include an operator to transform the incoming argument before use:
+```
+fun price(amount * 1.1)
+  give amount              note amount is already marked up 10%
+```
+
+Combine defaults and transforms:
+```
+fun invest(amount? 100 * 1.05)   note default 100, apply 5% growth
+  give amount
 ```
 
 ---
 
 ## Classes
 
+### init
+Use `init` to declare a constructor. Parameters auto-assign to `self` — no body needed.
+
 ```
 class Dog
-  fun init(name, size)
+  init(name, breed)
 
   fun speak()
-    give "Woof! I am {self.name}"
+    say "{self.name} says woof!"
 
-make d Dog("Rex", 3)
-say d.speak()
+make d Dog("Rex", "Labrador")
+d.speak()
 ```
 
-If you want to modify the parameters, do so directly
+`self.name` and `self.breed` are set automatically from the arguments.
+
+### Parameter defaults in init
 ```
-class Dog
-  fun init(name, size * 2)
+class BankAccount
+  init(owner, balance? 0)
 
-  fun speak()
-    give "Woof! I am {self.name}"
+  fun status()
+    say "{self.owner} has ${self.balance}"
 
-make d Dog("Rex", 3)
-say d.speak()
+make acc BankAccount("Alice", 100)
+make acc2 BankAccount("Bob")       note balance defaults to 0
+acc.status()                       note Alice has $100
+acc2.status()                      note Bob has $0
+```
+
+### Parameter transforms in init
+```
+class Product
+  init(name, price * 1.2)    note price gets 20% markup automatically
+
+make p Product("Widget", 100)
+say p.price                  note 120.0
+```
+
+### Methods and self
+```
+class Counter
+  init(count? 0)
+
+  fun increment()
+    make self.count + 1
+
+  fun value()
+    give self.count
+
+make c Counter()
+c.increment()
+c.increment()
+say c.value()    note 2
 ```
 
 ### Inheritance
 ```
 class Animal
-  fun init(name)
+  init(name)
 
   fun speak()
     give self.name
@@ -264,6 +325,8 @@ class Dog(Animal)
 make d Dog("Rex")
 say d.speak()      note Rex says woof!
 ```
+
+`super.methodName()` calls the parent class method.
 
 ---
 
@@ -315,6 +378,11 @@ post "https://api.example.com/submit" {"key": "value"}
 say response
 ```
 
+With a credential:
+```
+post "https://api.example.com/submit" {"key": "value"} use key
+```
+
 ---
 
 ## AI
@@ -323,7 +391,7 @@ say response
 Call an AI model. Returns the response as a string.
 ```
 make key "your-api-key"
-make result ask gemini "Summarise the history of computing in 3 sentences" use key
+make result ask gemini "Summarise the history of computing" use key
 say result
 ```
 
@@ -382,11 +450,24 @@ make msg "This was sent from IVX!"
 email addr subject "Test" body msg
 ```
 
-### save / Drive
-Save a value to Google Drive (into an `IVX/` folder).
+### save / local save
+Save to Google Drive (into an `IVX/` folder):
 ```
 save data report.json
 save "Hello world" notes.txt
+save x               note auto-names file from variable name
+```
+
+Save to your local machine instead:
+```
+local save data report.csv
+```
+
+### by
+Qualifier used with `wait` to specify the trigger source:
+```
+wait email by "boss@example.com"
+wait sheets "Sales" by "row added"
 ```
 
 ---
@@ -400,13 +481,24 @@ say "Hello, world!"
 
 ### FizzBuzz
 ```
-make i 1
-loop i <= 20
-  if i % 15 = 0 then say "FizzBuzz"
-  else if i % 3 = 0 then say "Fizz"
-  else if i % 5 = 0 then say "Buzz"
-  else say i
-  make i + 1
+loop y? < 100
+  make y + 1
+  if y % 15 = 0 then say "FizzBuzz"
+  else if y % 3 = 0 then say "Fizz"
+  else if y % 5 = 0 then say "Buzz"
+  else say y
+```
+
+### Fibonacci
+```
+make b 1
+make n 10
+loop y? < n
+  say a?
+  make temp b
+  make b a + b
+  make a temp
+  make y + 1
 ```
 
 ### Factorial
@@ -430,16 +522,41 @@ loop guess? != secret
 say "correct in {tries} tries!"
 ```
 
+### Bank account (OOP)
+```
+class BankAccount
+  init(owner, balance? 0)
+
+  fun deposit(amount)
+    make self.balance + amount
+    say "{self.owner} deposited {amount}"
+
+  fun withdraw(amount)
+    if amount > self.balance
+      say "Insufficient funds"
+    else
+      make self.balance - amount
+      say "{self.owner} withdrew {amount}"
+
+  fun status()
+    say "{self.owner} has ${self.balance}"
+
+make acc BankAccount("Alice", 100)
+acc.status()
+acc.deposit(50)
+acc.withdraw(30)
+acc.status()
+```
+
 ### AI loop
 ```
 make key "your-gemini-key"
 use key
 make topic "renewable energy"
-make i 0
-loop i < 3
+loop y? < 3
   make result ask gemini "Give me one surprising fact about {topic}"
   say result
-  make i + 1
+  make y + 1
 ```
 
 ### Email from a spreadsheet
@@ -452,11 +569,22 @@ for data
   email addr subject "Welcome {name}!" body "Thanks for signing up."
 ```
 
+### Daily email digest (automated)
+```
+wait every time "08:00"
+  make s sheets "Tasks"
+  make tasks s.read("A1:A20")
+  make summary ""
+  for tasks
+    make summary summary + "- {i[0]}\n"
+  email "you@example.com" subject "Daily digest" body summary
+```
+
 ---
 
 ## The Lens system
 
-Click the **Lens** button in the bottom-right panel to view your IVX program transpiled into another language.
+Click the **Lens** button in the editor panel to view your IVX program transpiled into another language.
 
 **Languages:** Python, JavaScript, TypeScript, Pseudocode
 
@@ -477,31 +605,44 @@ Click the **Lens** button in the bottom-right panel to view your IVX program tra
 ## Quick reference card
 
 ```
-make x 5              assign
-make x + 1            shorthand reassign
-del x                 delete
-take x                input
-take int(x)           input with conversion
-say x                 output
-give x                return from function
-if cond               decision
-else                  alternate branch
-loop cond             while loop
-for list              iterate
-fun name(a, b)        define function
-class Name            define class
-note ...              comment / block label
-ask gemini "..."      AI call
-email addr subj body  send email
-sheets "Name"         open spreadsheet
-use key               set API key
-end                   terminate path
-wait 5                pause
+make x 5                     assign
+make x + 1                   shorthand reassign
+del x                        delete
+take x                       input
+take int(x)                  input with conversion
+say x                        output
+give x                       return from function
+if cond                      decision
+else                         alternate branch
+loop cond                    while loop
+for list                     iterate
+fun name(a, b)               define function
+fun name(a, b? 0)            parameter with default
+fun name(a, b * 2)           parameter with transform
+class Name                   define class
+init(a, b)                   constructor — auto-assigns to self
+init(a, b? 0)                constructor with default
+init(a, b * 2)               constructor with transform
+note ...                     comment / block label
+ask gemini "..."             AI call
+email addr subj body         send email
+sheets "Name"                open spreadsheet
+save x                       save to Google Drive
+local save x                 save to local machine
+use key                      set API key
+end                          terminate path
+wait 5                       pause
+wait email by "addr"         wait for email trigger
+wait time "09:00"            wait for time trigger
+wait every time "09:00"      recurring time trigger
+by "source"                  trigger qualifier
 ```
 
-```
-Zen of IVX
+---
 
+## Zen of IVX
+
+```
 Fast is better than slow.
 There is no conflict between speed and readability.
 Implicit is better than verbose.

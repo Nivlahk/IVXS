@@ -76,9 +76,9 @@ const KEYWORDS = new Set([
   // Iteration
   'in',
   // Other
-  'wait', 'note',
+  'wait', 'note', 'try', 'err',
   // Network / AI
-  'ask', 'post', 'use',
+  'ask', 'post', 'use', 'key',
   // Google services
   'sheets', 'email', 'to', 'subject', 'body',
   // Wait block triggers and by keyword
@@ -244,6 +244,22 @@ class Lexer {
       this.emit(T.INDENT, current + 2, startLine, startCol);
       return;
     }
+    // URL detection: http:// or https://
+    if ((word === 'http' || word === 'https') && this.peek() === ':' && this.peek(1) === '/' && this.peek(2) === '/') {
+      this.advance(); this.advance(); this.advance(); // consume ://
+      let url = word + '://';
+      // Consume URL characters — letters, digits, and URL-valid punctuation
+      while (this.pos < this.src.length) {
+        const c = this.peek();
+        if (c === ' ' || c === '\n' || c === '' || c === '\t') break;
+        // Stop at IVX syntax delimiters that can't appear in URLs
+        if (c === ',' || c === ')' || c === ']' || c === '}') break;
+        url += this.advance();
+      }
+      this.emit(T.STRING, url, startLine, startCol);
+      return;
+    }
+
     const type = KEYWORDS.has(word) ? T.KEYWORD : T.IDENTIFIER;
     // Check for lazy declaration suffix: identifier? or keyword?
     // Only valid on non-structural identifiers (not keywords like 'if', 'loop' etc.)
@@ -431,7 +447,8 @@ class Parser {
       wait: () => this.parseWait(),
       ask:  () => this.parseExprStatement(), // ask is an expression
       post: () => this.parsePost(),
-      use:  () => this.parseUse(),
+      key:  () => this.parseKey(),
+      use:  () => this.parseUseImport(),
       email: () => this.parseGmail(),
       sheets:    () => this.parseExprStatement(), // sheets is an expression
       class: () => this.parseClass(),
@@ -447,6 +464,7 @@ class Parser {
       },
       end:  () => this.parseEnd(),
       from: () => this.parseFrom(),
+      try:  () => this.parseTry(),
     };
   }
 
@@ -746,11 +764,18 @@ class Parser {
   }
 
   // ── use <key>  (global form — standalone statement) ───────────────────────
-  parseUse() {
-    const tok = this.advance(); // eat 'use'
+  parseKey() {
+    const tok = this.advance(); // eat 'key'
     const key = this.parseExpr();
     this.eatNewline();
     return Node('Use', { key, line: tok.line, col: tok.col });
+  }
+
+  parseUseImport() {
+    // bare 'use' at statement level is now reserved — kept for future use
+    const tok = this.advance();
+    this.eatNewline();
+    return null;
   }
 
   _parseSavePayload(target, line, col) {
@@ -1033,6 +1058,33 @@ class Parser {
     return Node('Fun', { name, params, body, line: tok.line, col: tok.col });
   }
 
+  // ── try / err ─────────────────────────────────────────────────────────────────
+  // try
+  //   <body>
+  // err e
+  //   <handler>
+  parseTry() {
+    const tok = this.advance(); // eat 'try'
+    this.eatNewline();
+    const body = this.parseBlock();
+
+    let errVar = 'err';
+    let errBody = [];
+
+    this.skipNewlines();
+    if (this.checkKw('err')) {
+      this.advance(); // eat 'err'
+      // Optional variable name: err e
+      if (this.peek().type === T.IDENTIFIER) {
+        errVar = this.advance().value;
+      }
+      this.eatNewline();
+      errBody = this.parseBlock();
+    }
+
+    return Node('Try', { body, errVar, errBody, line: tok.line, col: tok.col });
+  }
+
   // ── init(params) — bodyless constructor declaration ─────────────────────────
   parseInit() {
     const tok = this.advance(); // eat 'init'
@@ -1127,6 +1179,27 @@ class Parser {
   //   from "https://api.example.com"
   parseFrom() {
     const tok = this.advance(); // eat 'from'
+
+    // ── URL import: from https://... use name1, name2 ──────────────────────
+    // The URL lexer emits it as a STRING token
+    if (this.check(T.STRING)) {
+      const urlTok = this.advance();
+      const url = urlTok.value;
+      const names = [];
+      if (this.checkKw('use')) {
+        this.advance(); // eat 'use'
+        while (!this.check(T.NEWLINE) && !this.check(T.EOF)) {
+          if (this.check(T.IDENTIFIER)) names.push(this.advance().value);
+          this.eat(T.COMMA);
+        }
+      }
+      // also accept 'key' for backward compat during transition
+      
+      this.eatNewline();
+      return Node('Import', { url, names, line: tok.line, col: tok.col });
+    }
+
+    // ── Legacy from Module by package ──────────────────────────────────────
     const pathParts = [];
     let via = null;
     while (!this.check(T.NEWLINE) && !this.check(T.EOF)) {

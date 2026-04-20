@@ -130,12 +130,6 @@ class IVXClass {
       if (boundInit.__boundSuper !== undefined) {
         fnEnv.set('super', boundInit.__boundSuper);
       }
-      for (let i = 0; i < initMethod.params.length; i++) {
-        const { name: pn, value: pv } = await resolveParam(initMethod.params[i], args[i], fnEnv, interp);
-        fnEnv.set(pn, pv);
-        // Implicit self assignment — every init param auto-assigns to self.paramName
-        instance.set(pn, pv);
-      }
 
       const result = await interp.execBlock(boundInit.body, fnEnv);
       if (result instanceof ReturnSignal) return instance;
@@ -293,6 +287,51 @@ const BUILTIN_DEFS = {
     params: ['s', 'from', 'to'],
     call: (args) => String(args[0]).replaceAll(String(args[1]), String(args[2])),
   },
+  starts:  { params: ['s','prefix'], call: (args) => String(args[0]).startsWith(String(args[1])) },
+  ends:    { params: ['s','suffix'], call: (args) => String(args[0]).endsWith(String(args[1])) },
+  index:   { params: ['s','sub'], call: (args) => { const i=String(args[0]).indexOf(String(args[1])); return i===-1?NONE:i; } },
+  slice:   { params: ['s','start','end'], call: (args) => { const s=String(args[0]); return (args[2]!=null&&args[2]!==NONE)?s.slice(args[1],args[2]):s.slice(args[1]); } },
+  pad:     { params: ['s','len','char'], call: (args) => String(args[0]).padStart(Number(args[1])||0,String(args[2]??' ')) },
+  padend:  { params: ['s','len','char'], call: (args) => String(args[0]).padEnd(Number(args[1])||0,String(args[2]??' ')) },
+  chars:   { params: ['s'], call: (args) => [...String(args[0])] },
+  repeat:  { params: ['s','n'], call: (args) => String(args[0]).repeat(Math.max(0,Math.trunc(Number(args[1])))) },
+  size:    { params: ['x'], call: (args) => { const v=args[0]; if(typeof v==='string')return v.length; if(Array.isArray(v))return v.length; if(v instanceof Map)return v.size; return 0; } },
+  now:       { params: [], call: () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; } },
+  time:      { params: [], call: () => { const d=new Date(); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`; } },
+  timestamp: { params: [], call: () => Date.now() },
+  year:    { params: ['date'], call: (args) => new Date(args[0]??Date.now()).getFullYear() },
+  month:   { params: ['date'], call: (args) => new Date(args[0]??Date.now()).getMonth()+1 },
+  day:     { params: ['date'], call: (args) => new Date(args[0]??Date.now()).getDate() },
+  hour:    { params: ['date'], call: (args) => new Date(args[0]??Date.now()).getHours() },
+  minute:  { params: ['date'], call: (args) => new Date(args[0]??Date.now()).getMinutes() },
+  weekday: { params: ['date'], call: (args) => ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date(args[0]??Date.now()).getDay()] },
+  dateadd: { params: ['date','n','unit'], call: (args) => {
+    const d=new Date(args[0]); const n=Number(args[1]); const u=String(args[2]??'day').toLowerCase();
+    if(u==='day'||u==='days')d.setDate(d.getDate()+n);
+    else if(u==='month'||u==='months')d.setMonth(d.getMonth()+n);
+    else if(u==='year'||u==='years')d.setFullYear(d.getFullYear()+n);
+    else if(u==='hour'||u==='hours')d.setHours(d.getHours()+n);
+    else if(u==='minute'||u==='minutes')d.setMinutes(d.getMinutes()+n);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }},
+  datediff: { params: ['d1','d2','unit'], call: (args) => {
+    const d1=new Date(args[0]),d2=new Date(args[1]); const ms=d2-d1; const u=String(args[2]??'day').toLowerCase();
+    if(u==='day'||u==='days')return Math.round(ms/86400000);
+    if(u==='hour'||u==='hours')return Math.round(ms/3600000);
+    if(u==='minute'||u==='minutes')return Math.round(ms/60000);
+    if(u==='month'||u==='months')return (d2.getFullYear()-d1.getFullYear())*12+(d2.getMonth()-d1.getMonth());
+    if(u==='year'||u==='years')return d2.getFullYear()-d1.getFullYear();
+    return Math.round(ms/86400000);
+  }},
+  format: { params: ['date','pattern'], call: (args) => {
+    const d=new Date(args[0]);
+    return String(args[1]??'YYYY-MM-DD')
+      .replace('YYYY',d.getFullYear()).replace('MM',String(d.getMonth()+1).padStart(2,'0'))
+      .replace('DD',String(d.getDate()).padStart(2,'0')).replace('HH',String(d.getHours()).padStart(2,'0'))
+      .replace('mm',String(d.getMinutes()).padStart(2,'0')).replace('ss',String(d.getSeconds()).padStart(2,'0'))
+      .replace('ddd',['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()])
+      .replace('dddd',['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][d.getDay()]);
+  }},
 };
 
 function ivxToPlain(value) {
@@ -698,42 +737,321 @@ class IVXRuntime {
     await this._saveDriveFile(payload.filename, payload.content, payload.mimeType);
   }
 
+
+  async _evalAskExpr(node, env) {
+    const prompt = await this._interp.evalExpr(node.prompt, env);
+    const credential = node.credential
+      ? await this._interp.evalExpr(node.credential, env)
+      : this._interp.globals.get('__credential__') ?? null;
+    const model = (node.model ?? 'gemini').toLowerCase();
+
+    if (!credential) {
+      throw new RuntimeError(
+        `ask ${model}: no API key. Add: make key "your-key" use key`,
+        node.line
+      );
+    }
+
+    try {
+      if (model === 'gemini' || model === 'google') {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${credential}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: String(prompt) }] }]
+            }),
+          }
+        );
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new RuntimeError(
+            `Gemini error ${res.status}: ${err?.error?.message ?? res.statusText}`,
+            node.line
+          );
+        }
+        const data = await res.json();
+        return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+      }
+
+      if (model === 'chatgpt' || model === 'gpt') {
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${credential}`,
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [{ role: 'user', content: String(prompt) }],
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new RuntimeError(
+            `OpenAI error ${res.status}: ${err?.error?.message ?? res.statusText}`,
+            node.line
+          );
+        }
+        const data = await res.json();
+        return data?.choices?.[0]?.message?.content ?? '';
+      }
+
+      if (model === 'claude' || model === 'anthropic') {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': credential,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+          },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 1024,
+            messages: [{ role: 'user', content: String(prompt) }],
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new RuntimeError(
+            `Claude error ${res.status}: ${err?.error?.message ?? res.statusText}`,
+            node.line
+          );
+        }
+        const data = await res.json();
+        return data?.content?.[0]?.text ?? '';
+      }
+
+      throw new RuntimeError(
+        `Unknown model '${model}'. Use: gemini, chatgpt, or claude`,
+        node.line
+      );
+
+    } catch (e) {
+      if (e instanceof RuntimeError) throw e;
+      throw new RuntimeError(`ask ${model} failed: ${e.message}`, node.line);
+    }
+  }
+
+  // ── Google service helpers ────────────────────────────────────────────────
+
+  _googleToken() {
+    // driveToken is the shared OAuth token for all Google services
+    if (typeof driveToken !== 'undefined' && driveToken) return driveToken;
+    return null;
+  }
+
+  async _googleAPI(url, opts = {}) {
+    const token = this._googleToken();
+    if (!token) throw new RuntimeError('Not signed in to Google. Click "Sign in to Google" first.', null);
+    const res = await fetch(url, {
+      ...opts,
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json',
+        ...(opts.headers || {}),
+      },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      const msg = err?.error?.message ?? err?.error?.status ?? res.statusText;
+      throw new RuntimeError(`Google API error ${res.status}: ${msg}`, null);
+    }
+    return res.json();
+  }
+
+  // ── sheets <name> — returns a handle with .read and .write ───────────────
+  async _evalSheetsOpenExpr(node, env) {
+    const name = String(await this._interp.evalExpr(node.name, env));
+    const token = this._googleToken();
+    if (!token) throw new RuntimeError('Not signed in to Google. Click "Sign in to Google" first.', node.line);
+
+    // Find the spreadsheet by name in Drive
+    const q = encodeURIComponent(`name='${name}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`);
+    const listRes = await this._googleAPI(
+      `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=1`
+    );
+    const file = listRes?.files?.[0];
+    if (!file) throw new RuntimeError(`Spreadsheet "${name}" not found in Drive.`, node.line);
+    const spreadsheetId = file.id;
+    const interp = this;
+
+    // Return a Map-like handle with read/write methods
+    const handle = new Map();
+    handle.set('__type__', 'sheets');
+    handle.set('__id__', spreadsheetId);
+    handle.set('__name__', name);
+
+    // handle.read("A1:C10") → 2D list
+    handle.set('read', async (range) => {
+      const r = encodeURIComponent(String(range));
+      const data = await interp._googleAPI(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${r}`
+      );
+      return data?.values ?? [];
+    });
+
+    // handle.write("A1", value) or handle.write("A1:B2", [[...],[...]])
+    handle.set('write', async (range, value) => {
+      const r = encodeURIComponent(String(range));
+      const body = Array.isArray(value) ? value : [[value]];
+      await interp._googleAPI(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${r}?valueInputOption=USER_ENTERED`,
+        { method: 'PUT', body: JSON.stringify({ values: body }) }
+      );
+      return value;
+    });
+
+    // handle.append(row) — appends a row to the first sheet
+    handle.set('append', async (row) => {
+      const body = Array.isArray(row[0]) ? row : [row];
+      await interp._googleAPI(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+        { method: 'POST', body: JSON.stringify({ values: body }) }
+      );
+      return row;
+    });
+
+    return handle;
+  }
+
+  // ── gmail to <addr> subject <subj> body <body> ────────────────────────────
+  async _executeGmail(node, env) {
+    const to      = node.to      ? String(await this._interp.evalExpr(node.to, env))      : '';
+    const subject = node.subject ? String(await this._interp.evalExpr(node.subject, env)) : '';
+    const body    = node.body    ? String(await this._interp.evalExpr(node.body, env))     : '';
+
+    if (!to) throw new RuntimeError("email: missing recipient address", node.line);
+
+    // Build RFC 2822 message and base64url-encode it
+    const raw = [
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      `Content-Type: text/plain; charset="UTF-8"`,
+      `MIME-Version: 1.0`,
+      '',
+      body,
+    ].join('\r\n');
+
+    const encoded = btoa(unescape(encodeURIComponent(raw)))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    await this._googleAPI(
+      'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+      { method: 'POST', body: JSON.stringify({ raw: encoded }) }
+    );
+
+    this._interp.onOutput?.(`Email sent to ${to}`);
+  }
+
+  // ── wait block: Level 1 polling execution ────────────────────────────────
+  async _executeWaitBlock(node, env) {
+    const POLL_MS    = 5000;  // poll every 5 seconds
+    const MAX_POLLS  = 720;   // give up after 1 hour (720 × 5s)
+    const trigger    = node.trigger;
+    const interp     = this;
+
+    const poll = async () => {
+      if (trigger === 'email') {
+        // Poll Gmail for unread messages from the source address
+        const from = node.source ? String(await this._interp.evalExpr(node.source, env)) : '';
+        const q    = encodeURIComponent(`is:unread${from ? ` from:${from}` : ''}`);
+        const data = await this._googleAPI(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${q}&maxResults=1`
+        );
+        if (data?.messages?.length > 0) {
+          // Fetch the message and expose it as 'request'
+          const msg = await this._googleAPI(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${data.messages[0].id}`
+          );
+          const headers = msg?.payload?.headers ?? [];
+          const subject = headers.find(h => h.name === 'Subject')?.value ?? '';
+          const fromAddr = headers.find(h => h.name === 'From')?.value ?? '';
+          const bodyPart = msg?.payload?.parts?.[0]?.body?.data ?? msg?.payload?.body?.data ?? '';
+          const bodyText = bodyPart ? atob(bodyPart.replace(/-/g,'+').replace(/_/g,'/')) : '';
+          const triggerEnv = env.child();
+          triggerEnv.set('request', new Map([
+            ['subject', subject], ['from', fromAddr], ['body', bodyText], ['id', data.messages[0].id]
+          ]));
+          return triggerEnv;
+        }
+        return null;
+      }
+
+      if (trigger === 'sheets') {
+        // Poll a sheet for new rows since last check
+        const name = node.source ? String(await this._interp.evalExpr(node.source, env)) : '';
+        const handle = await this._evalSheetsOpenExpr({ ...node, name: node.source }, env);
+        const rows = await handle.get('read')('A1:Z1000');
+        const lastSeen = this._interp.globals.get('__waitSheetRows__') ?? 0;
+        const current  = (rows?.length ?? 1) - 1; // subtract header
+        if (current > lastSeen) {
+          this._interp.globals.set('__waitSheetRows__', current);
+          const newRows = rows.slice(lastSeen + 1);
+          const triggerEnv = env.child();
+          triggerEnv.set('request', newRows);
+          return triggerEnv;
+        }
+        // Initialise baseline on first poll
+        if (lastSeen === 0) this._interp.globals.set('__waitSheetRows__', current);
+        return null;
+      }
+
+      if (trigger === 'time') {
+        // Check if current time matches (simple HH:MM match)
+        const timeStr = node.source ? String(await this._interp.evalExpr(node.source, env)) : '';
+        const now = new Date();
+        const nowStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+        if (nowStr === timeStr) return env.child();
+        return null;
+      }
+
+      return null;
+    };
+
+    this._interp.onOutput?.(`⏳ Waiting for ${trigger} trigger…`);
+
+    let polls = 0;
+    while (polls < MAX_POLLS) {
+      const triggerEnv = await poll();
+      if (triggerEnv) {
+        this._interp.onOutput?.(`✓ ${trigger} trigger fired`);
+        const r = await this._interp.execBlock(node.body, triggerEnv);
+        if (r instanceof EndSignal || r instanceof ReturnSignal) return r;
+        return;
+      }
+      polls++;
+      await new Promise(res => setTimeout(res, POLL_MS));
+    }
+
+    this._interp.onOutput?.(`⚠ wait ${trigger}: timed out after ${MAX_POLLS * POLL_MS / 1000}s`);
+  }
+
 }
 
 // ── Resolve a function parameter value (handles defaults and transforms) ──────
 async function resolveParam(param, incoming, env, interp) {
   if (typeof param === 'string') return { name: param, value: incoming ?? NONE };
-
   const { name, lazy, defaultExpr, transformOp, transformRight } = param;
-
   let value;
-  if (incoming !== undefined && incoming !== NONE) {
-    value = incoming;
-  } else if (defaultExpr) {
-    try {
-      value = await interp.evalExpr(defaultExpr, env);
-    } catch(e) {
-      value = NONE;
-    }
-  } else if (lazy) {
-    value = transformOp ? 0 : NONE;
-  } else {
-    value = NONE;
-  }
-
+  if (incoming !== undefined && incoming !== NONE) { value = incoming; }
+  else if (defaultExpr) { value = await interp.evalExpr(defaultExpr, env); }
+  else if (lazy) { value = transformOp ? 0 : NONE; }
+  else { value = NONE; }
   if (transformOp && transformRight) {
     const right = await interp.evalExpr(transformRight, env);
     switch (transformOp) {
-      case '+':  value = value + right; break;
-      case '-':  value = value - right; break;
-      case '*':  value = value * right; break;
-      case '/':  value = right !== 0 ? value / right : NONE; break;
+      case '+': value = value + right; break;
+      case '-': value = value - right; break;
+      case '*': value = value * right; break;
+      case '/': value = right !== 0 ? value / right : NONE; break;
       case '//': value = right !== 0 ? Math.trunc(value / right) : NONE; break;
-      case '%':  value = value % right; break;
-      case '^':  value = Math.pow(value, right); break;
+      case '%': value = value % right; break;
+      case '^': value = Math.pow(value, right); break;
     }
   }
-
   return { name, value };
 }
 
@@ -779,25 +1097,6 @@ class Interpreter {
       Invoke: (node, env) => this._evalInvokeExpr(node, env),
     };
   }
-
-
-  // ── Execute a program from source ─────────────────────────────────────────
-  async run(source, options = {}) {
-    const parsed = parse(source);
-    const { errors: typeErrors } = typecheck(parsed);
-    const hasParseErrors = parsed.errors.length > 0;
-    if (typeErrors.length > 0 && (hasParseErrors || !options.ignoreTypeErrors)) {
-      for (const e of typeErrors) this.onError(e);
-      return;
-    }
-    try {
-      await this.execBlock(parsed.ast.body, this.globals);
-    } catch (e) {
-      if (e instanceof RuntimeError) this.onError(e);
-      else throw e;
-    }
-  }
-
 
   // ── Execute a block of statements ─────────────────────────────────────────
   async execBlock(stmts, env) {
@@ -1057,6 +1356,23 @@ class Interpreter {
         break;
       }
 
+      case 'Try': {
+        try {
+          const result = await this.execBlock(node.body, env);
+          if (result instanceof ReturnSignal || result instanceof EndSignal) return result;
+        } catch (e) {
+          const msg = e instanceof RuntimeError ? e.message : (e?.message ?? String(e));
+          const errEnv = env.child();
+          errEnv.set(node.errVar ?? 'err', msg);
+          this.globals.set('err', msg);
+          if (node.errBody?.length) {
+            const result = await this.execBlock(node.errBody, errEnv);
+            if (result instanceof ReturnSignal || result instanceof EndSignal) return result;
+          }
+        }
+        break;
+      }
+
       case 'End': {
         if (node.stmt) await this.execStmt(node.stmt, env);
         return new EndSignal();
@@ -1066,9 +1382,29 @@ class Interpreter {
         // Connector — no-op at runtime
         break;
 
-      case 'Import':
-        // Module imports deferred to future runtime
+      case 'Import': {
+        if (!node.url) break;
+        try {
+          const res = await fetch(node.url);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const src = await res.text();
+          const modEnv = this.globals.child();
+          const parsed = parse(src);
+          await this.execBlock(parsed.ast.body, modEnv);
+          if (node.names && node.names.length > 0) {
+            for (const name of node.names) {
+              const val = modEnv.get(name);
+              if (val === undefined) throw new RuntimeError(`Module does not export '${name}'`, node.line);
+              env.set(name, val);
+            }
+          } else {
+            for (const [k, v] of modEnv.vars) env.set(k, v);
+          }
+        } catch (e) {
+          throw new RuntimeError(`Import failed from ${node.url}: ${e.message}`, node.line);
+        }
         break;
+      }
 
       case 'ExprStatement':
         if (node.expr) await this.evalExpr(node.expr, env);
@@ -1094,7 +1430,6 @@ class Interpreter {
   async _evalStringLit(node, env) {
     let sv = node.value;
     if (typeof sv === 'string' && sv.includes('{')) {
-      // Handle {expr} interpolation — supports dotted access and calls
       const parts = [];
       let i = 0;
       while (i < sv.length) {
@@ -1108,20 +1443,10 @@ class Interpreter {
           const parsed = parse(expr + '\n');
           if (parsed.ast?.body?.length > 0) {
             const exprNode = parsed.ast.body[0]?.expr ?? parsed.ast.body[0];
-            if (exprNode) {
-              const val = await this.evalExpr(exprNode, env);
-              parts.push(ivxRepr(val));
-            } else {
-              parts.push('{' + expr + '}');
-            }
-          } else {
-            parts.push('{' + expr + '}');
-          }
-        } catch {
-          // Simple variable fallback
-          const val = env.get(expr);
-          parts.push(val !== undefined ? ivxRepr(val) : '{' + expr + '}');
-        }
+            if (exprNode) { parts.push(ivxRepr(await this.evalExpr(exprNode, env))); }
+            else { parts.push('{' + expr + '}'); }
+          } else { parts.push('{' + expr + '}'); }
+        } catch { parts.push(ivxRepr(env.get(expr)) ?? '{' + expr + '}'); }
         i = close + 1;
       }
       sv = parts.join('');
@@ -1143,297 +1468,24 @@ class Interpreter {
     return node.value;
   }
 
-  async _evalAskExpr(node, env) {
-    const prompt = await this.evalExpr(node.prompt, env);
-    const credential = node.credential
-      ? await this.evalExpr(node.credential, env)
-      : this.globals.get('__credential__') ?? null;
-    const model = (node.model ?? 'gemini').toLowerCase();
 
-    if (!credential) {
-      throw new RuntimeError(
-        `ask ${model}: no API key. Add: make key "your-key" use key`,
-        node.line
-      );
+
+  // ── Execute a program from source ─────────────────────────────────────────
+  async run(source, options = {}) {
+    const parsed = parse(source);
+    const { errors: typeErrors } = typecheck(parsed);
+    const hasParseErrors = parsed.errors.length > 0;
+    if (typeErrors.length > 0 && (hasParseErrors || !options.ignoreTypeErrors)) {
+      for (const e of typeErrors) this.onError(e);
+      return;
     }
-
     try {
-      if (model === 'gemini' || model === 'google') {
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${credential}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: String(prompt) }] }]
-            }),
-          }
-        );
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new RuntimeError(
-            `Gemini error ${res.status}: ${err?.error?.message ?? res.statusText}`,
-            node.line
-          );
-        }
-        const data = await res.json();
-        return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-      }
-
-      if (model === 'chatgpt' || model === 'gpt') {
-        const res = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${credential}`,
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            messages: [{ role: 'user', content: String(prompt) }],
-          }),
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new RuntimeError(
-            `OpenAI error ${res.status}: ${err?.error?.message ?? res.statusText}`,
-            node.line
-          );
-        }
-        const data = await res.json();
-        return data?.choices?.[0]?.message?.content ?? '';
-      }
-
-      if (model === 'claude' || model === 'anthropic') {
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': credential,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true',
-          },
-          body: JSON.stringify({
-            model: 'claude-haiku-4-5-20251001',
-            max_tokens: 1024,
-            messages: [{ role: 'user', content: String(prompt) }],
-          }),
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new RuntimeError(
-            `Claude error ${res.status}: ${err?.error?.message ?? res.statusText}`,
-            node.line
-          );
-        }
-        const data = await res.json();
-        return data?.content?.[0]?.text ?? '';
-      }
-
-      throw new RuntimeError(
-        `Unknown model '${model}'. Use: gemini, chatgpt, or claude`,
-        node.line
-      );
-
+      await this.execBlock(parsed.ast.body, this.globals);
     } catch (e) {
-      if (e instanceof RuntimeError) throw e;
-      throw new RuntimeError(`ask ${model} failed: ${e.message}`, node.line);
+      if (e instanceof RuntimeError) this.onError(e);
+      else throw e;
     }
   }
-
-  // ── Google service helpers ────────────────────────────────────────────────
-
-  _googleToken() {
-    // driveToken is the shared OAuth token for all Google services
-    if (typeof driveToken !== 'undefined' && driveToken) return driveToken;
-    return null;
-  }
-
-  async _googleAPI(url, opts = {}) {
-    const token = this._googleToken();
-    if (!token) throw new RuntimeError('Not signed in to Google. Click "Sign in to Google" first.', null);
-    const res = await fetch(url, {
-      ...opts,
-      headers: {
-        'Authorization': 'Bearer ' + token,
-        'Content-Type': 'application/json',
-        ...(opts.headers || {}),
-      },
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      const msg = err?.error?.message ?? err?.error?.status ?? res.statusText;
-      throw new RuntimeError(`Google API error ${res.status}: ${msg}`, null);
-    }
-    return res.json();
-  }
-
-  // ── sheets <name> — returns a handle with .read and .write ───────────────
-  async _evalSheetsOpenExpr(node, env) {
-    const name = String(await this.evalExpr(node.name, env));
-    const token = this._googleToken();
-    if (!token) throw new RuntimeError('Not signed in to Google. Click "Sign in to Google" first.', node.line);
-
-    // Find the spreadsheet by name in Drive
-    const q = encodeURIComponent(`name='${name}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`);
-    const listRes = await this._googleAPI(
-      `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=1`
-    );
-    const file = listRes?.files?.[0];
-    if (!file) throw new RuntimeError(`Spreadsheet "${name}" not found in Drive.`, node.line);
-    const spreadsheetId = file.id;
-    const interp = this;
-
-    // Return a Map-like handle with read/write methods
-    const handle = new Map();
-    handle.set('__type__', 'sheets');
-    handle.set('__id__', spreadsheetId);
-    handle.set('__name__', name);
-
-    // handle.read("A1:C10") → 2D list
-    handle.set('read', async (range) => {
-      const r = encodeURIComponent(String(range));
-      const data = await interp._googleAPI(
-        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${r}`
-      );
-      return data?.values ?? [];
-    });
-
-    // handle.write("A1", value) or handle.write("A1:B2", [[...],[...]])
-    handle.set('write', async (range, value) => {
-      const r = encodeURIComponent(String(range));
-      const body = Array.isArray(value) ? value : [[value]];
-      await interp._googleAPI(
-        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${r}?valueInputOption=USER_ENTERED`,
-        { method: 'PUT', body: JSON.stringify({ values: body }) }
-      );
-      return value;
-    });
-
-    // handle.append(row) — appends a row to the first sheet
-    handle.set('append', async (row) => {
-      const body = Array.isArray(row[0]) ? row : [row];
-      await interp._googleAPI(
-        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-        { method: 'POST', body: JSON.stringify({ values: body }) }
-      );
-      return row;
-    });
-
-    return handle;
-  }
-
-  // ── gmail to <addr> subject <subj> body <body> ────────────────────────────
-  async _executeGmail(node, env) {
-    const to      = node.to      ? String(await this.evalExpr(node.to, env))      : '';
-    const subject = node.subject ? String(await this.evalExpr(node.subject, env)) : '';
-    const body    = node.body    ? String(await this.evalExpr(node.body, env))     : '';
-
-    if (!to) throw new RuntimeError("email: missing recipient address", node.line);
-
-    // Build RFC 2822 message and base64url-encode it
-    const raw = [
-      `To: ${to}`,
-      `Subject: ${subject}`,
-      `Content-Type: text/plain; charset="UTF-8"`,
-      `MIME-Version: 1.0`,
-      '',
-      body,
-    ].join('\r\n');
-
-    const encoded = btoa(unescape(encodeURIComponent(raw)))
-      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
-    await this._googleAPI(
-      'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
-      { method: 'POST', body: JSON.stringify({ raw: encoded }) }
-    );
-
-    this.onOutput?.(`Email sent to ${to}`);
-  }
-
-  // ── wait block: Level 1 polling execution ────────────────────────────────
-  async _executeWaitBlock(node, env) {
-    const POLL_MS    = 5000;  // poll every 5 seconds
-    const MAX_POLLS  = 720;   // give up after 1 hour (720 × 5s)
-    const trigger    = node.trigger;
-    const interp     = this;
-
-    const poll = async () => {
-      if (trigger === 'email') {
-        // Poll Gmail for unread messages from the source address
-        const from = node.source ? String(await this.evalExpr(node.source, env)) : '';
-        const q    = encodeURIComponent(`is:unread${from ? ` from:${from}` : ''}`);
-        const data = await this._googleAPI(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${q}&maxResults=1`
-        );
-        if (data?.messages?.length > 0) {
-          // Fetch the message and expose it as 'request'
-          const msg = await this._googleAPI(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${data.messages[0].id}`
-          );
-          const headers = msg?.payload?.headers ?? [];
-          const subject = headers.find(h => h.name === 'Subject')?.value ?? '';
-          const fromAddr = headers.find(h => h.name === 'From')?.value ?? '';
-          const bodyPart = msg?.payload?.parts?.[0]?.body?.data ?? msg?.payload?.body?.data ?? '';
-          const bodyText = bodyPart ? atob(bodyPart.replace(/-/g,'+').replace(/_/g,'/')) : '';
-          const triggerEnv = env.child();
-          triggerEnv.set('request', new Map([
-            ['subject', subject], ['from', fromAddr], ['body', bodyText], ['id', data.messages[0].id]
-          ]));
-          return triggerEnv;
-        }
-        return null;
-      }
-
-      if (trigger === 'sheets') {
-        // Poll a sheet for new rows since last check
-        const name = node.source ? String(await this.evalExpr(node.source, env)) : '';
-        const handle = await this._evalSheetsOpenExpr({ ...node, name: node.source }, env);
-        const rows = await handle.get('read')('A1:Z1000');
-        const lastSeen = this.globals.get('__waitSheetRows__') ?? 0;
-        const current  = (rows?.length ?? 1) - 1; // subtract header
-        if (current > lastSeen) {
-          this.globals.set('__waitSheetRows__', current);
-          const newRows = rows.slice(lastSeen + 1);
-          const triggerEnv = env.child();
-          triggerEnv.set('request', newRows);
-          return triggerEnv;
-        }
-        // Initialise baseline on first poll
-        if (lastSeen === 0) this.globals.set('__waitSheetRows__', current);
-        return null;
-      }
-
-      if (trigger === 'time') {
-        // Check if current time matches (simple HH:MM match)
-        const timeStr = node.source ? String(await this.evalExpr(node.source, env)) : '';
-        const now = new Date();
-        const nowStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-        if (nowStr === timeStr) return env.child();
-        return null;
-      }
-
-      return null;
-    };
-
-    this.onOutput?.(`⏳ Waiting for ${trigger} trigger…`);
-
-    let polls = 0;
-    while (polls < MAX_POLLS) {
-      const triggerEnv = await poll();
-      if (triggerEnv) {
-        this.onOutput?.(`✓ ${trigger} trigger fired`);
-        const r = await this.execBlock(node.body, triggerEnv);
-        if (r instanceof EndSignal || r instanceof ReturnSignal) return r;
-        return;
-      }
-      polls++;
-      await new Promise(res => setTimeout(res, POLL_MS));
-    }
-
-    this.onOutput?.(`⚠ wait ${trigger}: timed out after ${MAX_POLLS * POLL_MS / 1000}s`);
-  }
-
 
   _resolveClassObject(name, env = this.globals) {
     const value = env?.get?.(name);
@@ -1502,7 +1554,6 @@ class Interpreter {
   async _evalSheetsOpenExpr(node, env)       { return this.runtime._evalSheetsOpenExpr(node, env); }
   async _executeGmail(node, env)             { return this.runtime._executeGmail(node, env); }
   async _executeWaitBlock(node, env)         { return this.runtime._executeWaitBlock(node, env); }
-  async _executeSave(node, env)               { return this.runtime._executeSave(node, env); }
 
 
   async _evalListLit(node, env) {
@@ -1586,9 +1637,10 @@ class Interpreter {
 
     if (callee instanceof IVXClass) {
       try {
-        try { return await callee.instantiate(args, this, node); } catch(e) { this.globals.set('err', e.message ?? String(e)); return NONE; }
+        return await callee.instantiate(args, this, node);
       } catch (e) {
         this.globals.set('err', e.message ?? String(e));
+        return NONE;
       }
     }
 
@@ -1897,9 +1949,10 @@ class Interpreter {
 
     if (callee instanceof IVXClass) {
       try {
-        try { return await callee.instantiate(args, this, node); } catch(e) { this.globals.set('err', e.message ?? String(e)); return NONE; }
+        return await callee.instantiate(args, this, node);
       } catch (e) {
         this.globals.set('err', e.message ?? String(e));
+        return NONE;
       }
     }
 
@@ -1983,10 +2036,10 @@ function ivxRepr(value) {
   if (value instanceof IVXClass)     return `<class ${value.name}>`;
   if (value instanceof IVXSuperProxy) return '<super>';
   if (value instanceof Map) {
-    const entries = [...value.entries()].filter(([k]) => !String(k).startsWith('__'));
-    if (entries.length === 0) return '{}';
     const cls = value.get('__class__');
     if (cls) return `<${cls} instance>`;
+    const entries = [...value.entries()].filter(([k]) => !String(k).startsWith('__'));
+    if (entries.length === 0) return '{}';
     return '{' + entries.map(([k,v]) => `${ivxRepr(k)}: ${ivxRepr(v)}`).join(', ') + '}';
   }
   if (Array.isArray(value))          return '[' + value.map(ivxRepr).join(', ') + ']';
