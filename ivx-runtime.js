@@ -720,7 +720,7 @@ class Interpreter {
     this._registerBuiltins();
 
     this.runtime = new IVXRuntime(this);
-
+  }
 
   // ── Execute a block of statements ─────────────────────────────────────────
   async execBlock(stmts, env) {
