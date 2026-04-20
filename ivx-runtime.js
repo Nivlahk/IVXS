@@ -691,14 +691,8 @@ class IVXRuntime {
     await this._saveDriveFile(payload.filename, payload.content, payload.mimeType);
   }
 
-  // ── Execution delegated to Interpreter ──────────────────────────────────
-  // execBlock, execStmt and all execution logic live on the Interpreter class.
-
 }
 
-}
-
-// ── Interpreter ───────────────────────────────────────────────────────────────
 class Interpreter {
   constructor(options = {}) {
     // I/O hooks — override these to wire up the browser UI
@@ -720,7 +714,45 @@ class Interpreter {
     this._registerBuiltins();
 
     this.runtime = new IVXRuntime(this);
+    this._exprEvaluators = {
+      NumberLit: (node, env) => this._evalNumberLit(node, env),
+      StringLit: (node, env) => this._evalStringLit(node, env),
+      BoolLit: (node, env) => this._evalBoolLit(node, env),
+      Ask: (node, env) => this._evalAskExpr(node, env),
+      SheetsOpen: (node, env) => this._evalSheetsOpenExpr(node, env),
+      Super: (node, env) => this._evalSuperExpr(node, env),
+      ListLit: (node, env) => this._evalListLit(node, env),
+      DictLit: (node, env) => this._evalDictLit(node, env),
+      MemberAccess: (node, env) => this._evalMemberAccessExpr(node, env),
+      Identifier: (node, env) => this._evalIdentifierExpr(node, env),
+      IndexAccess: (node, env) => this._evalIndexAccessExpr(node, env),
+      LazyDecl: (node, env) => this._evalLazyDeclExpr(node, env),
+      BinOp: (node, env) => this.evalBinOp(node, env),
+      Post: (node, env) => this._evalPostExpr(node, env),
+      UnaryOp: (node, env) => this._evalUnaryOpExpr(node, env),
+      Call: (node, env) => this.evalCall(node, env),
+      Invoke: (node, env) => this._evalInvokeExpr(node, env),
+    };
   }
+
+
+  // ── Execute a program from source ─────────────────────────────────────────
+  async run(source, options = {}) {
+    const parsed = parse(source);
+    const { errors: typeErrors } = typecheck(parsed);
+    const hasParseErrors = parsed.errors.length > 0;
+    if (typeErrors.length > 0 && (hasParseErrors || !options.ignoreTypeErrors)) {
+      for (const e of typeErrors) this.onError(e);
+      return;
+    }
+    try {
+      await this.execBlock(parsed.ast.body, this.globals);
+    } catch (e) {
+      if (e instanceof RuntimeError) this.onError(e);
+      else throw e;
+    }
+  }
+
 
   // ── Execute a block of statements ─────────────────────────────────────────
   async execBlock(stmts, env) {
@@ -1331,44 +1363,6 @@ class Interpreter {
     this.onOutput?.(`⚠ wait ${trigger}: timed out after ${MAX_POLLS * POLL_MS / 1000}s`);
   }
 
-    this._exprEvaluators = {
-      NumberLit: (node, env) => this._evalNumberLit(node, env),
-      StringLit: (node, env) => this._evalStringLit(node, env),
-      BoolLit: (node, env) => this._evalBoolLit(node, env),
-      Ask: (node, env) => this._evalAskExpr(node, env),
-      SheetsOpen: (node, env) => this._evalSheetsOpenExpr(node, env),
-      Super: (node, env) => this._evalSuperExpr(node, env),
-      ListLit: (node, env) => this._evalListLit(node, env),
-      DictLit: (node, env) => this._evalDictLit(node, env),
-      MemberAccess: (node, env) => this._evalMemberAccessExpr(node, env),
-      Identifier: (node, env) => this._evalIdentifierExpr(node, env),
-      IndexAccess: (node, env) => this._evalIndexAccessExpr(node, env),
-      LazyDecl: (node, env) => this._evalLazyDeclExpr(node, env),
-      BinOp: (node, env) => this.evalBinOp(node, env),
-      Post: (node, env) => this._evalPostExpr(node, env),
-      UnaryOp: (node, env) => this._evalUnaryOpExpr(node, env),
-      Call: (node, env) => this.evalCall(node, env),
-      Invoke: (node, env) => this._evalInvokeExpr(node, env),
-    };
-  }
-
-
-  // ── Execute a program from source ─────────────────────────────────────────
-  async run(source, options = {}) {
-    const parsed = parse(source);
-    const { errors: typeErrors } = typecheck(parsed);
-    const hasParseErrors = parsed.errors.length > 0;
-    if (typeErrors.length > 0 && (hasParseErrors || !options.ignoreTypeErrors)) {
-      for (const e of typeErrors) this.onError(e);
-      return;
-    }
-    try {
-      await this.execBlock(parsed.ast.body, this.globals);
-    } catch (e) {
-      if (e instanceof RuntimeError) this.onError(e);
-      else throw e;
-    }
-  }
 
   _resolveClassObject(name, env = this.globals) {
     const value = env?.get?.(name);
@@ -1437,6 +1431,7 @@ class Interpreter {
   async _evalSheetsOpenExpr(node, env)       { return this.runtime._evalSheetsOpenExpr(node, env); }
   async _executeGmail(node, env)             { return this.runtime._executeGmail(node, env); }
   async _executeWaitBlock(node, env)         { return this.runtime._executeWaitBlock(node, env); }
+  async _executeSave(node, env)               { return this.runtime._executeSave(node, env); }
 
 
   async _evalListLit(node, env) {
