@@ -710,7 +710,11 @@ async function resolveParam(param, incoming, env, interp) {
   if (incoming !== undefined && incoming !== NONE) {
     value = incoming;
   } else if (defaultExpr) {
-    value = await interp.evalExpr(defaultExpr, env);
+    try {
+      value = await interp.evalExpr(defaultExpr, env);
+    } catch(e) {
+      value = NONE;
+    }
   } else if (lazy) {
     value = transformOp ? 0 : NONE;
   } else {
@@ -1582,7 +1586,7 @@ class Interpreter {
 
     if (callee instanceof IVXClass) {
       try {
-        return await callee.instantiate(args, this, node);
+        try { return await callee.instantiate(args, this, node); } catch(e) { this.globals.set('err', e.message ?? String(e)); return NONE; }
       } catch (e) {
         this.globals.set('err', e.message ?? String(e));
       }
@@ -1893,7 +1897,7 @@ class Interpreter {
 
     if (callee instanceof IVXClass) {
       try {
-        return await callee.instantiate(args, this, node);
+        try { return await callee.instantiate(args, this, node); } catch(e) { this.globals.set('err', e.message ?? String(e)); return NONE; }
       } catch (e) {
         this.globals.set('err', e.message ?? String(e));
       }

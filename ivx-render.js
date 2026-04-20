@@ -4279,7 +4279,7 @@ function escHtml(s) {
 }
 
 // Keyword sets for the tokenizing highlighter
-const _KW_NODE     = new Set(['if','fork','loop','dot','con','take','say','give','fun','class','end','from','make','note','for','in','wait','del','ask','post','use','sheets','email','by']);
+const _KW_NODE     = new Set(['if','fork','loop','dot','con','take','say','give','fun','class','init','end','from','make','note','for','in','wait','del','ask','post','use','sheets','email','by']);
 const _KW_FLOW     = new Set(['so','then','else']);
 const _KW_OUTGOING = new Set(['prev','next','use']);
 const _KW_LOGIC    = new Set(['not','and','or','xor','is','yes','no','none']);
@@ -4439,7 +4439,7 @@ function highlightSource(src) {
   // Loop iterators always color as variables — they act like variables
   ['i','ii','iii','j','jj','jjj','k','kk','kkk'].forEach(v => allVars.add(v));
   // Function parameters color as variables (handles name, name?, name * 3, name? 100)
-  const funMatches = src.match(/\bfun\s+\w+\s*\(([^)]+)\)/g);
+  const funMatches = src.match(/\b(?:fun\s+\w+|init)\s*\(([^)]+)\)/g);
   if (funMatches) funMatches.forEach(m => {
     const inner = m.match(/\(([^)]+)\)/);
     if (inner) inner[1].split(',').forEach(p => {

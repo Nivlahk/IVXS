@@ -64,7 +64,7 @@ const KEYWORDS = new Set([
   // Control flow
   'if', 'else', 'for', 'loop', 'end', 'so', 'then',
   // Functions
-  'fun', 'class', 'give',
+  'fun', 'class', 'give', 'init',
   // OOP
   'extends', 'super',
   // Data
@@ -223,7 +223,7 @@ class Lexer {
   // ── Word lexing ─────────────────────────────────────────────────────────────
   readWord(startLine, startCol) {
     let word = '';
-    while (/[A-Za-z_]/.test(this.peek())) word += this.advance();
+    while (/[A-Za-z_\d]/.test(this.peek())) word += this.advance();
     // 'note' starts a comment — consume rest of line, emit nothing
     if (word === 'note') {
       while (this.peek() !== '\n' && this.peek() !== '') this.advance();
@@ -439,6 +439,7 @@ class Parser {
       for:  () => this.parseFor(),
       loop: () => this.parseLoop(),
       fun:  () => this.parseFun(),
+      init: () => this.parseInit(),
       dot:  () => {
         const tok = this.advance();
         this.eatNewline();
@@ -1027,8 +1028,55 @@ class Parser {
     }
 
     this.eatNewline();
-    const body = this.parseBlock();
+    // Allow empty fun body — implicit init and other bodyless funs are valid
+    const body = this.check(T.INDENT) ? this.parseBlock() : [];
     return Node('Fun', { name, params, body, line: tok.line, col: tok.col });
+  }
+
+  // ── init(params) — bodyless constructor declaration ─────────────────────────
+  parseInit() {
+    const tok = this.advance(); // eat 'init'
+    const params = [];
+    if (this.eat(T.LPAREN)) {
+      while (!this.check(T.RPAREN) && !this.check(T.EOF)) {
+        const p = this.peek();
+        if (p.type !== T.IDENTIFIER && p.type !== T.LAZY) {
+          this.error('Expected parameter name', p); break;
+        }
+        const isLazy = p.type === T.LAZY;
+        const paramName = this.advance().value;
+        let defaultExpr = null;
+        let transformOp = null;
+        let transformRight = null;
+        const ARITH_OPS = new Set(['+','-','*','/','//','%','^']);
+        if (isLazy) {
+          const next = this.peek();
+          if (next.type === T.OP && ARITH_OPS.has(next.value)) {
+            transformOp = this.advance().value;
+            transformRight = this.parseExpr();
+          } else if (next.type !== T.COMMA && next.type !== T.RPAREN && next.type !== T.EOF) {
+            defaultExpr = this.parseExpr();
+            const after = this.peek();
+            if (after.type === T.OP && ARITH_OPS.has(after.value)) {
+              transformOp = this.advance().value;
+              transformRight = this.parseExpr();
+            }
+          }
+        } else {
+          const next = this.peek();
+          if (next.type === T.OP && ARITH_OPS.has(next.value)) {
+            transformOp = this.advance().value;
+            transformRight = this.parseExpr();
+          }
+        }
+        params.push({ name: paramName, lazy: isLazy, defaultExpr, transformOp, transformRight });
+        if (!this.eat(T.COMMA)) break;
+      }
+      this.expect(T.RPAREN, undefined, "Expected ')' after init params");
+    }
+    this.eatNewline();
+    // init never has a body — implicit self-assignment handles everything
+    return Node('Fun', { name: 'init', params, body: [], line: tok.line, col: tok.col });
   }
 
   // ── class name(superclass?) ───────────────────────────────────────────────
