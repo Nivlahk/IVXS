@@ -296,6 +296,179 @@ const BUILTIN_DEFS = {
   chars:   { params: ['s'], call: (args) => [...String(args[0])] },
   repeat:  { params: ['s','n'], call: (args) => String(args[0]).repeat(Math.max(0,Math.trunc(Number(args[1])))) },
   size:    { params: ['x'], call: (args) => { const v=args[0]; if(typeof v==='string')return v.length; if(Array.isArray(v))return v.length; if(v instanceof Map)return v.size; return 0; } },
+
+  // ── List methods ──────────────────────────────────────────────────────────
+  map: {
+    params: ['list', 'fun'],
+    call: async (args, node, interp) => {
+      const list = args[0]; const fn = args[1];
+      if (!Array.isArray(list)) return list;
+      const result = [];
+      for (const item of list) {
+        if (fn && fn.body !== null) {
+          const env = fn.closure.child();
+          if (fn.params[0]) env.set(typeof fn.params[0] === 'string' ? fn.params[0] : fn.params[0].name, item);
+          const r = await interp.execBlock(fn.body, env);
+          result.push(r?.value ?? item);
+        } else result.push(item);
+      }
+      return result;
+    },
+  },
+  filter: {
+    params: ['list', 'fun'],
+    call: async (args, node, interp) => {
+      const list = args[0]; const fn = args[1];
+      if (!Array.isArray(list)) return list;
+      const result = [];
+      for (const item of list) {
+        let keep = false;
+        if (fn && fn.body !== null) {
+          const env = fn.closure.child();
+          if (fn.params[0]) env.set(typeof fn.params[0] === 'string' ? fn.params[0] : fn.params[0].name, item);
+          const r = await interp.execBlock(fn.body, env);
+          keep = r?.value ?? r ?? false;
+        }
+        if (keep) result.push(item);
+      }
+      return result;
+    },
+  },
+  reduce: {
+    params: ['list', 'fun', 'init'],
+    call: async (args, node, interp) => {
+      const list = args[0]; const fn = args[1];
+      if (!Array.isArray(list)) return NONE;
+      let acc = args[2] ?? NONE;
+      for (const item of list) {
+        if (fn && fn.body !== null) {
+          const env = fn.closure.child();
+          const p0 = fn.params[0]; const p1 = fn.params[1];
+          if (p0) env.set(typeof p0 === 'string' ? p0 : p0.name, acc);
+          if (p1) env.set(typeof p1 === 'string' ? p1 : p1.name, item);
+          const r = await interp.execBlock(fn.body, env);
+          acc = r?.value ?? r ?? acc;
+        }
+      }
+      return acc;
+    },
+  },
+  sort: {
+    params: ['list', 'fun'],
+    call: async (args, node, interp) => {
+      const list = args[0];
+      if (!Array.isArray(list)) return list;
+      const copy = [...list];
+      if (!args[1] || !args[1].body) {
+        // Default sort: numeric if all numbers, else string
+        copy.sort((a, b) => {
+          if (typeof a === 'number' && typeof b === 'number') return a - b;
+          return String(a).localeCompare(String(b));
+        });
+      } else {
+        const fn = args[1];
+        copy.sort(async (a, b) => {
+          const env = fn.closure.child();
+          const p0 = fn.params[0]; const p1 = fn.params[1];
+          if (p0) env.set(typeof p0 === 'string' ? p0 : p0.name, a);
+          if (p1) env.set(typeof p1 === 'string' ? p1 : p1.name, b);
+          const r = await interp.execBlock(fn.body, env);
+          return r?.value ?? 0;
+        });
+      }
+      return copy;
+    },
+  },
+  reverse: {
+    params: ['list'],
+    call: (args) => Array.isArray(args[0]) ? [...args[0]].reverse() : args[0],
+  },
+  unique: {
+    params: ['list'],
+    call: (args) => {
+      if (!Array.isArray(args[0])) return args[0];
+      const seen = new Set();
+      return args[0].filter(x => {
+        const k = JSON.stringify(x);
+        if (seen.has(k)) return false;
+        seen.add(k); return true;
+      });
+    },
+  },
+  flat: {
+    params: ['list'],
+    call: (args) => Array.isArray(args[0]) ? args[0].flat() : args[0],
+  },
+  first: {
+    params: ['list'],
+    call: (args) => Array.isArray(args[0]) && args[0].length > 0 ? args[0][0] : NONE,
+  },
+  last: {
+    params: ['list'],
+    call: (args) => Array.isArray(args[0]) && args[0].length > 0 ? args[0][args[0].length - 1] : NONE,
+  },
+  head: {
+    params: ['list', 'n'],
+    call: (args) => Array.isArray(args[0]) ? args[0].slice(0, args[1]) : args[0],
+  },
+  drop: {
+    params: ['list', 'n'],
+    call: (args) => Array.isArray(args[0]) ? args[0].slice(args[1]) : args[0],
+  },
+  zip: {
+    params: ['a', 'b'],
+    call: (args) => {
+      const a = args[0]; const b = args[1];
+      if (!Array.isArray(a) || !Array.isArray(b)) return NONE;
+      const len = Math.min(a.length, b.length);
+      return Array.from({length: len}, (_, i) => [a[i], b[i]]);
+    },
+  },
+  // ── 2D list methods ───────────────────────────────────────────────────────
+  col: {
+    params: ['grid', 'n'],
+    call: (args) => {
+      const grid = args[0]; const n = args[1];
+      if (!Array.isArray(grid)) return NONE;
+      return grid.map(row => Array.isArray(row) ? (row[n] ?? NONE) : NONE);
+    },
+  },
+  row: {
+    params: ['grid', 'n'],
+    call: (args) => {
+      const grid = args[0]; const n = args[1];
+      if (!Array.isArray(grid)) return NONE;
+      return grid[n] ?? NONE;
+    },
+  },
+  cols: {
+    params: ['grid'],
+    call: (args) => {
+      const grid = args[0];
+      if (!Array.isArray(grid) || !Array.isArray(grid[0])) return NONE;
+      return grid[0].length;
+    },
+  },
+  rows: {
+    params: ['grid'],
+    call: (args) => Array.isArray(args[0]) ? args[0].length : 0,
+  },
+  transpose: {
+    params: ['grid'],
+    call: (args) => {
+      const grid = args[0];
+      if (!Array.isArray(grid) || !Array.isArray(grid[0])) return NONE;
+      return grid[0].map((_, ci) => grid.map(row => row[ci]));
+    },
+  },
+  colnames: {
+    params: ['table'],
+    call: (args) => {
+      const t = args[0];
+      if (!Array.isArray(t) || !(t[0] instanceof Map)) return NONE;
+      return [...t[0].keys()].filter(k => !String(k).startsWith('__'));
+    },
+  },
   now:       { params: [], call: () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; } },
   time:      { params: [], call: () => { const d=new Date(); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`; } },
   timestamp: { params: [], call: () => Date.now() },
@@ -1538,7 +1711,7 @@ class Interpreter {
   _callBuiltin(name, args, node) {
     const spec = BUILTIN_DEFS[name];
     if (!spec) throw new RuntimeError(`Unknown built-in '${name}'`, node?.line);
-    return spec.call(args, node);
+    return spec.call(args, node, this);
   }
 
 

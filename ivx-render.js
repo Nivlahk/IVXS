@@ -2712,11 +2712,15 @@ function parseivx(source) {
 const srcEl  = /** @type {HTMLTextAreaElement} */ (document.getElementById('src'));
 const errEl  = document.getElementById('err');
 
-const STARTER = `take user input
-if input > 0
-then give positive result
-else give non-positive result
-end`;
+const STARTER = `make name "World"
+make count 3
+loop y? < count
+  say "Hello {name}! (message {y + 1})"
+  make y + 1
+if count > 1
+  say "Sent {count} greetings"
+else
+  say "Sent one greeting"`;
 
 srcEl.value = STARTER;
 
@@ -4658,7 +4662,7 @@ termRun.addEventListener('click', async () => {
     },
     onError: (e) => {
       const line = e.ivxLine ?? e.line ?? null;
-      termErrorLine(e.message ?? String(e), line ? line + 1 : null);
+      termErrorLine(e.message ?? String(e), line ?? null);
     },
     onWait: (n) => new Promise(r => setTimeout(r, n * 100)),
     onStep: (srcLine) => {
@@ -4682,7 +4686,7 @@ termRun.addEventListener('click', async () => {
     interpGlobals = interp.globals;
   } catch(e) {
     const line = e.ivxLine ?? e.line ?? null;
-    termErrorLine(e.message ?? String(e), line ? line + 1 : null);
+    termErrorLine(e.message ?? String(e), line ?? null);
   }
 
   termInfo('─── run finished ───');

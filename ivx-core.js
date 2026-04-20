@@ -1583,13 +1583,31 @@ class Parser {
   parseList() {
     const tok = this.advance(); // eat '['
     const elements = [];
+    let hasRows = false;
+    let currentRow = [];
+
     while (!this.check(T.RBRACKET) && !this.check(T.EOF)) {
       const el = this.parseExpr();
-      if (el) elements.push(el);
-      if (!this.eat(T.COMMA)) break;
+      if (el) currentRow.push(el);
+      if (this.eat(T.SEMICOLON)) {
+        // Row separator — this is a 2D list
+        hasRows = true;
+        elements.push(Node('ListLit', { elements: currentRow, line: tok.line, col: tok.col }));
+        currentRow = [];
+      } else if (!this.eat(T.COMMA)) {
+        break;
+      }
     }
     this.expect(T.RBRACKET, undefined, "Expected ']'");
-    return Node('ListLit', { elements, line: tok.line, col: tok.col });
+
+    if (hasRows) {
+      // Push the final row
+      if (currentRow.length > 0) {
+        elements.push(Node('ListLit', { elements: currentRow, line: tok.line, col: tok.col }));
+      }
+      return Node('ListLit', { elements, line: tok.line, col: tok.col });
+    }
+    return Node('ListLit', { elements: currentRow, line: tok.line, col: tok.col });
   }
 
   // ── Dict literal ───────────────────────────────────────────────────────────
@@ -1771,12 +1789,41 @@ class TCEnv {
 }
 
 // ── Type checker ──────────────────────────────────────────────────────────────
+// All built-in function names — must match BUILTIN_DEFS in ivx-runtime.js
+const BUILTIN_NAMES = new Set([
+  // Type conversion
+  'int','flt','str','bin','list','dict',
+  // Math
+  'abs','floor','ceil','round','min','max','sqrt',
+  // String
+  'length','size','upper','lower','trim','split','join','contains','replace',
+  'starts','ends','index','slice','pad','padend','chars','repeat',
+  // List
+  'push','pop','keys','values','has',
+  'sort','reverse','unique','flat','first','last','head','drop','zip',
+  'map','filter','reduce',
+  // 2D list
+  'col','row','cols','rows','transpose','colnames',
+  // Table
+  'where','order','group','agg',
+  // Date/time
+  'now','time','timestamp','year','month','day','hour','minute','weekday',
+  'dateadd','datediff','format',
+  // Misc
+  'range','type','error',
+]);
+
 class TypeChecker {
   constructor() {
     this.errors  = [];
     this.globals = new TCEnv(null, 'global');
     // Built-in: err is always in scope as none (universal sentinel)
     this.globals.define('err', TYPE.NONE);
+    // Register all built-in functions so the type checker doesn't flag them
+    // Use null params to signal variadic/unknown arg count
+    for (const name of BUILTIN_NAMES) {
+      this.globals.fns.set(name, { params: null, returnType: TYPE.UNKNOWN });
+    }
 
     this._stmtCheckers = {
       Assign: (node, env) => this._checkAssignStmt(node, env),
@@ -2198,14 +2245,14 @@ class TypeChecker {
           return TYPE.UNKNOWN;
         }
         // Check argument count
-        if (node.args.length !== callee.params.length) {
+        if (callee.params !== null && node.args.length !== callee.params.length) {
           this.err(
             `${isClass ? 'Class' : 'Function'} '${node.name}' expects ${callee.params.length} argument(s), got ${node.args.length}`,
             node
           );
         }
         // Check argument types
-        for (let i = 0; i < Math.min(node.args.length, callee.params.length); i++) {
+        for (let i = 0; callee.params !== null && i < Math.min(node.args.length, callee.params.length); i++) {
           const argType    = this.checkExpr(node.args[i], env);
           const paramType  = callee.params[i]?.type ?? TYPE.UNKNOWN;
           if (!compatible(argType, paramType)) {
