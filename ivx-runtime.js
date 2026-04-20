@@ -691,6 +691,37 @@ class IVXRuntime {
     await this._saveDriveFile(payload.filename, payload.content, payload.mimeType);
   }
 
+  // ── Execution delegated to Interpreter ──────────────────────────────────
+  // execBlock, execStmt and all execution logic live on the Interpreter class.
+
+}
+
+}
+
+// ── Interpreter ───────────────────────────────────────────────────────────────
+class Interpreter {
+  constructor(options = {}) {
+    // I/O hooks — override these to wire up the browser UI
+    this.onOutput  = options.onOutput  ?? (v => console.log(ivxRepr(v)));
+    this.onInput   = options.onInput   ?? (() => { throw new RuntimeError("'take' requires an input handler"); });
+    this.onError   = options.onError   ?? (e => console.error(e));
+    this.onWait    = options.onWait    ?? (n => new Promise(r => setTimeout(r, n * 100)));
+    // onStep(srcLine) — called before each statement executes with the 1-based source line
+    this.onStep    = options.onStep    ?? null;
+
+    // Max loop iterations — safety valve against infinite loops
+    this.maxIterations = options.maxIterations ?? 100_000;
+
+    this.globals = new Env();
+    // Built-in: err starts as none
+    this.globals.set('err', NONE);
+
+    // Register built-in functions
+    this._registerBuiltins();
+
+    this.runtime = new IVXRuntime(this);
+
+
   // ── Execute a block of statements ─────────────────────────────────────────
   async execBlock(stmts, env) {
     for (const stmt of stmts) {
@@ -713,7 +744,7 @@ class IVXRuntime {
       case 'Assign': {
         // Lazy declaration: make name? + expr — hoist to global if not exists
         // Default is 0 for arithmetic context (most common), none otherwise
-        if (node.lazy && node.name && !this._interp.globals.has(node.name)) {
+        if (node.lazy && node.name && !this.globals.has(node.name)) {
           // Peek at the expr to infer a better default
           // BinOp with arithmetic op on an Identifier named same as node.name
           // means the implied left is already set; infer from the right side
@@ -728,11 +759,11 @@ class IVXRuntime {
               defaultVal = false;
             }
           }
-          this._interp.globals.set(node.name, defaultVal);
+          this.globals.set(node.name, defaultVal);
         }
-        const value = await this._interp.evalExpr(node.expr, env);
+        const value = await this.evalExpr(node.expr, env);
         if (node.target?.type === 'MemberAccess') {
-          const obj = await this._interp.evalExpr(node.target.object, env);
+          const obj = await this.evalExpr(node.target.object, env);
           if (obj instanceof Map) {
             obj.set(node.target.field, value);
           } else if (obj && typeof obj === 'object') {
@@ -754,8 +785,8 @@ class IVXRuntime {
       }
 
       case 'Say': {
-        const value = await this._interp.evalExpr(node.expr, env);
-        await this._interp.onOutput(value);
+        const value = await this.evalExpr(node.expr, env);
+        await this.onOutput(value);
         break;
       }
 
@@ -765,21 +796,21 @@ class IVXRuntime {
         // Apply converter if specified
         if (node.converter && value !== NONE) {
           try { value = this._callBuiltin(node.converter, [value], node); }
-          catch(e) { this._interp.globals.set('err', e.message ?? String(e)); }
+          catch(e) { this.globals.set('err', e.message ?? String(e)); }
         }
         env.set(node.name, value);
         break;
       }
 
       case 'Give': {
-        const value = await this._interp.evalExpr(node.expr, env);
+        const value = await this.evalExpr(node.expr, env);
         return new ReturnSignal(value);
       }
 
       case 'Use': {
         // use <key> — set global credential
-        const keyVal = await this._interp.evalExpr(node.key, env);
-        this._interp.globals.set('__credential__', String(keyVal));
+        const keyVal = await this.evalExpr(node.key, env);
+        this.globals.set('__credential__', String(keyVal));
         break;
       }
 
@@ -842,7 +873,7 @@ class IVXRuntime {
           // wait x = 5 — poll until condition is true
           let iters = 0;
           while (true) {
-            const cond = await this._interp.evalExpr(node.condition, env);
+            const cond = await this.evalExpr(node.condition, env);
             if (cond) break;
             if (++iters > this.maxIterations) {
               throw new RuntimeError("'wait' condition never became true", node.line);
@@ -850,7 +881,7 @@ class IVXRuntime {
             await this.onWait(1);
           }
         } else {
-          const cycles = await this._interp.evalExpr(node.expr, env);
+          const cycles = await this.evalExpr(node.expr, env);
           await this.onWait(Number(cycles) || 1);
         }
         break;
@@ -863,14 +894,14 @@ class IVXRuntime {
       }
 
       case 'If': {
-        const cond = await this._interp.evalExpr(node.condition, env);
+        const cond = await this.evalExpr(node.condition, env);
         const bodyEnv = env.child();
         if (isTruthy(cond)) {
-          const r = await this._interp.execBlock(node.body, bodyEnv);
+          const r = await this.execBlock(node.body, bodyEnv);
           if (r) return r;
         } else if (node.else_) {
           const elseEnv = env.child();
-          const r = await this._interp.execBlock(node.else_, elseEnv);
+          const r = await this.execBlock(node.else_, elseEnv);
           if (r) return r;
         }
         break;
@@ -881,13 +912,13 @@ class IVXRuntime {
         while (true) {
           // Re-fire onStep so the Decision node highlights on every iteration
           if (this.onStep && node.line != null) this.onStep(node.line);
-          const cond = await this._interp.evalExpr(node.condition, env);
+          const cond = await this.evalExpr(node.condition, env);
           if (!isTruthy(cond)) break;
           if (++iters > this.maxIterations) {
             throw new RuntimeError('Loop exceeded maximum iterations', node.line);
           }
           const loopEnv = env.child();
-          const r = await this._interp.execBlock(node.body, loopEnv);
+          const r = await this.execBlock(node.body, loopEnv);
           if (r instanceof ReturnSignal)  return r;
           if (r instanceof BreakSignal)   break;
         }
@@ -910,7 +941,7 @@ class IVXRuntime {
           const forEnv = env.child();
           forEnv.set(node.iterVar,  primary);
           forEnv.set(node.iterVar2, secondary);
-          const r = await this._interp.execBlock(node.body, forEnv);
+          const r = await this.execBlock(node.body, forEnv);
           if (r instanceof ReturnSignal)  return r;
           if (r instanceof BreakSignal)   break;
         }
@@ -963,7 +994,7 @@ class IVXRuntime {
         break;
 
       case 'ExprStatement':
-        if (node.expr) await this._interp.evalExpr(node.expr, env);
+        if (node.expr) await this.evalExpr(node.expr, env);
         break;
 
       default:
@@ -1010,10 +1041,10 @@ class IVXRuntime {
   }
 
   async _evalAskExpr(node, env) {
-    const prompt = await this._interp.evalExpr(node.prompt, env);
+    const prompt = await this.evalExpr(node.prompt, env);
     const credential = node.credential
-      ? await this._interp.evalExpr(node.credential, env)
-      : this._interp.globals.get('__credential__') ?? null;
+      ? await this.evalExpr(node.credential, env)
+      : this.globals.get('__credential__') ?? null;
     const model = (node.model ?? 'gemini').toLowerCase();
 
     if (!credential) {
@@ -1135,7 +1166,7 @@ class IVXRuntime {
 
   // ── sheets <name> — returns a handle with .read and .write ───────────────
   async _evalSheetsOpenExpr(node, env) {
-    const name = String(await this._interp.evalExpr(node.name, env));
+    const name = String(await this.evalExpr(node.name, env));
     const token = this._googleToken();
     if (!token) throw new RuntimeError('Not signed in to Google. Click "Sign in to Google" first.', node.line);
 
@@ -1190,9 +1221,9 @@ class IVXRuntime {
 
   // ── gmail to <addr> subject <subj> body <body> ────────────────────────────
   async _executeGmail(node, env) {
-    const to      = node.to      ? String(await this._interp.evalExpr(node.to, env))      : '';
-    const subject = node.subject ? String(await this._interp.evalExpr(node.subject, env)) : '';
-    const body    = node.body    ? String(await this._interp.evalExpr(node.body, env))     : '';
+    const to      = node.to      ? String(await this.evalExpr(node.to, env))      : '';
+    const subject = node.subject ? String(await this.evalExpr(node.subject, env)) : '';
+    const body    = node.body    ? String(await this.evalExpr(node.body, env))     : '';
 
     if (!to) throw new RuntimeError("email: missing recipient address", node.line);
 
@@ -1214,7 +1245,7 @@ class IVXRuntime {
       { method: 'POST', body: JSON.stringify({ raw: encoded }) }
     );
 
-    this._interp.onOutput?.(`Email sent to ${to}`);
+    this.onOutput?.(`Email sent to ${to}`);
   }
 
   // ── wait block: Level 1 polling execution ────────────────────────────────
@@ -1227,7 +1258,7 @@ class IVXRuntime {
     const poll = async () => {
       if (trigger === 'email') {
         // Poll Gmail for unread messages from the source address
-        const from = node.source ? String(await this._interp.evalExpr(node.source, env)) : '';
+        const from = node.source ? String(await this.evalExpr(node.source, env)) : '';
         const q    = encodeURIComponent(`is:unread${from ? ` from:${from}` : ''}`);
         const data = await this._googleAPI(
           `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${q}&maxResults=1`
@@ -1253,26 +1284,26 @@ class IVXRuntime {
 
       if (trigger === 'sheets') {
         // Poll a sheet for new rows since last check
-        const name = node.source ? String(await this._interp.evalExpr(node.source, env)) : '';
+        const name = node.source ? String(await this.evalExpr(node.source, env)) : '';
         const handle = await this._evalSheetsOpenExpr({ ...node, name: node.source }, env);
         const rows = await handle.get('read')('A1:Z1000');
-        const lastSeen = this._interp.globals.get('__waitSheetRows__') ?? 0;
+        const lastSeen = this.globals.get('__waitSheetRows__') ?? 0;
         const current  = (rows?.length ?? 1) - 1; // subtract header
         if (current > lastSeen) {
-          this._interp.globals.set('__waitSheetRows__', current);
+          this.globals.set('__waitSheetRows__', current);
           const newRows = rows.slice(lastSeen + 1);
           const triggerEnv = env.child();
           triggerEnv.set('request', newRows);
           return triggerEnv;
         }
         // Initialise baseline on first poll
-        if (lastSeen === 0) this._interp.globals.set('__waitSheetRows__', current);
+        if (lastSeen === 0) this.globals.set('__waitSheetRows__', current);
         return null;
       }
 
       if (trigger === 'time') {
         // Check if current time matches (simple HH:MM match)
-        const timeStr = node.source ? String(await this._interp.evalExpr(node.source, env)) : '';
+        const timeStr = node.source ? String(await this.evalExpr(node.source, env)) : '';
         const now = new Date();
         const nowStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
         if (nowStr === timeStr) return env.child();
@@ -1282,14 +1313,14 @@ class IVXRuntime {
       return null;
     };
 
-    this._interp.onOutput?.(`⏳ Waiting for ${trigger} trigger…`);
+    this.onOutput?.(`⏳ Waiting for ${trigger} trigger…`);
 
     let polls = 0;
     while (polls < MAX_POLLS) {
       const triggerEnv = await poll();
       if (triggerEnv) {
-        this._interp.onOutput?.(`✓ ${trigger} trigger fired`);
-        const r = await this._interp.execBlock(node.body, triggerEnv);
+        this.onOutput?.(`✓ ${trigger} trigger fired`);
+        const r = await this.execBlock(node.body, triggerEnv);
         if (r instanceof EndSignal || r instanceof ReturnSignal) return r;
         return;
       }
@@ -1297,32 +1328,9 @@ class IVXRuntime {
       await new Promise(res => setTimeout(res, POLL_MS));
     }
 
-    this._interp.onOutput?.(`⚠ wait ${trigger}: timed out after ${MAX_POLLS * POLL_MS / 1000}s`);
+    this.onOutput?.(`⚠ wait ${trigger}: timed out after ${MAX_POLLS * POLL_MS / 1000}s`);
   }
-}
 
-// ── Interpreter ───────────────────────────────────────────────────────────────
-class Interpreter {
-  constructor(options = {}) {
-    // I/O hooks — override these to wire up the browser UI
-    this.onOutput  = options.onOutput  ?? (v => console.log(ivxRepr(v)));
-    this.onInput   = options.onInput   ?? (() => { throw new RuntimeError("'take' requires an input handler"); });
-    this.onError   = options.onError   ?? (e => console.error(e));
-    this.onWait    = options.onWait    ?? (n => new Promise(r => setTimeout(r, n * 100)));
-    // onStep(srcLine) — called before each statement executes with the 1-based source line
-    this.onStep    = options.onStep    ?? null;
-
-    // Max loop iterations — safety valve against infinite loops
-    this.maxIterations = options.maxIterations ?? 100_000;
-
-    this.globals = new Env();
-    // Built-in: err starts as none
-    this.globals.set('err', NONE);
-
-    // Register built-in functions
-    this._registerBuiltins();
-
-    this.runtime = new IVXRuntime(this);
     this._exprEvaluators = {
       NumberLit: (node, env) => this._evalNumberLit(node, env),
       StringLit: (node, env) => this._evalStringLit(node, env),
