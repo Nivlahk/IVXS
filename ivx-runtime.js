@@ -691,23 +691,6 @@ class IVXRuntime {
     await this._saveDriveFile(payload.filename, payload.content, payload.mimeType);
   }
 
-  // ── Execute a program from source ─────────────────────────────────────────
-  async run(source, options = {}) {
-    const parsed = parse(source);
-    const { errors: typeErrors } = typecheck(parsed);
-    const hasParseErrors = parsed.errors.length > 0;
-    if (typeErrors.length > 0 && (hasParseErrors || !options.ignoreTypeErrors)) {
-      for (const e of typeErrors) this.onError(e);
-      return;
-    }
-    try {
-      await this.execBlock(parsed.ast.body, this.globals);
-    } catch (e) {
-      if (e instanceof RuntimeError) this.onError(e);
-      else throw e;
-    }
-  }
-
   // ── Execute a block of statements ─────────────────────────────────────────
   async execBlock(stmts, env) {
     for (const stmt of stmts) {
@@ -1359,6 +1342,24 @@ class Interpreter {
       Call: (node, env) => this.evalCall(node, env),
       Invoke: (node, env) => this._evalInvokeExpr(node, env),
     };
+  }
+
+
+  // ── Execute a program from source ─────────────────────────────────────────
+  async run(source, options = {}) {
+    const parsed = parse(source);
+    const { errors: typeErrors } = typecheck(parsed);
+    const hasParseErrors = parsed.errors.length > 0;
+    if (typeErrors.length > 0 && (hasParseErrors || !options.ignoreTypeErrors)) {
+      for (const e of typeErrors) this.onError(e);
+      return;
+    }
+    try {
+      await this.execBlock(parsed.ast.body, this.globals);
+    } catch (e) {
+      if (e instanceof RuntimeError) this.onError(e);
+      else throw e;
+    }
   }
 
   _resolveClassObject(name, env = this.globals) {
