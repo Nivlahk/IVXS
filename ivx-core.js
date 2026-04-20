@@ -972,12 +972,55 @@ class Parser {
     const name = this.advance().value;
 
     // Parameter list
+    // Each param is { name, default: Expr|null, transform: Expr|null }
+    // Syntax: name          → plain param
+    //         name? 100     → explicit default value
+    //         name? + 1     → lazy with transform (inferred default)
+    //         name * 3      → transform applied to incoming arg
+    //         name? 100 * 3 → explicit default + transform
     const params = [];
     if (this.eat(T.LPAREN)) {
       while (!this.check(T.RPAREN) && !this.check(T.EOF)) {
         const p = this.peek();
-        if (p.type === T.IDENTIFIER) { params.push(this.advance().value); }
-        else { this.error('Expected parameter name', p); break; }
+        if (p.type !== T.IDENTIFIER && p.type !== T.LAZY) {
+          this.error('Expected parameter name', p); break;
+        }
+        const isLazy = p.type === T.LAZY;
+        const paramName = this.advance().value;
+
+        let defaultExpr = null;
+        let transformOp = null;
+        let transformRight = null;
+
+        if (isLazy) {
+          // name? — check for explicit default or transform
+          const next = this.peek();
+          const ARITH_OPS = new Set(['+','-','*','/','//','%','^']);
+          if (next.type === T.OP && ARITH_OPS.has(next.value)) {
+            // name? + 1  → lazy with transform, inferred default
+            transformOp = this.advance().value;
+            transformRight = this.parseExpr();
+          } else if (next.type !== T.COMMA && next.type !== T.RPAREN && next.type !== T.EOF) {
+            // name? 100  or  name? 100 * 3  → explicit default
+            defaultExpr = this.parseExpr();
+            // Check for trailing transform: name? 100 * 3
+            const after = this.peek();
+            if (after.type === T.OP && ARITH_OPS.has(after.value)) {
+              transformOp = this.advance().value;
+              transformRight = this.parseExpr();
+            }
+          }
+        } else {
+          // Plain name — check for transform: name * 3
+          const next = this.peek();
+          const ARITH_OPS = new Set(['+','-','*','/','//','%','^']);
+          if (next.type === T.OP && ARITH_OPS.has(next.value)) {
+            transformOp = this.advance().value;
+            transformRight = this.parseExpr();
+          }
+        }
+
+        params.push({ name: paramName, lazy: isLazy, defaultExpr, transformOp, transformRight });
         if (!this.eat(T.COMMA)) break;
       }
       this.expect(T.RPAREN, undefined, "Expected ')' after parameters");
@@ -1813,18 +1856,18 @@ class TypeChecker {
   _checkFunStmt(node, env) {
     const fnEnv = env.child('fun-' + node.name);
     fnEnv._returnType = TYPE.UNKNOWN;
-    for (const p of node.params) fnEnv.define(p, TYPE.UNKNOWN);
-    env.defFn(node.name, node.params.map(p => ({ name: p, type: TYPE.UNKNOWN })), TYPE.UNKNOWN);
+    for (const p of node.params) { const pn = typeof p === "string" ? p : p.name; fnEnv.define(pn, TYPE.UNKNOWN); }
+    env.defFn(node.name, node.params.map(p => ({ name: typeof p === "string" ? p : p.name, type: TYPE.UNKNOWN })), TYPE.UNKNOWN);
     this.checkBlock(node.body, fnEnv);
     const retType = fnEnv._returnType ?? TYPE.UNKNOWN;
-    env.defFn(node.name, node.params.map(p => ({ name: p, type: fnEnv.lookup(p)?.type ?? TYPE.UNKNOWN })), retType);
+    env.defFn(node.name, node.params.map(p => { const pn = typeof p === "string" ? p : p.name; return { name: pn, type: fnEnv.lookup(pn)?.type ?? TYPE.UNKNOWN }; }), retType);
   }
 
   _checkClassStmt(node, env) {
     const initMethod = (node.body ?? []).find(stmt => stmt?.type === 'Fun' && stmt.name === 'init');
     env.defClass(
       node.name,
-      (initMethod?.params ?? []).map(param => ({ name: param, type: TYPE.UNKNOWN })),
+      (initMethod?.params ?? []).map(param => ({ name: typeof param === "string" ? param : param.name, type: TYPE.UNKNOWN })),
       TYPE.DICT
     );
     const classEnv = env.child('class-' + node.name);

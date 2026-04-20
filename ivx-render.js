@@ -4309,12 +4309,37 @@ function highlightLine(line, allVars = new Set(), allClasses = new Set()) {
       const strVal  = raw.slice(1, -1);
       const isUrl   = strVal.startsWith('http://') || strVal.startsWith('https://');
       const baseCls = isUrl ? 'kw-url' : 'kw-string';
-      // Split on {varname} patterns and highlight interpolations
-      const parts = strVal.split(/(\{[A-Za-z_]\w*\})/);
+      // Split on {expr} patterns and highlight interpolations semantically
+      const parts = strVal.split(/(\{[^}]+\})/);
       if (parts.length > 1) {
         push('"', baseCls);
         for (const part of parts) {
-          if (/^\{[A-Za-z_]\w*\}$/.test(part)) push(part, 'kw-var');
+          if (/^\{[^}]+\}$/.test(part)) {
+            // Highlight the inside of {expr} semantically
+            const inner = part.slice(1, -1);
+            push('{', 'kw-dict');
+            // Tokenize: split on dots, parens, brackets, commas
+            const innerSegs = inner.split(/([.()\[\],])/);
+            let prevInnerSeg = '';
+            for (const seg of innerSegs) {
+              if (!seg) continue;
+              if (seg === '.' || seg === ',' ) { push(seg, 'kw-dict'); prevInnerSeg = seg; continue; }
+              if (seg === '(' || seg === ')')  { push(seg, 'kw-funcall'); prevInnerSeg = seg; continue; }
+              if (seg === '[' || seg === ']')  { push(seg, 'kw-list'); prevInnerSeg = seg; continue; }
+              if (/^\d/.test(seg))             { push(seg, 'kw-number'); prevInnerSeg = seg; continue; }
+              if (allClasses.has(seg))          { push(seg, 'kw-classname'); prevInnerSeg = seg; continue; }
+              if (seg === 'self' || seg === 'super') { push(seg, 'kw-classname'); prevInnerSeg = seg; continue; }
+              // If followed by ( it's a method call, if preceded by . it's a field, otherwise a variable
+              const nextIdx = innerSegs.indexOf(seg) + 1;
+              const nextSeg = innerSegs[nextIdx] ?? '';
+              if (nextSeg === '(')      push(seg, 'kw-funcall');
+              else if (prevInnerSeg === '.') push(seg, 'kw-var');
+              else if (allVars.has(seg)) push(seg, 'kw-var');
+              else push(seg, 'kw-var');
+              prevInnerSeg = seg;
+            }
+            push('}', 'kw-dict');
+          }
           else if (part) push(part, baseCls);
         }
         push('"', baseCls);
@@ -4360,6 +4385,7 @@ function highlightLine(line, allVars = new Set(), allClasses = new Set()) {
       let cls = '';
       if (allClasses.has(word))            cls = 'kw-classname';
       else if (isFunCall)                  cls = 'kw-funcall';
+      else if (word === 'self' || word === 'super') cls = 'kw-classname';
       else if (_KW_NODE.has(word))         cls = 'kw-node';
       else if (_KW_FLOW.has(word))         cls = 'kw-flow';
       else if (_KW_OUTGOING.has(word))     cls = 'kw-outgoing';
@@ -4369,6 +4395,19 @@ function highlightLine(line, allVars = new Set(), allClasses = new Set()) {
       push(word, cls); i = j;
       // ? suffix — same color as the variable, just marks lazy declaration
       if (isLazy) { push('?', cls || 'kw-var'); i++; }
+      continue;
+    }
+    // Dot — color the following identifier as kw-var (field) or kw-funcall (method)
+    if (code[i] === '.') {
+      push('.', '');
+      i++;
+      let j = i;
+      while (j < code.length && /[\w]/.test(code[j])) j++;
+      if (j > i) {
+        const isMethod = code[j] === '(';
+        push(code.slice(i, j), isMethod ? 'kw-funcall' : 'kw-var');
+        i = j;
+      }
       continue;
     }
     // Everything else — pass through as plain text (accumulate runs)
@@ -4397,6 +4436,17 @@ function highlightSource(src) {
   // Also collect lazy-declared variables (name?) so they color as vars
   const lazyMatches = src.match(/\b([A-Za-z_]\w*)\?/g);
   if (lazyMatches) lazyMatches.forEach(m => { allVars.add(m.slice(0, -1)); });
+  // Loop iterators always color as variables — they act like variables
+  ['i','ii','iii','j','jj','jjj','k','kk','kkk'].forEach(v => allVars.add(v));
+  // Function parameters color as variables (handles name, name?, name * 3, name? 100)
+  const funMatches = src.match(/\bfun\s+\w+\s*\(([^)]+)\)/g);
+  if (funMatches) funMatches.forEach(m => {
+    const inner = m.match(/\(([^)]+)\)/);
+    if (inner) inner[1].split(',').forEach(p => {
+      const v = p.trim().match(/^([A-Za-z_]\w*)/);
+      if (v) allVars.add(v[1]);
+    });
+  });
 
   // Collect declared class names so both declarations and constructor calls
   // share one visual identity.

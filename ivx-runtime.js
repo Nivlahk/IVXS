@@ -111,10 +111,11 @@ class IVXClass {
     }
     if (initMethod) {
       for (let i = 0; i < initMethod.params.length; i++) {
+        const pRaw = initMethod.params[i];
+        const pName = typeof pRaw === 'string' ? pRaw : pRaw.name;
         const value = args[i] ?? NONE;
-        const paramName = initMethod.params[i];
-        instance.set(paramName, value);
-        classEnv.set(paramName, value);
+        instance.set(pName, value);
+        classEnv.set(pName, value);
       }
     }
 
@@ -128,6 +129,12 @@ class IVXClass {
       fnEnv.set('self', instance);
       if (boundInit.__boundSuper !== undefined) {
         fnEnv.set('super', boundInit.__boundSuper);
+      }
+      for (let i = 0; i < initMethod.params.length; i++) {
+        const { name: pn, value: pv } = await resolveParam(initMethod.params[i], args[i], fnEnv, interp);
+        fnEnv.set(pn, pv);
+        // Implicit self assignment — every init param auto-assigns to self.paramName
+        instance.set(pn, pv);
       }
 
       const result = await interp.execBlock(boundInit.body, fnEnv);
@@ -693,6 +700,40 @@ class IVXRuntime {
 
 }
 
+// ── Resolve a function parameter value (handles defaults and transforms) ──────
+async function resolveParam(param, incoming, env, interp) {
+  if (typeof param === 'string') return { name: param, value: incoming ?? NONE };
+
+  const { name, lazy, defaultExpr, transformOp, transformRight } = param;
+
+  let value;
+  if (incoming !== undefined && incoming !== NONE) {
+    value = incoming;
+  } else if (defaultExpr) {
+    value = await interp.evalExpr(defaultExpr, env);
+  } else if (lazy) {
+    value = transformOp ? 0 : NONE;
+  } else {
+    value = NONE;
+  }
+
+  if (transformOp && transformRight) {
+    const right = await interp.evalExpr(transformRight, env);
+    switch (transformOp) {
+      case '+':  value = value + right; break;
+      case '-':  value = value - right; break;
+      case '*':  value = value * right; break;
+      case '/':  value = right !== 0 ? value / right : NONE; break;
+      case '//': value = right !== 0 ? Math.trunc(value / right) : NONE; break;
+      case '%':  value = value % right; break;
+      case '^':  value = Math.pow(value, right); break;
+    }
+  }
+
+  return { name, value };
+}
+
+
 class Interpreter {
   constructor(options = {}) {
     // I/O hooks — override these to wire up the browser UI
@@ -1049,11 +1090,37 @@ class Interpreter {
   async _evalStringLit(node, env) {
     let sv = node.value;
     if (typeof sv === 'string' && sv.includes('{')) {
-      sv = sv.replace(/\{([A-Za-z_]\w*)\}/g, (match, name) => {
-        const val = env.get(name);
-        if (val === undefined) return match;
-        return ivxRepr(val);
-      });
+      // Handle {expr} interpolation — supports dotted access and calls
+      const parts = [];
+      let i = 0;
+      while (i < sv.length) {
+        const open = sv.indexOf('{', i);
+        if (open === -1) { parts.push(sv.slice(i)); break; }
+        parts.push(sv.slice(i, open));
+        const close = sv.indexOf('}', open);
+        if (close === -1) { parts.push(sv.slice(open)); break; }
+        const expr = sv.slice(open + 1, close).trim();
+        try {
+          const parsed = parse(expr + '\n');
+          if (parsed.ast?.body?.length > 0) {
+            const exprNode = parsed.ast.body[0]?.expr ?? parsed.ast.body[0];
+            if (exprNode) {
+              const val = await this.evalExpr(exprNode, env);
+              parts.push(ivxRepr(val));
+            } else {
+              parts.push('{' + expr + '}');
+            }
+          } else {
+            parts.push('{' + expr + '}');
+          }
+        } catch {
+          // Simple variable fallback
+          const val = env.get(expr);
+          parts.push(val !== undefined ? ivxRepr(val) : '{' + expr + '}');
+        }
+        i = close + 1;
+      }
+      sv = parts.join('');
     }
     if (typeof sv === 'string' && (sv.startsWith('http://') || sv.startsWith('https://'))) {
       try {
@@ -1500,7 +1567,8 @@ class Interpreter {
         fnEnv.set('super', callee.__boundSuper);
       }
       for (let i = 0; i < callee.params.length; i++) {
-        fnEnv.set(callee.params[i], args[i] ?? NONE);
+        const { name: pn, value: pv } = await resolveParam(callee.params[i], args[i], fnEnv, this);
+        fnEnv.set(pn, pv);
       }
       try {
         const result = await this.execBlock(callee.body, fnEnv);
@@ -1517,7 +1585,6 @@ class Interpreter {
         return await callee.instantiate(args, this, node);
       } catch (e) {
         this.globals.set('err', e.message ?? String(e));
-        return NONE;
       }
     }
 
@@ -1815,7 +1882,6 @@ class Interpreter {
   // ── Function calls ─────────────────────────────────────────────────────────
   async evalCall(node, env) {
     const callee = env.get(node.name);
-    console.log("evalCall:", node.name, "callee:", callee, "isIVXClass:", callee instanceof IVXClass, "isIVXFunction:", callee instanceof IVXFunction);
 
     // Evaluate arguments
     const args = [];
@@ -1830,7 +1896,6 @@ class Interpreter {
         return await callee.instantiate(args, this, node);
       } catch (e) {
         this.globals.set('err', e.message ?? String(e));
-        return NONE;
       }
     }
 
@@ -1847,7 +1912,8 @@ class Interpreter {
     // User-defined function
     const fnEnv = callee.closure.child();
     for (let i = 0; i < callee.params.length; i++) {
-      fnEnv.set(callee.params[i], args[i] ?? NONE);
+      const { name: pn, value: pv } = await resolveParam(callee.params[i], args[i], fnEnv, this);
+      fnEnv.set(pn, pv);
     }
 
     try {
@@ -1906,14 +1972,21 @@ function toIterable(value, node) {
 
 // Human-readable representation of an IVX value
 function ivxRepr(value) {
-  if (value === NONE)           return 'none';
-  if (value === true)           return 'yes';
-  if (value === false)          return 'no';
-  if (value instanceof Map)     return '{' + [...value.entries()].filter(([k]) => !String(k).startsWith('__')).map(([k,v]) => `${ivxRepr(k)}: ${ivxRepr(v)}`).join(', ') + '}';
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return '{' + Object.entries(value).filter(([k]) => !String(k).startsWith('__')).map(([k, v]) => `${k}: ${ivxRepr(v)}`).join(', ') + '}';
+  if (value === NONE)                return 'none';
+  if (value === true)                return 'yes';
+  if (value === false)               return 'no';
+  if (value instanceof IVXFunction)  return `<fun ${value.name}>`;
+  if (value instanceof IVXClass)     return `<class ${value.name}>`;
+  if (value instanceof IVXSuperProxy) return '<super>';
+  if (value instanceof Map) {
+    const entries = [...value.entries()].filter(([k]) => !String(k).startsWith('__'));
+    if (entries.length === 0) return '{}';
+    const cls = value.get('__class__');
+    if (cls) return `<${cls} instance>`;
+    return '{' + entries.map(([k,v]) => `${ivxRepr(k)}: ${ivxRepr(v)}`).join(', ') + '}';
   }
-  if (Array.isArray(value))     return '[' + value.map(ivxRepr).join(', ') + ']';
+  if (Array.isArray(value))          return '[' + value.map(ivxRepr).join(', ') + ']';
+  if (value && typeof value === 'object') return '<object>';
   return String(value);
 }
 
