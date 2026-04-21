@@ -205,6 +205,35 @@ class Lexer {
     this.emit(T.STRING, value, startLine, startCol);
   }
 
+  // ── Multiline string lexing ─────────────────────────────────────────────────
+  // Triple-quoted strings: """...""" or '''...'''
+  // Spans multiple lines, preserves newlines, supports {expr} interpolation
+  readMultilineString(quote, startLine, startCol) {
+    let value = '';
+    const triple = quote + quote + quote;
+    while (this.pos < this.src.length) {
+      // Check for closing triple quote
+      if (this.peek() === quote && this.peek(1) === quote && this.peek(2) === quote) {
+        this.advance(); this.advance(); this.advance(); // consume closing triple
+        break;
+      }
+      const ch = this.peek();
+      this.advance();
+      if (ch === '\\') {
+        const esc = this.peek();
+        const resolved = ESCAPE_MAP[esc];
+        if (resolved !== undefined) { this.advance(); value += resolved; }
+        else { value += ch; }
+      } else if (ch === '\n') {
+        this.line++; this.col = 1;
+        value += '\n';
+      } else {
+        value += ch;
+      }
+    }
+    this.emit(T.STRING, value, startLine, startCol);
+  }
+
   // ── Number lexing ───────────────────────────────────────────────────────────
   // Called when we know we're looking at a digit, or a '-' followed by a digit
   // in a position where a unary minus is valid (after whitespace or 'make').
@@ -306,8 +335,14 @@ class Lexer {
 
       // ── String literals ────────────────────────────────────────────────────
       if (ch === '"' || ch === "'") {
-        this.advance();
-        this.readString(ch, sLine, sCol);
+        // Check for triple quote
+        if (this.peek(1) === ch && this.peek(2) === ch) {
+          this.advance(); this.advance(); this.advance(); // consume opening triple
+          this.readMultilineString(ch, sLine, sCol);
+        } else {
+          this.advance();
+          this.readString(ch, sLine, sCol);
+        }
         continue;
       }
 
@@ -938,30 +973,43 @@ class Parser {
     const [primary, secondary] = varNames[depth];
 
     // Target: the thing being iterated over
+    // Can be a plain identifier OR a call expression like range(5)
     const targetTok = this.peek();
     let target;
+    let targetExpr = null;
+
     if (targetTok.type === T.IDENTIFIER) {
       target = this.advance().value;
+      // Check if this is a function call: for range(5) or for sorted(list)
+      if (this.check(T.LPAREN)) {
+        // Parse as a call expression
+        const nameTok = { type: T.IDENTIFIER, value: target, line: targetTok.line, col: targetTok.col };
+        targetExpr = this.parsePostfix(Node('Identifier', { name: target, line: targetTok.line, col: targetTok.col }));
+        target = null; // signal that targetExpr should be used
+      }
     } else {
       this.error("Expected iterable after 'for'", targetTok);
       return null;
     }
 
     // Optional explicit 'in' — 'for list' and 'for i in list' both valid
-    // If we see a keyword 'in' next, the user wrote the long form
-    // and what we read as 'target' was actually the iterator variable name
     let iterVar = primary, iterVar2 = secondary;
-    if (this.checkKw('in')) {
+    if (target !== null && this.checkKw('in')) {
       this.advance(); // eat 'in'
-      // target was actually the explicit variable name
       iterVar  = target;
       iterVar2 = secondary;
       const realTarget = this.peek();
-      if (realTarget.type !== T.IDENTIFIER) {
+      if (realTarget.type === T.IDENTIFIER) {
+        target = this.advance().value;
+        // Check for call after 'in' too: for i in range(5)
+        if (this.check(T.LPAREN)) {
+          targetExpr = this.parsePostfix(Node('Identifier', { name: target, line: realTarget.line, col: realTarget.col }));
+          target = null;
+        }
+      } else {
         this.error("Expected iterable after 'in'", realTarget);
         return null;
       }
-      target = this.advance().value;
     }
 
     this.eatNewline();
@@ -970,7 +1018,7 @@ class Parser {
     this._forDepth--;
 
     return Node('For', {
-      target, iterVar, iterVar2,
+      target, targetExpr, iterVar, iterVar2,
       line: tok.line, col: tok.col,
       body
     });
@@ -1813,8 +1861,14 @@ const BUILTIN_NAMES = new Set([
   'merge','pick','omit','update','entries','fromkeys',
   // Regex
   'match','findall','search','sub','split_re',
+  // Extended math
+  'log','log2','log10','sin','cos','tan','asin','acos','atan','atan2',
+  'pi','e','tau','inf','random','randint','roll','sign','clamp','lerp',
+  'degrees','radians','gcd','lcm','isPrime',
+  // Type checking
+  'type','isString','isInt','isFloat','isBool','isList','isDict','isNone','isNum',
   // Misc
-  'range','type','error',
+  'range','error',
 ]);
 
 class TypeChecker {

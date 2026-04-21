@@ -40,6 +40,7 @@ class Env {
   constructor(parent = null) {
     this.parent = parent;
     this.vars   = new Map();
+    this.consts = new Set(); // inferred immutable bindings
   }
 
   get(name) {
@@ -49,11 +50,31 @@ class Env {
   }
 
   set(name, value) {
-    // Update in place if variable already exists somewhere in the chain
-    if (this.vars.has(name)) { this.vars.set(name, value); return; }
+    // Check const in this scope
+    if (this.vars.has(name)) {
+      if (this.consts.has(name)) {
+        throw new RuntimeError(
+          `Cannot reassign '${name}' — it was inferred immutable because it is never reassigned. If you meant to reassign it, use 'make ${name} ${name} + ...' or declare it with '?' to make it mutable.`,
+          0
+        );
+      }
+      this.vars.set(name, value);
+      return;
+    }
+    // Check parent scope
     if (this.parent && this.parent.has(name)) { this.parent.set(name, value); return; }
     // New variable — define in current scope
     this.vars.set(name, value);
+  }
+
+  setConst(name, value) {
+    this.vars.set(name, value);
+    this.consts.add(name);
+  }
+
+  isConst(name) {
+    if (this.consts.has(name)) return true;
+    return this.parent?.isConst(name) ?? false;
   }
 
   has(name) {
@@ -62,7 +83,13 @@ class Env {
   }
 
   del(name) {
-    if (this.vars.has(name)) { this.vars.delete(name); return true; }
+    if (this.vars.has(name)) {
+      if (this.consts.has(name)) {
+        throw new RuntimeError(`Cannot delete '${name}' — it is inferred immutable.`, 0);
+      }
+      this.vars.delete(name);
+      return true;
+    }
     return this.parent?.del(name) ?? false;
   }
 
@@ -235,6 +262,68 @@ const BUILTIN_DEFS = {
   sqrt: {
     params: ['x'],
     call: (args) => Math.sqrt(args[0]),
+  },
+  log: {
+    params: ['x', 'base'],
+    call: (args) => {
+      const x = args[0];
+      const base = args[1] ?? NONE;
+      if (base === NONE) return Math.log(x);           // natural log
+      if (base === 10)   return Math.log10(x);
+      if (base === 2)    return Math.log2(x);
+      return Math.log(x) / Math.log(base);
+    },
+  },
+  log2:  { params: ['x'], call: (args) => Math.log2(args[0]) },
+  log10: { params: ['x'], call: (args) => Math.log10(args[0]) },
+  sin:   { params: ['x'], call: (args) => Math.sin(args[0]) },
+  cos:   { params: ['x'], call: (args) => Math.cos(args[0]) },
+  tan:   { params: ['x'], call: (args) => Math.tan(args[0]) },
+  asin:  { params: ['x'], call: (args) => Math.asin(args[0]) },
+  acos:  { params: ['x'], call: (args) => Math.acos(args[0]) },
+  atan:  { params: ['x'], call: (args) => Math.atan(args[0]) },
+  atan2: { params: ['y', 'x'], call: (args) => Math.atan2(args[0], args[1]) },
+  pi:    { params: [], call: () => Math.PI },
+  e:     { params: [], call: () => Math.E },
+  tau:   { params: [], call: () => Math.PI * 2 },
+  inf:   { params: [], call: () => Infinity },
+  random:  { params: [], call: () => Math.random() },
+  randint: { params: ['a', 'b'], call: (args) => Math.floor(Math.random() * (args[1] - args[0] + 1)) + args[0] },
+  roll:    { params: ['a', 'b'], call: (args) => Math.floor(Math.random() * (args[1] - args[0] + 1)) + args[0] },
+  sign:    { params: ['x'], call: (args) => Math.sign(args[0]) },
+  clamp:   { params: ['x', 'lo', 'hi'], call: (args) => Math.min(Math.max(args[0], args[1]), args[2]) },
+  lerp:    { params: ['a', 'b', 't'], call: (args) => args[0] + (args[1] - args[0]) * args[2] },
+  degrees: { params: ['r'], call: (args) => args[0] * (180 / Math.PI) },
+  radians: { params: ['d'], call: (args) => args[0] * (Math.PI / 180) },
+  gcd: {
+    params: ['a', 'b'],
+    call: (args) => {
+      let a = Math.abs(Math.trunc(args[0]));
+      let b = Math.abs(Math.trunc(args[1]));
+      while (b) { [a, b] = [b, a % b]; }
+      return a;
+    },
+  },
+  lcm: {
+    params: ['a', 'b'],
+    call: (args) => {
+      const a = Math.abs(Math.trunc(args[0]));
+      const b = Math.abs(Math.trunc(args[1]));
+      let x = a, y = b;
+      while (y) { [x, y] = [y, x % y]; }
+      return (a * b) / x;
+    },
+  },
+  isPrime: {
+    params: ['n'],
+    call: (args) => {
+      const n = Math.trunc(args[0]);
+      if (n < 2) return false;
+      if (n === 2) return true;
+      if (n % 2 === 0) return false;
+      for (let i = 3; i <= Math.sqrt(n); i += 2) if (n % i === 0) return false;
+      return true;
+    },
   },
   upper: {
     params: ['s'],
@@ -496,6 +585,46 @@ const BUILTIN_DEFS = {
     if(u==='year'||u==='years')return d2.getFullYear()-d1.getFullYear();
     return Math.round(ms/86400000);
   }},
+  // ── Type and utility ────────────────────────────────────────────────────
+  type: {
+    params: ['x'],
+    call: (args) => {
+      const v = args[0];
+      if (v === NONE || v === null) return 'none';
+      if (v === true || v === false) return 'boolean';
+      if (v instanceof IVXFunction) return 'function';
+      if (v instanceof IVXClass)    return 'class';
+      if (v instanceof Map)         return v.get('__class__') ? String(v.get('__class__')).toLowerCase() : 'dict';
+      if (Array.isArray(v))         return 'list';
+      if (typeof v === 'string')    return 'string';
+      if (Number.isInteger(v))      return 'integer';
+      if (typeof v === 'number')    return 'float';
+      return 'unknown';
+    },
+  },
+  isString:  { params: ['x'], call: (args) => typeof args[0] === 'string' },
+  isInt:     { params: ['x'], call: (args) => typeof args[0] === 'number' && Number.isInteger(args[0]) },
+  isFloat:   { params: ['x'], call: (args) => typeof args[0] === 'number' && !Number.isInteger(args[0]) },
+  isBool:    { params: ['x'], call: (args) => args[0] === true || args[0] === false },
+  isList:    { params: ['x'], call: (args) => Array.isArray(args[0]) },
+  isDict:    { params: ['x'], call: (args) => args[0] instanceof Map },
+  isNone:    { params: ['x'], call: (args) => args[0] === NONE || args[0] === null },
+  isNum:     { params: ['x'], call: (args) => typeof args[0] === 'number' },
+  range: {
+    params: ['n'],
+    call: (args, node) => {
+      const n = Math.trunc(Number(args[0]));
+      if (!isFinite(n)) throw new RuntimeError('range() requires a finite integer', node?.line);
+      if (n < 0) return [];
+      if (n > 100000) throw new RuntimeError('range() limit is 100000', node?.line);
+      return Array.from({ length: n }, (_, i) => i);
+    },
+  },
+  error: {
+    params: ['msg'],
+    call: (args, node) => { throw new RuntimeError(String(args[0] ?? 'error'), node?.line); },
+  },
+
   // ── Dict operations ─────────────────────────────────────────────────────
   merge: {
     params: ['a', 'b'],
@@ -1342,6 +1471,83 @@ async function resolveParam(param, incoming, env, interp) {
 }
 
 
+// ── Immutability inference ────────────────────────────────────────────────────
+// Scan AST to find variables that are assigned exactly once and never
+// reassigned — these are inferred immutable (const).
+// Returns a Set of variable names that are safe to treat as const.
+function inferImmutables(ast) {
+  const assigned = new Map(); // name → count of assignments
+  const mutated  = new Set(); // names that are explicitly mutated (make x + 1 shorthand)
+
+  function scanExpr(node) {
+    if (!node) return;
+    if (node.type === 'Identifier') return;
+    if (node.type === 'BinOp') { scanExpr(node.left); scanExpr(node.right); return; }
+    if (node.type === 'UnaryOp') { scanExpr(node.operand); return; }
+    if (node.type === 'Call') { node.args?.forEach(scanExpr); return; }
+    if (node.type === 'Invoke') { scanExpr(node.callee); node.args?.forEach(scanExpr); return; }
+    if (node.type === 'MemberAccess') { scanExpr(node.object); return; }
+    if (node.type === 'IndexAccess') { scanExpr(node.target); scanExpr(node.index); return; }
+    if (node.type === 'ListLit') { node.elements?.forEach(scanExpr); return; }
+    if (node.type === 'DictLit') { node.pairs?.forEach(p => { scanExpr(p.key); scanExpr(p.value); }); return; }
+  }
+
+  function scanBlock(stmts) {
+    if (!stmts) return;
+    for (const node of stmts) scanStmt(node);
+  }
+
+  function scanStmt(node) {
+    if (!node) return;
+    if (node.type === 'Assign') {
+      const name = node.name;
+      if (name) {
+        // Shorthand reassign (make x + 1) — the expr references name as implied left
+        // Detect: BinOp where left is Identifier with same name, or implied shorthand
+        const isShorthand = node.expr?.type === 'BinOp' &&
+          node.expr.left?.type === 'Identifier' &&
+          node.expr.left.name === name;
+        const isMemberTarget = node.target?.type === 'MemberAccess';
+        const isLazy = node.lazy;
+
+        if (isShorthand || isLazy) {
+          mutated.add(name);
+        } else if (!isMemberTarget) {
+          assigned.set(name, (assigned.get(name) ?? 0) + 1);
+          if ((assigned.get(name) ?? 0) > 1) mutated.add(name);
+        }
+      }
+      scanExpr(node.expr);
+      return;
+    }
+    if (node.type === 'If') {
+      scanExpr(node.condition);
+      scanBlock(node.body);
+      scanBlock(node.else_);
+      return;
+    }
+    if (node.type === 'Loop') { scanExpr(node.condition); scanBlock(node.body); return; }
+    if (node.type === 'For')  { scanBlock(node.body); return; }
+    if (node.type === 'Fun')  { scanBlock(node.body); return; }
+    if (node.type === 'Class') { scanBlock(node.body); return; }
+    if (node.type === 'Try')  { scanBlock(node.body); scanBlock(node.errBody); return; }
+    if (node.type === 'Say' || node.type === 'Give') { scanExpr(node.expr); return; }
+    if (node.type === 'ExprStatement') { scanExpr(node.expr); return; }
+  }
+
+  scanBlock(ast.body);
+
+  // A variable is immutable if assigned exactly once and never mutated
+  const immutables = new Set();
+  for (const [name, count] of assigned) {
+    if (count === 1 && !mutated.has(name)) {
+      immutables.add(name);
+    }
+  }
+  return immutables;
+}
+
+
 class Interpreter {
   constructor(options = {}) {
     // I/O hooks — override these to wire up the browser UI
@@ -1363,6 +1569,7 @@ class Interpreter {
     this._registerBuiltins();
 
     this.runtime = new IVXRuntime(this);
+    this._immutables = new Set(); // populated before each run
     this._exprEvaluators = {
       NumberLit: (node, env) => this._evalNumberLit(node, env),
       StringLit: (node, env) => this._evalStringLit(node, env),
@@ -1434,7 +1641,11 @@ class Interpreter {
             throw new RuntimeError(`Cannot assign field '${node.target.field}' on non-object value`, node.line);
           }
         } else {
-          env.set(node.name, value);
+          if (this._immutables?.has(node.name)) {
+            env.setConst(node.name, value);
+          } else {
+            env.set(node.name, value);
+          }
         }
         break;
       }
@@ -1588,9 +1799,14 @@ class Interpreter {
       }
 
       case 'For': {
-        const iterable = env.get(node.target);
-        if (iterable === undefined) {
-          throw new RuntimeError(`Undefined variable '${node.target}'`, node.line);
+        let iterable;
+        if (node.targetExpr) {
+          iterable = await this.evalExpr(node.targetExpr, env);
+        } else {
+          iterable = env.get(node.target);
+          if (iterable === undefined) {
+            throw new RuntimeError(`Undefined variable '${node.target}'`, node.line);
+          }
         }
         const entries = toIterable(iterable, node);
         let iters = 0;
@@ -1765,6 +1981,8 @@ class Interpreter {
       for (const e of typeErrors) this.onError(e);
       return;
     }
+    // Infer immutable variables before execution
+    this._immutables = inferImmutables(parsed.ast);
     try {
       await this.execBlock(parsed.ast.body, this.globals);
     } catch (e) {
@@ -2197,6 +2415,33 @@ class Interpreter {
 
     const left  = await this.evalExpr(node.left,  env);
     const right = await this.evalExpr(node.right, env);
+
+    // Element-wise broadcasting: list op scalar, scalar op list, or list op list
+    const ARITH = new Set(['+','-','*','/','//','%','^']);
+    if (ARITH.has(node.op)) {
+      const leftArr  = Array.isArray(left);
+      const rightArr = Array.isArray(right);
+      if (leftArr || rightArr) {
+        const applyOp = (a, b) => {
+          switch (node.op) {
+            case '+':  return typeof a === 'string' ? String(a) + String(b) : a + b;
+            case '-':  return a - b;
+            case '*':  return a * b;
+            case '/':  return b === 0 ? NONE : a / b;
+            case '//': return b === 0 ? NONE : Math.trunc(a / b);
+            case '%':  return a % b;
+            case '^':  return Math.pow(a, b);
+            default:   return NONE;
+          }
+        };
+        if (leftArr && rightArr) {
+          const len = Math.min(left.length, right.length);
+          return Array.from({length: len}, (_, i) => applyOp(left[i], right[i]));
+        }
+        if (leftArr)  return left.map(v => applyOp(v, right));
+        if (rightArr) return right.map(v => applyOp(left, v));
+      }
+    }
 
     switch (node.op) {
       case '+':   return typeof left === 'string' ? String(left) + String(right) : left + right;

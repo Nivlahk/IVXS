@@ -3024,8 +3024,32 @@ const LensTranspiler = (() => {
         return out.replace(/\n+$/, '');
       }
       case 'Loop': {
+        // Collect lazy declarations from condition and emit them before the loop
+        const lazyDecls = [];
+        function collectLazy(n) {
+          if (!n) return;
+          if (n.type === 'LazyDecl') {
+            const name = n.name;
+            if (lang._declared && !lang._declared.has(name)) {
+              lang._declared.add(name);
+              // Infer default: 0 for arithmetic context, none otherwise
+              const defaultVal = lang.id === 'typescript' || lang.id === 'javascript' ? '0' :
+                                 lang.id === 'python' ? '0' : '0';
+              const decl = lang.id === 'typescript' ? `let ${name} = ${defaultVal};` :
+                           lang.id === 'javascript' ? `let ${name} = ${defaultVal};` :
+                           lang.id === 'python' ? `${name} = ${defaultVal}` :
+                           `SET ${name} ← ${defaultVal}`;
+              lazyDecls.push(decl);
+            }
+          }
+          if (n.left) collectLazy(n.left);
+          if (n.right) collectLazy(n.right);
+          if (n.operand) collectLazy(n.operand);
+        }
+        collectLazy(node.condition);
         const cond = E(node.condition);
-        return lang.loopHead(cond) + '\n' + B(node.body) + (lang.blockEnd ? '\n' + lang.blockEnd() : '');
+        const loopCode = lang.loopHead(cond) + '\n' + B(node.body) + (lang.blockEnd ? '\n' + lang.blockEnd() : '');
+        return lazyDecls.length ? lazyDecls.join('\n') + '\n' + loopCode : loopCode;
       }
       case 'For': {
         return lang.forHead(node.iterVar, node.target) + '\n' + B(node.body) + (lang.blockEnd ? '\n' + lang.blockEnd() : '');
@@ -3131,7 +3155,11 @@ const LensTranspiler = (() => {
     id: 'javascript',
     bool:   v => v === null ? 'null' : v ? 'true' : 'false',
     string: v => {
-      if (/\{[A-Za-z_]\w*\}/.test(v)) return '`' + v.replace(/`/g, '\\`') + '`';
+      if (/\{[^}]+\}/.test(v)) {
+        // Convert {expr} → ${expr} for template literals
+        const tpl = v.replace(/`/g, '\\`').replace(/\{([^}]+)\}/g, '$${$1}');
+        return '`' + tpl + '`';
+      }
       return escapeString(v);
     },
     op: op => {
@@ -3139,7 +3167,15 @@ const LensTranspiler = (() => {
                   'xor': '^', 'is': '===', 'in': 'in', '^': '**', '//': '/' };
       return M[op] ?? op;
     },
-    assign:    (t, v, lazy) => lazy ? `let ${t} = typeof ${t} !== 'undefined' ? ${t} : ${v};` : `let ${t} = ${v};`,
+    assign:    function(t, v, lazy) {
+      if (lazy) return `let ${t} = typeof ${t} !== 'undefined' ? ${t} : ${v};`;
+      const isConst = this._immutables && this._immutables.has(t);
+      if (this._declared && this._declared.has(t)) {
+        return `${t} = ${v};`;  // reassignment — no let/const
+      }
+      if (this._declared) this._declared.add(t);
+      return isConst ? `const ${t} = ${v};` : `let ${t} = ${v};`;
+    },
     say:       v => `console.log(${v});`,
     take:      (name, conv) => {
       const raw = `prompt("${name}")`;
@@ -3175,9 +3211,15 @@ const LensTranspiler = (() => {
   const TYPESCRIPT = {
     ...JAVASCRIPT,
     id: 'typescript',
-    assign:    (t, v, lazy) => lazy
-      ? `let ${t}: any = typeof ${t} !== 'undefined' ? ${t} : ${v};`
-      : `const ${t} = ${v};`,
+    assign:    function(t, v, lazy) {
+      if (lazy) return `let ${t}: any = typeof ${t} !== 'undefined' ? ${t} : ${v};`;
+      if (this._declared && this._declared.has(t)) {
+        return `${t} = ${v};`;  // reassignment — no let/const
+      }
+      if (this._declared) this._declared.add(t);
+      const isMutable = this._immutables && !this._immutables.has(t);
+      return isMutable ? `let ${t} = ${v};` : `const ${t} = ${v};`;
+    },
     funHead:   (name, params) => `function ${name}(${params.map(p => p + ': any').join(', ')}): any {`,
     classHead: (name, sup) => sup ? `class ${name} extends ${sup} {` : `class ${name} {`,
     header:    () => `// TypeScript`,
@@ -3225,7 +3267,11 @@ const LensTranspiler = (() => {
     if (!lang) return `// Unknown lens: ${langId}`;
     try {
       const { ast, errors } = parse(source);
-      let out = renderProgram(ast, lang);
+      // Run immutability inference so TypeScript/JS can emit const vs let
+      const immutables = typeof inferImmutables === 'function' ? inferImmutables(ast) : new Set();
+      // Thread immutables + declared tracking into lang for assign decisions
+      const langWithImmutables = { ...lang, _immutables: immutables, _declared: new Set() };
+      let out = renderProgram(ast, langWithImmutables);
       if (errors.length > 0) {
         const errLines = errors.map(e => `# Parse error (line ${e.line}): ${e.message}`).join('\n');
         out = errLines + '\n\n' + out;
@@ -4344,6 +4390,14 @@ function highlightLine(line, allVars = new Set(), allClasses = new Set()) {
   while (i < code.length) {
     // String literal — detect URL type and highlight {interpolations}
     if (code[i] === '"') {
+      // Check for triple quote
+      if (code[i+1] === '"' && code[i+2] === '"') {
+        let j = i + 3;
+        while (j < code.length && !(code[j] === '"' && code[j+1] === '"' && code[j+2] === '"')) j++;
+        if (j < code.length) j += 3;
+        push(code.slice(i, j), 'kw-string');
+        i = j; continue;
+      }
       let j = i + 1;
       while (j < code.length && !(code[j] === '"' && code[j-1] !== '\\')) j++;
       if (j < code.length) j++;
