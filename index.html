@@ -220,18 +220,5 @@
 <script src="ivx-terminal.js"></script>
 <script src="ivx-drive.js"></script>
 <script src="ivx-ui.js"></script>
-
-document.getElementById('help-menu-btn').addEventListener('click', function(e) {
-  const menu = document.getElementById('help-menu');
-  // Toggle display between none and block
-  menu.style.display = (menu.style.display === 'none') ? 'block' : 'none';
-  // Stop the click from immediately closing the menu via a global listener
-  e.stopPropagation();
-});
-
-// Close menu if user clicks anywhere else
-document.addEventListener('click', function() {
-  document.getElementById('help-menu').style.display = 'none';
-});
 </body>
 </html>

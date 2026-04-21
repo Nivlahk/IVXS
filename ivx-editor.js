@@ -78,6 +78,24 @@ srcEl.addEventListener('keydown', e => {
   }
 });
 
+// Help menu dropdown toggle
+const helpMenuBtn = document.getElementById('help-menu-btn');
+const helpMenu    = document.getElementById('help-menu');
+
+helpMenuBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  const open = helpMenu.style.display !== 'none';
+  helpMenu.style.display = open ? 'none' : 'flex';
+  helpMenuBtn.classList.toggle('active', !open);
+});
+
+document.addEventListener('click', e => {
+  if (!helpMenuBtn.contains(e.target) && !helpMenu.contains(e.target)) {
+    helpMenu.style.display = 'none';
+    helpMenuBtn.classList.remove('active');
+  }
+});
+
 document.querySelectorAll('[data-ins]').forEach(function(btn) {
   btn.addEventListener('click', function handleInsertClick() {
     const ins = btn.dataset.ins;
@@ -93,19 +111,6 @@ document.querySelectorAll('[data-ins]').forEach(function(btn) {
   });
 });
 
-// Help menu dropdown toggle
-const helpMenuBtn = document.getElementById('help-menu-btn');
-const helpMenu    = document.getElementById('help-menu');
-helpMenuBtn.addEventListener('click', e => {
-  e.stopPropagation();
-  const open = helpMenu.style.display !== 'none';
-  helpMenu.style.display = open ? 'none' : 'flex';
-  helpMenuBtn.classList.toggle('active', !open);
-});
-document.addEventListener('click', () => {
-  helpMenu.style.display = 'none';
-  helpMenuBtn.classList.remove('active');
-});
 document.getElementById('clr').addEventListener('click', function handleClearClick() {
   srcEl.value = '';
   srcEl.focus();
@@ -346,4 +351,3 @@ srcEl.addEventListener('scroll', () => { srcEl.scrollTop = 0; srcEl.scrollLeft =
 
 srcEl.addEventListener('input', updateHighlight);
 updateHighlight();
-
