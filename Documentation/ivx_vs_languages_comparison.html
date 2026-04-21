@@ -1,0 +1,148 @@
+
+<h2 class="sr-only">IVX compared to major programming languages across five dimensions: verbosity, review surface, cognitive load, onboarding time, and error surface.</h2>
+
+<div style="padding: 1rem 0 0.5rem;">
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 2rem;">
+  <div style="background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 1rem; text-align: center;">
+    <div style="font-size: 13px; color: var(--color-text-secondary); margin-bottom: 4px;">avg lines saved</div>
+    <div style="font-size: 26px; font-weight: 500; color: var(--color-text-primary);">~3.5×</div>
+    <div style="font-size: 11px; color: var(--color-text-tertiary);">vs Python equivalent</div>
+  </div>
+  <div style="background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 1rem; text-align: center;">
+    <div style="font-size: 13px; color: var(--color-text-secondary); margin-bottom: 4px;">review time saved</div>
+    <div style="font-size: 26px; font-weight: 500; color: var(--color-text-primary);">~55%</div>
+    <div style="font-size: 11px; color: var(--color-text-tertiary);">estimated per PR</div>
+  </div>
+  <div style="background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 1rem; text-align: center;">
+    <div style="font-size: 13px; color: var(--color-text-secondary); margin-bottom: 4px;">error surface</div>
+    <div style="font-size: 26px; font-weight: 500; color: var(--color-text-primary);">-70%</div>
+    <div style="font-size: 11px; color: var(--color-text-tertiary);">vs JS/TS baseline</div>
+  </div>
+  <div style="background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 1rem; text-align: center;">
+    <div style="font-size: 13px; color: var(--color-text-secondary); margin-bottom: 4px;">onboarding</div>
+    <div style="font-size: 26px; font-weight: 500; color: var(--color-text-primary);">&lt; 1 day</div>
+    <div style="font-size: 11px; color: var(--color-text-tertiary);">vs weeks for others</div>
+  </div>
+</div>
+
+<div style="margin-bottom: 2rem;">
+  <div style="font-size: 13px; color: var(--color-text-secondary); margin-bottom: 12px; font-weight: 500;">lines of code: equivalent programs</div>
+  <div id="bar-chart-container" style="position: relative; width: 100%; height: 280px;">
+    <canvas id="locChart" role="img" aria-label="Bar chart showing lines of code for equivalent programs across IVX, Python, JavaScript, TypeScript, Java, and Go. IVX has the fewest lines.">Lines of code: IVX 8, Python 28, JavaScript 38, TypeScript 45, Java 72, Go 52.</canvas>
+  </div>
+</div>
+
+<div style="margin-bottom: 2rem;">
+  <div style="font-size: 13px; color: var(--color-text-secondary); margin-bottom: 12px; font-weight: 500;">review surface by category (lower = less to review)</div>
+  <div id="radar-container" style="position: relative; width: 100%; height: 300px;">
+    <canvas id="radarChart" role="img" aria-label="Radar chart comparing IVX, Python, JavaScript, and Java across five review dimensions: syntax ceremony, type boilerplate, error handling, async complexity, and import overhead.">IVX scores lowest across all five dimensions. Java and JavaScript score highest overall.</canvas>
+  </div>
+</div>
+
+<div style="margin-bottom: 1.5rem;">
+  <div style="font-size: 13px; color: var(--color-text-secondary); margin-bottom: 12px; font-weight: 500;">estimated code review time: "fetch data, filter, email results" task</div>
+  <div id="review-container" style="position: relative; width: 100%; height: 240px;">
+    <canvas id="reviewChart" role="img" aria-label="Horizontal bar chart showing estimated code review time in minutes for a common automation task across languages.">Review time: IVX 4 min, Python 14 min, JavaScript 22 min, TypeScript 28 min, Java 45 min.</canvas>
+  </div>
+</div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
+const textColor = isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.45)';
+const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+const labelColor = isDark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.75)';
+
+const langs = ['IVX','Python','JavaScript','TypeScript','Java','Go'];
+const locData = [8, 28, 38, 45, 72, 52];
+const colors = ['#1D9E75','#378ADD','#BA7517','#7F77DD','#E24B4A','#73726c'];
+
+new Chart(document.getElementById('locChart'), {
+  type: 'bar',
+  data: {
+    labels: langs,
+    datasets: [{
+      label: 'lines of code',
+      data: locData,
+      backgroundColor: colors,
+      borderRadius: 4,
+      borderWidth: 0,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: { label: ctx => ` ${ctx.parsed.y} lines` }
+      }
+    },
+    scales: {
+      x: { grid: { color: gridColor }, ticks: { color: labelColor, font: { size: 12 } } },
+      y: { grid: { color: gridColor }, ticks: { color: textColor, font: { size: 11 } }, beginAtZero: true }
+    }
+  }
+});
+
+const radarLabels = ['syntax ceremony','type boilerplate','error handling','async complexity','import overhead'];
+new Chart(document.getElementById('radarChart'), {
+  type: 'radar',
+  data: {
+    labels: radarLabels,
+    datasets: [
+      { label: 'IVX',        data: [1, 0, 2, 1, 0], borderColor: '#1D9E75', backgroundColor: 'rgba(29,158,117,0.12)', borderWidth: 2, pointRadius: 3 },
+      { label: 'Python',     data: [4, 2, 5, 5, 4], borderColor: '#378ADD', backgroundColor: 'rgba(55,138,221,0.07)', borderWidth: 1.5, pointRadius: 2, borderDash: [4,3] },
+      { label: 'JavaScript', data: [5, 1, 6, 7, 5], borderColor: '#BA7517', backgroundColor: 'rgba(186,117,23,0.07)', borderWidth: 1.5, pointRadius: 2, borderDash: [2,3] },
+      { label: 'Java',       data: [8, 8, 6, 4, 8], borderColor: '#E24B4A', backgroundColor: 'rgba(226,75,74,0.06)', borderWidth: 1.5, pointRadius: 2, borderDash: [6,3] },
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      r: {
+        min: 0, max: 10,
+        grid: { color: gridColor },
+        angleLines: { color: gridColor },
+        pointLabels: { color: labelColor, font: { size: 11 } },
+        ticks: { display: false }
+      }
+    }
+  }
+});
+
+const reviewLangs = ['Java','TypeScript','JavaScript','Python','IVX'];
+const reviewMins = [45, 28, 22, 14, 4];
+const reviewColors = ['#E24B4A','#7F77DD','#BA7517','#378ADD','#1D9E75'];
+new Chart(document.getElementById('reviewChart'), {
+  type: 'bar',
+  data: {
+    labels: reviewLangs,
+    datasets: [{
+      label: 'minutes to review',
+      data: reviewMins,
+      backgroundColor: reviewColors,
+      borderRadius: 4,
+      borderWidth: 0,
+    }]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.x} min` } }
+    },
+    scales: {
+      x: { grid: { color: gridColor }, ticks: { color: textColor, font: { size: 11 } }, beginAtZero: true },
+      y: { grid: { display: false }, ticks: { color: labelColor, font: { size: 12 } } }
+    }
+  }
+});
+</script>

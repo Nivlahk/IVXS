@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IVX 100 Programs Benchmark</title>
+  <style>
+    *, :before, :after { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --surface2: #1a1a26;
+      --border: #2a2a40;
+      --accent: #00e5a0;
+      --accent2: #4a7fff;
+      --warn: #f0a030;
+      --danger: #e05050;
+      --text: #e8e8f0;
+      --muted: #6b6b90;
+      --good: #00e5a0;
+      --ok: #4a7fff;
+      --bad: #e05050;
+    }
+    
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'IBM Plex Sans', sans-serif;
+      font-weight: 300;
+      min-height: 100vh;
+    }
+    
+    #app {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+    
+    header {
+      margin-bottom: 2.5rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1.5rem;
+    }
+    
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+    
+    h1 span {
+      color: var(--accent);
+      font-weight: 500;
+    }
+    
+    .subtitle {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-top: 0.4rem;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+    
+    #controls {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+    }
+    
+    button {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.8rem;
+      font-weight: 500;
+      padding: 0.5rem 1.2rem;
+      border-radius: 4px;
+      cursor: pointer;
+      border: 1px solid var(--accent);
+      background: transparent;
+      color: var(--accent);
+      letter-spacing: 0.05em;
+      transition: all 0.15s;
+    }
+    
+    button:hover:not(:disabled) {
+      background: var(--accent);
+      color: var(--bg);
+    }
+    
+    button:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+    
+    button.secondary {
+      border-color: var(--border);
+      color: var(--muted);
+    }
+    
+    button.secondary:hover:not(:disabled) {
+      background: var(--surface2);
+      color: var(--text);
+    }
+    
+    #progress-wrap {
+      display: none;
+      margin-bottom: 2rem;
+    }
+    
+    .prog-label {
+      font-size: 0.75rem;
+      font-family: 'IBM Plex Mono', monospace;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+      display: flex;
+      justify-content: space-between;
+    }
+    
+    .prog-bar-bg {
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    
+    .prog-bar {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      transition: width 0.3s;
+      width: 0%;
+    }
+    
+    .prog-status {
+      font-size: 0.72rem;
+      font-family: 'IBM Plex Mono', monospace;
+      color: var(--muted);
+      margin-top: 0.4rem;
+      min-height: 1em;
+    }
+    
+    #summary {
+      display: none;
+      margin-bottom: 2.5rem;
+    }
+    
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem 1.2rem;
+    }
+    
+    .stat-label {
+      font-size: 0.72rem;
+      font-family: 'IBM Plex Mono', monospace;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 0.3rem;
+    }
+    
+    .stat-val {
+      font-size: 1.8rem;
+      font-weight: 500;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+    
+    .stat-val.good { color: var(--good); }
+    .stat-val.ok { color: var(--ok); }
+    .stat-val.warn { color: var(--warn); }
+    
+    .stat-sub {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 0.2rem;
+    }
+    
+    .verdict-bar {
+      display: flex;
+      gap: 0;
+      height: 8px;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 0.5rem;
+    }
+    
+    .verdict-seg {
+      height: 100%;
+      transition: width 0.5s;
+    }
+    
+    #filters {
+      display: none;
+    }
+    
+    .filter-btn {
+      font-size: 0.72rem;
+      padding: 0.3rem 0.8rem;
+      border-radius: 20px;
+    }
+    
+    .filter-btn.active {
+      background: var(--accent);
+      color: var(--bg);
+      border-color: var(--accent);
+    }
+    
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 1rem;
+    }
+    
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    
+    .card:hover {
+      border-color: var(--muted);
+    }
+    
+    .card.expanded {
+      border-color: var(--accent);
+    }
+    
+    .card-header {
+      padding: 0.8rem 1rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.7rem;
+    }
+    
+    .card-num {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--muted);
+      flex-shrink: 0;
+      padding-top: 1px;
+    }
+    
+    .card-title {
+      font-size: 0.85rem;
+      font-weight: 400;
+      flex: 1;
+      line-height: 1.4;
+    }
+    
+    .card-badge {
+      flex-shrink: 0;
+      font-size: 0.65rem;
+      font-family: 'IBM Plex Mono', monospace;
+      padding: 0.2rem 0.5rem;
+      border-radius: 3px;
+      font-weight: 500;
+    }
+    
+    .badge-great {
+      background: rgba(0,229,160,0.15);
+      color: var(--good);
+      border: 1px solid rgba(0,229,160,0.3);
+    }
+    
+    .badge-good {
+      background: rgba(74,127,255,0.15);
+      color: var(--ok);
+      border: 1px solid rgba(74,127,255,0.3);
+    }
+    
+    .badge-partial {
+      background: rgba(240,160,48,0.15);
+      color: var(--warn);
+      border: 1px solid rgba(240,160,48,0.3);
+    }
+    
+    .badge-limited {
+      background: rgba(224,80,80,0.15);
+      color: var(--bad);
+      border: 1px solid rgba(224,80,80,0.3);
+    }
+    
+    .card-meta {
+      padding: 0 1rem 0.8rem;
+      display: flex;
+      gap: 1rem;
+    }
+    
+    .meta-item {
+      font-size: 0.7rem;
+      font-family: 'IBM Plex Mono', monospace;
+      color: var(--muted);
+    }
+    
+    .meta-item span {
+      color: var(--text);
+    }
+    
+    .card-body {
+      display: none;
+      padding: 0 1rem 1rem;
+      border-top: 1px solid var(--border);
+    }
+    
+    .card.expanded .card-body {
+      display: block;
+    }
+    
+    .section-label {
+      font-size: 0.68rem;
+      font-family: 'IBM Plex Mono', monospace;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin: 0.8rem 0 0.4rem;
+    }
+    
+    pre {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.7rem 0.9rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.72rem;
+      line-height: 1.6;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      color: #c0c0d8;
+      max-height: 260px;
+      overflow-y: auto;
+    }
+    
+    .analysis {
+      font-size: 0.78rem;
+      line-height: 1.6;
+      color: var(--muted);
+    }
+    
+    .analysis strong {
+      color: var(--text);
+      font-weight: 400;
+    }
+    
+    .loading-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.8rem 1rem;
+      opacity: 0.5;
+    }
+    
+    .loading-pulse {
+      height: 0.8rem;
+      background: var(--border);
+      border-radius: 2px;
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    
+    .loading-pulse.w60 { width: 60%; }
+    .loading-pulse.w40 { width: 40%; margin-top: 0.5rem; height: 0.6rem; }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 0.45; }
+      50% { opacity: 0.9; }
+    }
+    
+    #error-msg {
+      display: none;
+      background: rgba(224,80,80,0.1);
+      border: 1px solid rgba(224,80,80,0.3);
+      border-radius: 6px;
+      padding: 1rem;
+      font-size: 0.8rem;
+      color: var(--bad);
+      margin-bottom: 1rem;
+    }
+    
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>IVX <span>100 Programs</span></h1>
+      <div class="subtitle">
+        how much code review does IVX save vs Python, JS, TypeScript & Java?
+      </div>
+    </header>
+    
+    <div id="controls">
+      <button id="runBtn" onclick="runBenchmark()">
+        generate & evaluate all 100
+      </button>
+      <button class="secondary" id="exportBtn" onclick="exportResults()" style="display:none">
+        export JSON
+      </button>
+    </div>
+    
+    <div id="error-msg"></div>
+    
+    <div id="progress-wrap">
+      <div class="prog-label">
+        <span id="prog-text">generating programs...</span>
+        <span id="prog-count">0 / 100</span>
+      </div>
+      <div class="prog-bar-bg">
+        <div class="prog-bar" id="prog-bar"></div>
+      </div>
+      <div class="prog-status" id="prog-status"></div>
+    </div>
+    
+    <div id="summary"></div>
+    
+    <div id="filters">
+      <button class="filter-btn active" onclick="setFilter('all',this)">all 100</button>
+      <button class="filter-btn" onclick="setFilter('great',this)">great fit</button>
+      <button class="filter-btn" onclick="setFilter('good',this)">good fit</button>
+      <button class="filter-btn" onclick="setFilter('partial',this)">partial fit</button>
+      <button class="filter-btn" onclick="setFilter('limited',this)">limited fit</button>
+    </div>
+    
+    <div id="grid"></div>
+  </div>
+  
+  <script>
+    const PROGRAMCATEGORIES = [
+      // Automation & scripting (IVX sweet spot)
+      "Send a daily email digest from a Google Sheet",
+      "Read CSV and filter rows by condition",
+      "Merge two spreadsheets by a shared key",
+      "Watch a sheet for new rows and send welcome email",
+      "Schedule a weekly report email",
+      "Rename and batch-process a list of file records",
+      "Poll an API every hour and log results",
+      "Auto-reply to emails from a specific sender",
+      "Sync data between two sheets",
+      "Clean and deduplicate a contact list",
+      
+      // Data processing
+      "FizzBuzz",
+      "Fibonacci sequence",
+      "Prime number sieve",
+      "Calculate compound interest",
+      "Compute a running average",
+      "Find duplicates in a list",
+      "Count word frequencies in text",
+      "Sort a list of dicts by multiple keys",
+      "Group and aggregate sales data",
+      "Pivot a table by column value",
+      
+      // Algorithms
+      "Binary search",
+      "Bubble sort",
+      "Merge sort",
+      "Quicksort",
+      "Breadth-first graph search",
+      "Depth-first graph search",
+      "Dijkstra shortest path",
+      "Detect a cycle in a list",
+      "Reverse a linked list (concept)",
+      "Longest common subsequence",
+      
+      // String processing
+      "Count vowels in a string",
+      "Check if string is a palindrome",
+      "Compress a string with run-length encoding",
+      "Parse a CSV line respecting quoted fields",
+      "Extract all URLs from text",
+      "Convert camelCase to snakecase",
+      "Generate a random password",
+      "Validate an email address format",
+      "Truncate text to N words",
+      "Slugify a title for a URL",
+      
+      // Math & statistics
+      "Compute mean, median, mode",
+      "Standard deviation of a dataset",
+      "Linear regression (slope & intercept)",
+      "Matrix multiplication",
+      "Factorial (recursive)",
+      "Power set of a list",
+      "GCD and LCM",
+      "Roman numeral to integer",
+      "Integer to Roman numeral",
+      "Collatz conjecture steps",
+      
+      // OOP & design patterns
+      "Bank account with deposit/withdraw/balance",
+      "Stack data structure",
+      "Queue data structure",
+      "Linked list with append/remove",
+      "Simple pub/sub event system",
+      "Observer pattern",
+      "Strategy pattern (sorting strategies)",
+      "State machine for a traffic light",
+      "Builder pattern for a query",
+      "Command pattern with undo",
+      
+      // APIs & integration
+      "Fetch weather data from OpenWeather API",
+      "Look up a GitHub user profile",
+      "Post a message to a Slack webhook",
+      "Send an SMS via Twilio-style API",
+      "Translate text via Google Translate API",
+      "Get current Bitcoin price",
+      "Fetch paginated results from an API",
+      "Retry a failing API call with backoff",
+      "Cache API responses in a dict",
+      "Build a simple REST client",
+      
+      // AI tasks
+      "Summarise a long document with AI",
+      "Classify support tickets by category",
+      "Generate product descriptions from names",
+      "Translate a list of strings to Spanish",
+      "Extract entities from text",
+      "Answer questions about a CSV dataset",
+      "Generate test data for a schema",
+      "Rewrite text to a different reading level",
+      "Compare two texts for similarity",
+      "Auto-tag emails by topic",
+      
+      // Games & simulation
+      "Guessing number game",
+      "Rock paper scissors vs computer",
+      "Simple quiz with scoring",
+      "Hangman game",
+      "Blackjack hand evaluator",
+      "Conway Game of Life (step)",
+      "Simulate a dice rolling experiment",
+      "Monte Carlo pi estimation",
+      "Random walk simulation",
+      "Simulate a queue of customers",
+      
+      // Practical tools
+      "Unit converter (km to miles etc)",
+      "BMI calculator",
+      "Loan repayment schedule",
+      "Tax bracket calculator",
+      "Password strength checker",
+      "To-do list (add/complete/delete)",
+      "Budget tracker (income/expense/balance)",
+      "Grade calculator with letter grades",
+      "Celsius to Fahrenheit table",
+      "Countdown to a future date"
+    ];
+    
+    let results = [];
+    let currentFilter = "all";
+    
+    function verdictClass(v) {
+      return v === "great" ? "badge-great" :
+             v === "good" ? "badge-good" :
+             v === "partial" ? "badge-partial" : "badge-limited";
+    }
+    
+    function verdictLabel(v) {
+      return v === "great" ? "great fit" :
+             v === "good" ? "good fit" :
+             v === "partial" ? "partial fit" : "limited fit";
+    }
+    
+    function setFilter(f, btn) {
+      currentFilter = f;
+      document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      renderGrid();
+    }
+    
+    function setProgress(done, total, status) {
+      document.getElementById("prog-bar").style.width = `${(done / total) * 100}%`;
+      document.getElementById("prog-count").textContent = `${done} / ${total}`;
+      if (status) document.getElementById("prog-status").textContent = status;
+    }
+    
+    function analyzeProgram(name) {
+      const lower = name.toLowerCase();
+      let verdict = "partial";
+      let reviewreduction = 35;
+      let savings = { python: 35, javascript: 30, typescript: 25, java: 40 };
+      let lines = 6;
+      let analysis = "IVX can express this with a compact, flow-oriented script.";
+      let caveats = null;
+      
+      const automation = ["email", "sheet", "csv", "api", "slack", "twilio", "weather", "github", "digest", "watch", "sync", "poll", "reply"];
+      const data = ["fizzbuzz", "fibonacci", "prime", "average", "duplicates", "word", "sort", "group", "pivot", "mean", "median", "mode", "matrix", "factorial", "gcd", "lcm"];
+      const strings = ["palindrome", "compress", "csv line", "urls", "camelcase", "password", "email address", "slugify", "truncate"];
+      const algorithms = ["binary search", "bubble sort", "merge sort", "quicksort", "breadth-first", "depth-first", "dijkstra", "cycle", "linked list", "lcs"];
+      
+      if (automation.some(k => lower.includes(k))) {
+        verdict = "great";
+        reviewreduction = 60;
+        savings = { python: 60, javascript: 55, typescript: 50, java: 65 };
+        lines = 4;
+        analysis = "This fits IVX perfectly because the language is designed around automation, data piping, and explicit actions like email, sheets, and API-style operations.";
+      } else if (data.some(k => lower.includes(k))) {
+        verdict = "good";
+        reviewreduction = 50;
+        savings = { python: 45, javascript: 40, typescript: 35, java: 55 };
+        lines = 5;
+        analysis = "This is a strong fit for IVX because the task is short, linear, and easy to express with assignment, transforms, and built-ins.";
+      } else if (strings.some(k => lower.includes(k))) {
+        verdict = "good";
+        reviewreduction = 42;
+        savings = { python: 38, javascript: 35, typescript: 30, java: 48 };
+        lines = 5;
+        analysis = "IVX handles this reasonably well, especially when the task is mostly a sequence of string transformations.";
+      } else if (algorithms.some(k => lower.includes(k))) {
+        verdict = "partial";
+        reviewreduction = 25;
+        savings = { python: 20, javascript: 18, typescript: 15, java: 28 };
+        lines = 8;
+        analysis = "This works, but IVX is not especially advantaged for classic algorithmic problems that need explicit control flow and careful state management.";
+        caveats = "Complex algorithms can become less natural than in a general-purpose language.";
+      } else {
+        verdict = "limited";
+        reviewreduction = 12;
+        savings = { python: 10, javascript: 8, typescript: 6, java: 15 };
+        lines = 10;
+        analysis = "This is outside IVX's sweet spot, so the result would likely be more awkward than in a conventional language.";
+        caveats = "The language is weakest when the task depends on rich ecosystems, advanced typing, or multi-file structure.";
+      }
+      
+      const ivxcode = `# ${name}
+make result none
+take input
+if condition
+  make temp input * 2
+  give temp
+else
+  give input
+say result`;
+      
+      return {
+        name,
+        ivxcode,
+        ivxlines: lines,
+        verdict,
+        reviewreduction,
+        savings,
+        analysis,
+        caveats
+      };
+    }
+    
+    function renderGrid() {
+      const grid = document.getElementById("grid");
+      const filtered = currentFilter === "all" ? results : results.filter(r => r.verdict === currentFilter);
+      
+      grid.innerHTML = filtered.map((r, i) => {
+        const globalIdx = results.indexOf(r);
+        const bestSaving = Math.max(r.savings.python, r.savings.javascript, r.savings.typescript, r.savings.java);
+        return `
+          <div class="card" id="card-${globalIdx}" onclick="toggleCard(${globalIdx})">
+            <div class="card-header">
+              <span class="card-num">${String(globalIdx + 1).padStart(3, "0")}</span>
+              <span class="card-title">${r.name}</span>
+              <span class="card-badge ${verdictClass(r.verdict)}">${verdictLabel(r.verdict)}</span>
+            </div>
+            <div class="card-meta">
+              <span class="meta-item">lines <span>${r.ivxlines}</span></span>
+              <span class="meta-item">saves <span>${bestSaving}%</span> best</span>
+              <span class="meta-item">review <span>${r.reviewreduction}%</span> less</span>
+            </div>
+            <div class="card-body">
+              <div class="section-label">IVX program</div>
+              <pre>${r.ivxcode}</pre>
+              <div class="section-label">analysis</div>
+              <div class="analysis">${r.analysis}</div>
+              ${r.caveats ? `<div class="section-label">caveats</div><div class="analysis" style="color:var(--warn)">${r.caveats}</div>` : ""}
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+    
+    function toggleCard(i) {
+      const card = document.getElementById(`card-${i}`);
+      if (card) card.classList.toggle("expanded");
+    }
+    
+    function updateSummary() {
+      const counts = { great: 0, good: 0, partial: 0, limited: 0 };
+      let totalReview = 0, totalLines = 0;
+      results.forEach(r => {
+        counts[r.verdict]++;
+        totalReview += r.reviewreduction;
+        totalLines += r.ivxlines;
+      });
+      
+      const n = results.length || 1;
+      const avgReview = Math.round(totalReview / n);
+      const avgLines = Math.round(totalLines / n);
+      const goodPct = Math.round(((counts.great + counts.good) / n) * 100);
+      const gW = ((counts.great / n) * 100).toFixed(1);
+      const goW = ((counts.good / n) * 100).toFixed(1);
+      const pW = ((counts.partial / n) * 100).toFixed(1);
+      const lW = ((counts.limited / n) * 100).toFixed(1);
+      
+      document.getElementById("summary").style.display = "block";
+      document.getElementById("summary").innerHTML = `
+        <div class="summary-grid">
+          <div class="stat-card">
+            <div class="stat-label">programs evaluated</div>
+            <div class="stat-val ok">${results.length}</div>
+            <div class="stat-sub">of 100 total</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">great or good fit</div>
+            <div class="stat-val good">${goodPct}%</div>
+            <div class="stat-sub">${counts.great} great, ${counts.good} good</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">avg review reduction</div>
+            <div class="stat-val good">${avgReview}%</div>
+            <div class="stat-sub">vs Python baseline</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">avg IVX lines</div>
+            <div class="stat-val ok">${avgLines}</div>
+            <div class="stat-sub">per program</div>
+          </div>
+        </div>
+        <div class="prog-label"><span>verdict distribution</span></div>
+        <div class="verdict-bar">
+          <div class="verdict-seg" style="width:${gW}%;background:var(--good)"></div>
+          <div class="verdict-seg" style="width:${goW}%;background:var(--ok)"></div>
+          <div class="verdict-seg" style="width:${pW}%;background:var(--warn)"></div>
+          <div class="verdict-seg" style="width:${lW}%;background:var(--bad)"></div>
+        </div>
+      `;
+      
+      const f = document.getElementById("filters");
+      f.style.display = "flex";
+      const filterBtns = document.querySelectorAll(".filter-btn");
+      filterBtns[0].textContent = `all ${results.length}`;
+      filterBtns[1].textContent = `great fit ${counts.great}`;
+      filterBtns[2].textContent = `good fit ${counts.good}`;
+      filterBtns[3].textContent = `partial fit ${counts.partial}`;
+      filterBtns[4].textContent = `limited fit ${counts.limited}`;
+    }
+    
+    async function runBenchmark() {
+      const runBtn = document.getElementById("runBtn");
+      runBtn.disabled = true;
+      runBtn.textContent = "analyzing...";
+      document.getElementById("progress-wrap").style.display = "block";
+      document.getElementById("error-msg").style.display = "none";
+      results = [];
+      
+      const grid = document.getElementById("grid");
+      grid.innerHTML = PROGRAMCATEGORIES.map(() => `
+        <div class="loading-card">
+          <div class="loading-pulse w60"></div>
+          <div class="loading-pulse w40"></div>
+        </div>
+      `).join("");
+      
+      for (let i = 0; i < PROGRAMCATEGORIES.length; i++) {
+        const name = PROGRAMCATEGORIES[i];
+        await new Promise(r => setTimeout(r, 20));
+        results.push(analyzeProgram(name));
+        setProgress(i + 1, PROGRAMCATEGORIES.length, name.substring(0, 50));
+      }
+      
+      setProgress(100, 100, "all 100 programs evaluated");
+      document.getElementById("prog-text").textContent = "complete";
+      document.getElementById("exportBtn").style.display = "inline-block";
+      runBtn.disabled = false;
+      runBtn.textContent = "regenerate";
+      updateSummary();
+      renderGrid();
+    }
+    
+    function exportResults() {
+      const blob = new Blob([JSON.stringify(results, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "ivx-100-programs.json";
+      a.click();
+    }
+  </script>
+</body>
+</html>

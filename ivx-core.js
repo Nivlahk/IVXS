@@ -7,7 +7,7 @@
 
 
 'use strict';
-console.log('IVX BUILD v3 - list/dict fixes active');
+
 
 // ── lexer.js ─────────────────────────────────────────────────────────────────
 
@@ -441,6 +441,9 @@ const Node = (type, props) => ({ type, ...props });
 // BoolLit         { value: true|false|null }                          yes/no/none
 // ListLit         { elements: [Expr] }
 // DictLit         { pairs: [{key: Expr, value: Expr}] }
+
+// ── Arithmetic operator set (shared by parseFun and parseMake) ───────────────
+const ARITH_OPS = new Set(['+','-','*','/','//','%','^']);
 
 // ── Operator precedence ───────────────────────────────────────────────────────
 const PREC = {
@@ -1069,7 +1072,6 @@ class Parser {
         if (isLazy) {
           // name? — check for explicit default or transform
           const next = this.peek();
-          const ARITH_OPS = new Set(['+','-','*','/','//','%','^']);
           if (next.type === T.OP && ARITH_OPS.has(next.value)) {
             // name? + 1  → lazy with transform, inferred default
             transformOp = this.advance().value;
@@ -1087,7 +1089,6 @@ class Parser {
         } else {
           // Plain name — check for transform: name * 3
           const next = this.peek();
-          const ARITH_OPS = new Set(['+','-','*','/','//','%','^']);
           if (next.type === T.OP && ARITH_OPS.has(next.value)) {
             transformOp = this.advance().value;
             transformRight = this.parseExpr();
@@ -1148,7 +1149,6 @@ class Parser {
         let defaultExpr = null;
         let transformOp = null;
         let transformRight = null;
-        const ARITH_OPS = new Set(['+','-','*','/','//','%','^']);
         if (isLazy) {
           const next = this.peek();
           if (next.type === T.OP && ARITH_OPS.has(next.value)) {
