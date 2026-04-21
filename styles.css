@@ -348,7 +348,7 @@ path[data-edge-from]:hover{filter:drop-shadow(0 0 4px #89b4fa);stroke:#89b4fa !i
   flex-shrink: 0;
   height: 32px;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible;
 }
 .panel-hdr-title {
   font-size: 11px;
@@ -397,7 +397,7 @@ path[data-edge-from]:hover{filter:drop-shadow(0 0 4px #89b4fa);stroke:#89b4fa !i
 #ep {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
 }
 #ep-body {
   display: grid;

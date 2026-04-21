@@ -2780,12 +2780,13 @@ srcEl.addEventListener('keydown', e => {
   }
 });
 
+
 // Help menu dropdown toggle
 const helpMenuBtn = document.getElementById('help-menu-btn');
 const helpMenu    = document.getElementById('help-menu');
 helpMenuBtn.addEventListener('click', e => {
   e.stopPropagation();
-  const open = helpMenu.style.display !== 'none';
+  const open = helpMenu.style.display === 'flex';
   helpMenu.style.display = open ? 'none' : 'flex';
   helpMenuBtn.classList.toggle('active', !open);
 });
@@ -2815,7 +2816,6 @@ document.getElementById('clr').addEventListener('click', function handleClearCli
   updateHighlight();
   scheduleRender();
 });
-
 
 // ── Step controls ─────────────────────────────────────────────────────────────
 let _walkOrder = [], _walkIdx = 0, _stepTimer = null, _stepRunning = false;

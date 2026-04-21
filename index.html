@@ -53,13 +53,13 @@
 })();
 </script>
 
-<div id="app">
+<div id="app" style="opacity:0;transition:opacity .3s">
   <header id="hdr">
     <span class="logo">IVX</span>
     <div class="hsep"></div>
     <div id="drive-hdr-controls">
       <button id="drive-connect-btn" class="drive-btn drive-btn-primary drive-btn-hdr">Sign in to Google</button>
-      <div id="drive-hdr-signed-in">
+      <div id="drive-hdr-signed-in" style="display:none">
         <button id="drive-new-btn" class="drive-btn drive-btn-hdr">＋ New</button>
         <button id="drive-save-btn" class="drive-btn drive-btn-hdr">↑ Save</button>
         <div id="drive-file-dropdown-wrap">
@@ -72,8 +72,8 @@
     <div class="hsep"></div>
     <span id="drive-filename" class="drive-filename"></span>
     <div id="err"></div>
-    <a href="privacy.html" class="hdr-link">Privacy Policy</a>
-    <button id="bug-btn" class="drive-btn drive-btn-hdr">🐛 Report Bug</button>
+    <a href="privacy.html" style="margin-left:auto;margin-right:8px;font-size:11px;color:#6b7280;text-decoration:none;white-space:nowrap">Privacy Policy</a>
+    <button id="bug-btn" class="drive-btn drive-btn-hdr" style="margin-right:8px">🐛 Report Bug</button>
   </header>
 
   <!-- Mobile tab bar -->
@@ -89,7 +89,7 @@
         <span class="panel-hdr-title">Editor</span>
         <div id="help-menu-wrap">
           <button id="help-menu-btn" class="kb panel-hdr-btn">Keywords ▾</button>
-          <div id="help-menu" style="display:flex">
+          <div id="help-menu" style="display:none">
             <div class="hm-section">
               <div class="hm-label">Control Flow</div>
               <button class="kb hm-btn" data-ins="if ">if</button>
@@ -203,9 +203,9 @@
         <button id="gp-minimize" class="panel-minimize-btn" title="Collapse flowchart">—</button>
       </div>
       <div id="gp-body">
-        <div id="gc" class="pui"></div>
-        <div id="cp" class="pui"></div>
-        <div id="controls"></div>
+        <div id="gc" class="pui" style="display:none"></div>
+        <div id="cp" class="pui" style="display:none"></div>
+        <div id="controls" style="display:none"></div>
         <svg id="canvas"></svg>
         <div id="minimap"><svg id="minimap-canvas"></svg></div>
       </div><!-- end gp-body -->
@@ -216,9 +216,5 @@
 <script src="ivx-core.js"></script>
 <script src="ivx-runtime.js"></script>
 <script src="ivx-render.js"></script>
-<script src="ivx-editor.js"></script>
-<script src="ivx-terminal.js"></script>
-<script src="ivx-drive.js"></script>
-<script src="ivx-ui.js"></script>
 </body>
 </html>
