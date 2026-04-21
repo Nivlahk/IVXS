@@ -333,7 +333,7 @@ Get a free Gemini API key at [aistudio.google.com/apikey](https://aistudio.googl
 
 ## Implementation
 
-IVX is a single-file JavaScript implementation bundled with the editor:
+IVX is a JavaScript implementation bundled with the editor:
 
 | Stage | Description |
 |-------|-------------|
@@ -344,7 +344,6 @@ IVX is a single-file JavaScript implementation bundled with the editor:
 | Graph builder | Text-based flowchart builder. Handles decisions, loops, branches, and joins. |
 | Renderer | SVG-based flowchart renderer with layout, minimap, pan/zoom, and animation. |
 
-The entire pipeline — language runtime, flowchart renderer, editor, terminal, and Drive integration — ships as two files: `index.html` and `ivx.js`.
 
 ---
 
@@ -353,3 +352,6 @@ The entire pipeline — language runtime, flowchart renderer, editor, terminal, 
 Run a program with the ▶ Run button. After execution completes, the flowchart animates the actual execution path at human speed — showing exactly which branches were taken, how many times the loop ran, which conditions were true. Use the speed control to adjust playback rate.
 
 ---
+
+
+Features to be added: Global State Viewer, More API Integration, 
