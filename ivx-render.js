@@ -1,11 +1,12 @@
 // ivx-render.js — IVX Visual Rendering Engine
-// SVG layout, node/edge rendering, graph builder, trace/playback, lens transpiler, export
-// Depends on: ivx-core.js, ivx-runtime.js
-// Provides: renderGraph, parseivx, scheduleRender (consumed by ivx-editor.js)
+// SVG Renderer, Visual Style, Export Formats, Editor UI
 // PROPRIETARY AND CONFIDENTIAL
 // Copyright 2026 IVX. All rights reserved.
 // Unauthorized reproduction or distribution of this file,
 // or any portion of it, may result in severe civil and criminal penalties.
+
+
+
 
 // ── script.js ────────────────────────────────────────────────────────────────
 
@@ -2707,6 +2708,115 @@ function parseivx(source) {
     return { nodes, edges, startNodeId: startNode.id, segments: [], validationErrors };
 }
 
+// ── DOM refs for editor UI ────────────────────────────────────────────────────
+const srcEl  = /** @type {HTMLTextAreaElement} */ (document.getElementById('src'));
+const errEl  = document.getElementById('err');
+
+const STARTER = `make name "World"
+make count 3
+loop y? < count
+  say "Hello {name}! (message {y + 1})"
+  make y + 1
+if count > 1
+  say "Sent {count} greetings"
+else
+  say "Sent one greeting"`;
+
+srcEl.value = STARTER;
+
+// Bug 4 fix: line number of a newly-inserted node waiting for its edit overlay,
+let _pendingInsertEditLine = -1;
+
+let _dt;
+function scheduleRender() {
+  clearTimeout(_dt);
+  _dt = setTimeout(doRender, 150);
+}
+
+function doRender() {
+  const src = srcEl.value;
+  try {
+    const graph = parseivx(src);
+    const errs = graph.validationErrors || [];
+    if (errs.length) {
+      errEl.innerHTML = errs.map((e, i) => `<div>${e}</div>`).join('') + (errs.length > 1 ? `<div style=\"color:#888;font-size:10px;\">(${errs.length} errors)</div>` : '');
+      errEl.className = '';
+    } else {
+      errEl.textContent = `✓ ${graph.nodes.length} nodes, ${graph.edges.length} edges`;
+      errEl.className = 'ok';
+    }
+    _walkOrder = getWalkOrder(graph);
+    _walkIdx = 0;
+    // Feed directly into renderer (same script scope, so renderGraph is available)
+    dragOffsets.clear();
+    blockOffsets.clear();
+    isFirstRender = !currentGraph;
+    renderGraph(graph);
+
+    // Bug 4 fix: open the inline editor for a newly inserted node now that the
+    // graph is guaranteed to be up to date, instead of relying on a fixed timeout.
+    if (_pendingInsertEditLine >= 0) {
+      const targetLine = _pendingInsertEditLine;
+      _pendingInsertEditLine = -1;
+      const inserted = graph.nodes.find(n => n.line === targetLine);
+      if (inserted) startNodeEditByLine({ line: targetLine, text: inserted.text || '' });
+    }
+  } catch(e) {
+    errEl.textContent = 'Parse error: ' + e.message;
+    errEl.className = '';
+  }
+}
+
+srcEl.addEventListener('input', scheduleRender);
+
+srcEl.addEventListener('keydown', e => {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const s = srcEl.selectionStart, end = srcEl.selectionEnd;
+    srcEl.value = srcEl.value.slice(0, s) + '  ' + srcEl.value.slice(end);
+    srcEl.selectionStart = srcEl.selectionEnd = s + 2;
+    updateHighlight();
+    scheduleRender();
+  }
+});
+
+// Help menu dropdown toggle
+const helpMenuBtn = document.getElementById('help-menu-btn');
+const helpMenu    = document.getElementById('help-menu');
+helpMenuBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  const open = helpMenu.style.display !== 'none';
+  helpMenu.style.display = open ? 'none' : 'flex';
+  helpMenuBtn.classList.toggle('active', !open);
+});
+document.addEventListener('click', e => {
+  if (!helpMenuBtn.contains(e.target) && !helpMenu.contains(e.target)) {
+    helpMenu.style.display = 'none';
+    helpMenuBtn.classList.remove('active');
+  }
+});
+
+document.querySelectorAll('[data-ins]').forEach(function(btn) {
+  btn.addEventListener('click', function handleInsertClick() {
+    const ins = btn.dataset.ins;
+    const s = srcEl.selectionStart, e2 = srcEl.selectionEnd;
+    srcEl.value = srcEl.value.slice(0, s) + ins + srcEl.value.slice(e2);
+    srcEl.selectionStart = srcEl.selectionEnd = s + ins.length;
+    srcEl.focus();
+    updateHighlight();
+    scheduleRender();
+    helpMenu.style.display = 'none';
+    helpMenuBtn.classList.remove('active');
+  });
+});
+document.getElementById('clr').addEventListener('click', function handleClearClick() {
+  srcEl.value = '';
+  srcEl.focus();
+  updateHighlight();
+  scheduleRender();
+});
+
+
 // ── Step controls ─────────────────────────────────────────────────────────────
 let _walkOrder = [], _walkIdx = 0, _stepTimer = null, _stepRunning = false;
 
@@ -4247,4 +4357,884 @@ document.getElementById('export-btn').addEventListener('click', () => {
   if      (fmt === 'json') exportJSON();
   else if (fmt === 'svg')  exportAsSVG();
   else if (fmt === 'png')  exportAsPNG();
+});
+// ── Syntax highlighting ───────────────────────────────────────────────────────
+const hlEl     = document.getElementById('src-hl');
+const gutterEl = document.getElementById('src-gutter-inner');
+const scrollEl = document.getElementById('src-scroll');
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Keyword sets for the tokenizing highlighter
+const _KW_NODE     = new Set(['if','fork','loop','dot','con','take','say','give','fun','class','init','end','from','make','note','for','in','wait','del','ask','post','use','key','sheets','email','by','try','err']);
+const _KW_FLOW     = new Set(['so','then','else']);
+const _KW_OUTGOING = new Set(['prev','next']);
+const _KW_LOGIC    = new Set(['not','and','or','xor','is','yes','no','none']);
+
+// Tokenize a raw source line into typed spans, then emit HTML.
+// Handles strings, numbers, lists, dicts, keywords — all before HTML escaping
+// so bracket/quote characters are never corrupted by &amp; etc.
+function highlightLine(line, allVars = new Set(), allClasses = new Set()) {
+  // Split off trailing 'note ...' comment first
+  const noteMatch = line.match(/^(.*?)\b(note\s.*)$/);
+  const code = noteMatch ? noteMatch[1] : line;
+  const note = noteMatch ? noteMatch[2] : '';
+
+  // Tokenizer: walk the code string producing {text, cls} segments
+  const segs = [];
+  let i = 0;
+  let prevWasMake = false;
+  const push = (text, cls) => { if (text) segs.push({ text, cls }); };
+
+  while (i < code.length) {
+    // String literal — detect URL type and highlight {interpolations}
+    if (code[i] === '"') {
+      // Check for triple quote
+      if (code[i+1] === '"' && code[i+2] === '"') {
+        let j = i + 3;
+        while (j < code.length && !(code[j] === '"' && code[j+1] === '"' && code[j+2] === '"')) j++;
+        if (j < code.length) j += 3;
+        push(code.slice(i, j), 'kw-string');
+        i = j; continue;
+      }
+      let j = i + 1;
+      while (j < code.length && !(code[j] === '"' && code[j-1] !== '\\')) j++;
+      if (j < code.length) j++;
+      const raw     = code.slice(i, j);
+      const strVal  = raw.slice(1, -1);
+      const isUrl   = strVal.startsWith('http://') || strVal.startsWith('https://');
+      const baseCls = isUrl ? 'kw-url' : 'kw-string';
+      // Split on {expr} patterns and highlight interpolations semantically
+      const parts = strVal.split(/(\{[^}]+\})/);
+      if (parts.length > 1) {
+        push('"', baseCls);
+        for (const part of parts) {
+          if (/^\{[^}]+\}$/.test(part)) {
+            // Highlight the inside of {expr} semantically
+            const inner = part.slice(1, -1);
+            push('{', 'kw-dict');
+            // Tokenize: split on dots, parens, brackets, commas
+            const innerSegs = inner.split(/([.()\[\],])/);
+            let prevInnerSeg = '';
+            for (const seg of innerSegs) {
+              if (!seg) continue;
+              if (seg === '.' || seg === ',' ) { push(seg, 'kw-dict'); prevInnerSeg = seg; continue; }
+              if (seg === '(' || seg === ')')  { push(seg, 'kw-funcall'); prevInnerSeg = seg; continue; }
+              if (seg === '[' || seg === ']')  { push(seg, 'kw-list'); prevInnerSeg = seg; continue; }
+              if (/^\d/.test(seg))             { push(seg, 'kw-number'); prevInnerSeg = seg; continue; }
+              if (allClasses.has(seg))          { push(seg, 'kw-classname'); prevInnerSeg = seg; continue; }
+              if (seg === 'self' || seg === 'super') { push(seg, 'kw-classname'); prevInnerSeg = seg; continue; }
+              // If followed by ( it's a method call, if preceded by . it's a field, otherwise a variable
+              const nextIdx = innerSegs.indexOf(seg) + 1;
+              const nextSeg = innerSegs[nextIdx] ?? '';
+              if (nextSeg === '(')      push(seg, 'kw-funcall');
+              else if (prevInnerSeg === '.') push(seg, 'kw-var');
+              else if (allVars.has(seg)) push(seg, 'kw-var');
+              else push(seg, 'kw-var');
+              prevInnerSeg = seg;
+            }
+            push('}', 'kw-dict');
+          }
+          else if (part) push(part, baseCls);
+        }
+        push('"', baseCls);
+      } else {
+        push(raw, baseCls);
+      }
+      i = j; continue;
+    }
+    // List literal  [...]
+    if (code[i] === '[') {
+      let depth = 0, j = i;
+      while (j < code.length) {
+        if (code[j] === '[') depth++;
+        else if (code[j] === ']') { depth--; if (depth === 0) { j++; break; } }
+        j++;
+      }
+      push(code.slice(i, j), 'kw-list'); i = j; continue;
+    }
+    // Dict literal  {...}
+    if (code[i] === '{') {
+      let depth = 0, j = i;
+      while (j < code.length) {
+        if (code[j] === '{') depth++;
+        else if (code[j] === '}') { depth--; if (depth === 0) { j++; break; } }
+        j++;
+      }
+      push(code.slice(i, j), 'kw-dict'); i = j; continue;
+    }
+    // Number literal (integer or float)
+    if (/[\d]/.test(code[i]) || (code[i] === '-' && /\d/.test(code[i+1]||''))) {
+      let j = i;
+      if (code[j] === '-') j++;
+      while (j < code.length && /[\d.]/.test(code[j])) j++;
+      push(code.slice(i, j), 'kw-number'); i = j; continue;
+    }
+    // Word token — check against keyword sets, or function call if followed by (
+    if (/[A-Za-z_]/.test(code[i])) {
+      let j = i;
+      while (j < code.length && /[\w]/.test(code[j])) j++;
+      const word = code.slice(i, j);
+      const isFunCall = code[j] === '(';
+      const isLazy    = code[j] === '?' && !isFunCall;
+      let cls = '';
+      if (allClasses.has(word))            cls = 'kw-classname';
+      else if (isFunCall)                  cls = 'kw-funcall';
+      else if (word === 'self' || word === 'super') cls = 'kw-classname';
+      else if (_KW_NODE.has(word))         cls = 'kw-node';
+      else if (_KW_FLOW.has(word))         cls = 'kw-flow';
+      else if (_KW_OUTGOING.has(word))     cls = 'kw-outgoing';
+      else if (_KW_LOGIC.has(word))        cls = 'kw-logic';
+      else if (allVars.has(word))          cls = 'kw-var';
+      prevWasMake = (word === 'make') && !isFunCall;
+      push(word, cls); i = j;
+      // ? suffix — same color as the variable, just marks lazy declaration
+      if (isLazy) { push('?', cls || 'kw-var'); i++; }
+      continue;
+    }
+    // Dot — color the following identifier as kw-var (field) or kw-funcall (method)
+    if (code[i] === '.') {
+      push('.', '');
+      i++;
+      let j = i;
+      while (j < code.length && /[\w]/.test(code[j])) j++;
+      if (j > i) {
+        const isMethod = code[j] === '(';
+        push(code.slice(i, j), isMethod ? 'kw-funcall' : 'kw-var');
+        i = j;
+      }
+      continue;
+    }
+    // Everything else — pass through as plain text (accumulate runs)
+    let j = i + 1;
+    while (j < code.length && !/[A-Za-z_\d\-"\[{]/.test(code[j])) j++;
+    push(code.slice(i, j), ''); i = j;
+  }
+
+  let html = segs.map(({ text, cls }) => {
+    const e = escHtml(text);
+    return cls ? `<span class="${cls}">${e}</span>` : e;
+  }).join('');
+
+  if (note) html += `<span class="kw-note">${escHtml(note)}</span>`;
+  return html;
+}
+
+function highlightSource(src) {
+  // Pre-scan entire source for all make-declared variable names
+  // so every occurrence gets colored, not just the token after 'make'
+  const allVars = new Set();
+  const makeMatches = src.match(/\bmake\s+([A-Za-z_]\w*)/g);
+  if (makeMatches) makeMatches.forEach(m => { const v = m.match(/make\s+(\w+)/); if (v) allVars.add(v[1]); });
+  const takeMatches = src.match(/\btake\s+(?:(?:int|flt|str|bin|list|dict)\s*\(\s*)?([A-Za-z_]\w*)/g);
+  if (takeMatches) takeMatches.forEach(m => { const v = m.match(/([A-Za-z_]\w*)(?:\s*\))?$/); if (v) allVars.add(v[1]); });
+  // Also collect lazy-declared variables (name?) so they color as vars
+  const lazyMatches = src.match(/\b([A-Za-z_]\w*)\?/g);
+  if (lazyMatches) lazyMatches.forEach(m => { allVars.add(m.slice(0, -1)); });
+  // Loop iterators always color as variables — they act like variables
+  ['i','ii','iii','j','jj','jjj','k','kk','kkk'].forEach(v => allVars.add(v));
+  // Function parameters color as variables (handles name, name?, name * 3, name? 100)
+  const funMatches = src.match(/\b(?:fun\s+\w+|init)\s*\(([^)]+)\)/g);
+  if (funMatches) funMatches.forEach(m => {
+    const inner = m.match(/\(([^)]+)\)/);
+    if (inner) inner[1].split(',').forEach(p => {
+      const v = p.trim().match(/^([A-Za-z_]\w*)/);
+      if (v) allVars.add(v[1]);
+    });
+  });
+
+  // Collect declared class names so both declarations and constructor calls
+  // share one visual identity.
+  const allClasses = new Set();
+  const classMatches = src.match(/\bclass\s+([A-Za-z_]\w*)/g);
+  if (classMatches) classMatches.forEach(m => { const c = m.match(/class\s+([A-Za-z_]\w*)/); if (c) allClasses.add(c[1]); });
+
+  return src.split('\n').map(line => highlightLine(line, allVars, allClasses)).join('\n');
+}
+
+function updateHighlight() {
+  const src   = srcEl.value;
+  const lines = src.split('\n');
+  const count = lines.length;
+
+  // Update highlight layer
+  hlEl.innerHTML = highlightSource(src) + '\n';
+
+  // Update line number gutter
+  let gutter = '';
+  for (let i = 1; i <= count; i++) gutter += i + '\n';
+  gutterEl.textContent = gutter;
+
+  // Size the highlight and textarea to content so scroll container works
+  const lineH   = 13 * 1.7; // font-size * line-height
+  const padV    = 10 * 2;   // top + bottom padding
+  const minH    = scrollEl.clientHeight || 300;
+  const contentH = Math.max(minH, count * lineH + padV);
+  hlEl.style.height    = contentH + 'px';
+  srcEl.style.height   = contentH + 'px';
+
+  // Sync gutter scroll position with scroll container
+  gutterEl.style.top = -scrollEl.scrollTop + 'px';
+}
+
+// Sync scroll: when src-scroll scrolls, move gutter too
+scrollEl.addEventListener('scroll', () => {
+  gutterEl.style.top = -scrollEl.scrollTop + 'px';
+});
+
+// Textarea scroll should be ignored — scrollEl handles it
+srcEl.addEventListener('scroll', () => { srcEl.scrollTop = 0; srcEl.scrollLeft = 0; });
+
+srcEl.addEventListener('input', updateHighlight);
+updateHighlight();
+
+// ── Terminal ──────────────────────────────────────────────────────────────────
+const termMsgs   = document.getElementById('term-msgs');
+const termRun    = document.getElementById('term-run');
+const termClear  = document.getElementById('term-clear');
+const termRes    = document.getElementById('term-resizer');
+
+// ── Terminal message helpers ──────────────────────────────────────────────────
+function termAppend(text, cls) {
+  const el = document.createElement('div');
+  el.className = 'term-msg ' + cls;
+  el.textContent = text;
+  termMsgs.appendChild(el);
+  termMsgs.scrollTop = termMsgs.scrollHeight;
+  return el;
+}
+
+function termInfo(text)   { termAppend(text, 'info');   }
+function termOutput(text) { termAppend(text, 'output'); }
+function termError(text)  { termAppend(text, 'error');  }
+
+// Show an error with line number — clicking jumps to that line in the editor
+function termErrorLine(message, lineNum) {
+  const el = document.createElement('div');
+  el.className = 'term-msg error';
+  if (lineNum != null && lineNum > 0) {
+    el.innerHTML = `<span class="term-err-line">Line ${lineNum}</span><span class="term-err-msg"> — ${_escHtml(message)}</span>`;
+    el.style.cursor = 'pointer';
+    el.title = 'Click to jump to line ' + lineNum;
+    el.addEventListener('click', () => {
+      const src = document.getElementById('src');
+      if (!src) return;
+      const lines = src.value.split('\n');
+      let pos = 0;
+      for (let i = 0; i < Math.min(lineNum - 1, lines.length); i++) pos += lines[i].length + 1;
+      src.focus();
+      src.setSelectionRange(pos, pos + (lines[lineNum - 1]?.length ?? 0));
+      // Scroll the line into view
+      const lineH = src.scrollHeight / (lines.length || 1);
+      src.scrollTop = Math.max(0, (lineNum - 3) * lineH);
+    });
+  } else {
+    el.textContent = 'Error: ' + message;
+  }
+  termMsgs.appendChild(el);
+  termMsgs.scrollTop = termMsgs.scrollHeight;
+}
+
+function _escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Inline input — returns a Promise that resolves when user hits Enter ───────
+function termInput(varName) {
+  return new Promise(resolve => {
+    const row = document.createElement('div');
+    row.className = 'term-input-row';
+
+    const label = document.createElement('span');
+    label.className = 'term-input-label';
+    label.textContent = varName + ' ›';
+
+    const field = document.createElement('input');
+    field.type = 'text';
+    field.className = 'term-input-field';
+    field.placeholder = 'type and press Enter…';
+
+    row.appendChild(label);
+    row.appendChild(field);
+    termMsgs.appendChild(row);
+    termMsgs.scrollTop = termMsgs.scrollHeight;
+    field.focus();
+
+    field.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      const val = field.value;
+      // Lock the input row and show sent bubble
+      field.disabled = true;
+      field.style.display = 'none';
+      const sent = document.createElement('div');
+      sent.className = 'term-input-sent';
+      sent.textContent = val;
+      row.appendChild(sent);
+      termMsgs.scrollTop = termMsgs.scrollHeight;
+      resolve(val);
+    });
+  });
+}
+
+// ── Run button ────────────────────────────────────────────────────────────────
+let _running = false;
+
+termRun.addEventListener('click', async () => {
+  if (_running) return;
+  _running = true;
+  termRun.textContent = '⏹ Running';
+  termRun.classList.add('running');
+  termInfo('─── run started ───');
+
+  // Build map: 0-based graph line → node ID
+  // Decision nodes take priority so conditions highlight the diamond
+  const lineToNodeId = new Map();
+  if (currentGraph) {
+    for (const n of currentGraph.nodes) {
+      if (n.kind === 'Start' || n.kind === 'End' || n.kind === 'Function') continue;
+      const existing = lineToNodeId.get(n.line);
+      if (!existing || n.kind === 'Decision' || n.kind === 'Input' || n.kind === 'Output') {
+        lineToNodeId.set(n.line, n.id);
+      }
+    }
+  }
+
+  // Record trace events during execution — play back after at human speed
+  const recorded = [];
+  const t0 = performance.now();
+
+  let interpGlobals = null;
+  const interp = new Interpreter({
+    onOutput: async (value) => {
+      termOutput(ivxRepr(value));
+    },
+    onInput: async (varName) => {
+      const raw = await termInput(varName);
+      const num = Number(raw);
+      return raw.trim() === '' ? null : isNaN(num) ? raw : num;
+    },
+    onError: (e) => {
+      const line = e.ivxLine ?? e.line ?? null;
+      termErrorLine(e.message ?? String(e), line ?? null);
+    },
+    onWait: (n) => new Promise(r => setTimeout(r, n * 100)),
+    onStep: (srcLine) => {
+      // srcLine is 1-based from AST; graph nodes are 0-based
+      const nodeId = lineToNodeId.get(srcLine - 1);
+      if (nodeId != null) {
+        const last = recorded[recorded.length - 1];
+        // Deduplicate consecutive same-node steps (e.g. tight loops)
+        // but keep repeats for decision nodes so the flash is visible
+        const n = currentGraph?.nodes.find(n => n.id === nodeId);
+        const isDecision = n?.kind === 'Decision';
+        if (!last || last.nodeId !== nodeId || isDecision) {
+          recorded.push({ nodeId, ts: performance.now() - t0 });
+        }
+      }
+    },
+  });
+
+  try {
+    await interp.run(srcEl.value, { ignoreTypeErrors: true });
+    interpGlobals = interp.globals;
+  } catch(e) {
+    const line = e.ivxLine ?? e.line ?? null;
+    termErrorLine(e.message ?? String(e), line ?? null);
+  }
+
+  termInfo('─── run finished ───');
+  termRun.textContent = '▶ Run';
+  termRun.classList.remove('running');
+  _running = false;
+
+  // ── Deploy wait blocks to Apps Script ──────────────────────────────────────
+  try {
+    const parsed = parse(srcEl.value);
+    const waitBlocks = AppsScriptTranspiler.extractWaitBlocks(parsed.ast);
+    if (waitBlocks.length > 0 && driveToken) {
+      termInfo(`⏳ Deploying ${waitBlocks.length} trigger${waitBlocks.length > 1 ? 's' : ''} to Google Apps Script…`);
+      try {
+        const { scriptId, triggerCount, firstDeploy } = await AppsScriptTranspiler.deploy(
+          waitBlocks, interpGlobals, driveToken
+        );
+        const recurring = waitBlocks.filter(b => b.recurring).length;
+        const oneshot   = waitBlocks.filter(b => !b.recurring).length;
+        const parts = [];
+        if (oneshot)   parts.push(`${oneshot} one-shot`);
+        if (recurring) parts.push(`${recurring} recurring`);
+        if (firstDeploy) {
+          termInfo(`✓ ${parts.join(', ')} trigger${triggerCount > 1 ? 's' : ''} deployed — open Apps Script and run ivxSetupTriggers() once to activate`);
+        } else {
+          termInfo(`✓ ${parts.join(', ')} trigger${triggerCount > 1 ? 's' : ''} updated and active`);
+        }
+      } catch(e) {
+        termError(`Apps Script deploy failed: ${e.message}`);
+      }
+    } else if (waitBlocks.length > 0 && !driveToken) {
+      termInfo(`ℹ Sign in to Google to deploy ${waitBlocks.length} wait trigger${waitBlocks.length > 1 ? 's' : ''}`);
+    } else if (waitBlocks.length === 0) {
+      // Debug: check if parse found any WaitBlock nodes
+      const allTypes = parsed.ast?.body?.map(n => n.type) ?? [];
+      if (srcEl.value.includes('wait ')) {
+        termInfo(`⚠ wait block detected in source but not parsed — node types: ${allTypes.join(', ')}`);
+      }
+    }
+  } catch(e) {
+    termError(`Apps Script setup error: ${e.message}`);
+    console.error('Apps Script deploy error:', e);
+  }
+
+  // Hand recorded trace to the playback system
+  // Normalize timestamps to 300ms per step so playback is human-readable
+  if (recorded.length > 0) {
+    const STEP_MS = 300;
+    const normalized = recorded.map((ev, i) => ({ nodeId: ev.nodeId, ts: i * STEP_MS }));
+    isVideoPlaying = true;
+    updateVideoButton();
+    startTrace(normalized);
+  }
+});
+
+// ── Clear button ──────────────────────────────────────────────────────────────
+termClear.addEventListener('click', () => {
+  termMsgs.innerHTML = '';
+});
+
+// ── Resizer drag ──────────────────────────────────────────────────────────────
+(function() {
+  let startY, startTermH, dragging = false;
+
+  termRes.addEventListener('mousedown', e => {
+    dragging = true;
+    startY = e.clientY;
+    startTermH = document.getElementById('term').getBoundingClientRect().height;
+    termRes.classList.add('dragging');
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'row-resize';
+  });
+
+  window.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const delta = startY - e.clientY;
+    const newH = Math.max(80, Math.min(startTermH + delta, window.innerHeight * 0.6));
+    document.getElementById('ep').style.gridTemplateRows = `1fr 6px ${newH}px`;
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    termRes.classList.remove('dragging');
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+  });
+})();
+
+// ── Terminal minimize / restore ───────────────────────────────────────────────
+(function() {
+  const termEl      = document.getElementById('term');
+  const termMinBtn  = document.getElementById('term-minimize');
+  const ep          = document.getElementById('ep');
+  const COLLAPSED_H = 28; // just the header bar
+  let collapsed     = false;
+  let savedRows     = '';  // remember last grid height before collapsing
+
+  termMinBtn.addEventListener('click', () => {
+    collapsed = !collapsed;
+    if (collapsed) {
+      savedRows = document.getElementById("ep-body").style.gridTemplateRows || '1fr 6px 200px';
+      document.getElementById("ep-body").style.gridTemplateRows = `1fr 6px ${COLLAPSED_H}px`;
+      termEl.classList.add('collapsed');
+      termMinBtn.textContent    = '▲';
+      termMinBtn.title          = 'Restore terminal';
+    } else {
+      document.getElementById("ep-body").style.gridTemplateRows = savedRows;
+      termEl.classList.remove('collapsed');
+      termMinBtn.textContent    = '—';
+      termMinBtn.title          = 'Minimize terminal';
+    }
+  });
+})();
+const DRIVE_CLIENT_ID = '857056430546-3o2o9mhula9lkm1vcpidu61919h3umev.apps.googleusercontent.com';
+const DRIVE_SCOPE     = [
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/script.projects',
+].join(' ');
+const DRIVE_FOLDER    = 'IVX';
+
+let driveToken     = null;   // current access token
+let driveFolderId  = null;   // ID of IVX/ folder in Drive
+let driveCurrentId = null;   // ID of currently open file
+let driveCurrentName = null; // name of currently open file
+let driveUnsaved   = false;  // unsaved changes flag
+let driveTokenClient = null; // GIS token client
+
+const driveConnectBtn   = document.getElementById('drive-connect-btn');
+const driveFileList     = document.getElementById('drive-file-list');
+const driveSignedInEl   = document.getElementById('drive-hdr-signed-in');
+const driveNewBtn       = document.getElementById('drive-new-btn');
+const driveSaveBtn      = document.getElementById('drive-save-btn');
+const driveSignoutBtn   = document.getElementById('drive-signout-btn');
+const driveFilesBtn     = document.getElementById('drive-files-btn');
+const driveFilename     = document.getElementById('drive-filename');
+
+// ── Files dropdown toggle ─────────────────────────────────────────────────────
+driveFilesBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const open = driveFileList.style.display === 'block';
+  driveFileList.style.display = open ? 'none' : 'block';
+  if (!open) driveListFiles();
+});
+document.addEventListener('click', () => { driveFileList.style.display = 'none'; });
+driveFileList.addEventListener('click', e => e.stopPropagation());
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+function driveInit() {
+  if (typeof google === 'undefined') {
+    setTimeout(driveInit, 200);
+    return;
+  }
+  driveTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: DRIVE_CLIENT_ID,
+    scope:     DRIVE_SCOPE,
+    callback:  (resp) => {
+      if (resp.error) { console.error('Drive auth error:', resp); return; }
+      driveToken = resp.access_token;
+      driveConnectBtn.style.display = 'none';
+      driveSignedInEl.style.display = 'flex';
+      driveEnsureFolder().then(driveListFiles);
+    },
+  });
+}
+
+driveConnectBtn.addEventListener('click', () => {
+  if (!driveTokenClient) { driveInit(); setTimeout(() => driveTokenClient?.requestAccessToken(), 300); return; }
+  driveTokenClient.requestAccessToken();
+});
+
+driveSignoutBtn.addEventListener('click', () => {
+  if (driveToken) google.accounts.oauth2.revoke(driveToken);
+  driveToken = null; driveFolderId = null;
+  driveCurrentId = null; driveCurrentName = null;
+  driveConnectBtn.style.display = '';
+  driveSignedInEl.style.display = 'none';
+  driveFileList.style.display = 'none';
+  driveFileList.innerHTML = '';
+  driveFilename.textContent = '';
+  driveFilename.className = 'drive-filename';
+});
+
+// ── API helpers ───────────────────────────────────────────────────────────────
+async function driveAPI(path, opts = {}) {
+  const res = await fetch('https://www.googleapis.com' + path, {
+    ...opts,
+    headers: { 'Authorization': 'Bearer ' + driveToken, ...(opts.headers || {}) },
+  });
+  if (!res.ok) throw new Error('Drive API ' + res.status + ': ' + await res.text());
+  return res.json();
+}
+
+async function driveEnsureFolder() {
+  // Find or create the IVX/ folder
+  const q = `name='${DRIVE_FOLDER}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  const res = await driveAPI(`/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`);
+  if (res.files && res.files.length > 0) {
+    driveFolderId = res.files[0].id;
+    return;
+  }
+  // Create it
+  const created = await driveAPI('/drive/v3/files', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: DRIVE_FOLDER, mimeType: 'application/vnd.google-apps.folder' }),
+  });
+  driveFolderId = created.id;
+}
+
+// ── List files ────────────────────────────────────────────────────────────────
+async function driveListFiles() {
+  driveFileList.innerHTML = '<div class="drive-loading">Loading...</div>';
+  try {
+    const q = `'${driveFolderId}' in parents and name contains '.ivx' and trashed=false`;
+    const res = await driveAPI(`/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc`);
+    driveFileList.innerHTML = '';
+    if (!res.files || res.files.length === 0) {
+      driveFileList.innerHTML = '<div class="drive-empty">No .ivx files yet. Click ＋ New to create one.</div>';
+      return;
+    }
+    for (const f of res.files) {
+      const item = document.createElement('div');
+      item.className = 'drive-file-item' + (f.id === driveCurrentId ? ' active' : '');
+      item.dataset.id   = f.id;
+      item.dataset.name = f.name;
+      item.innerHTML = `<span class="drive-file-icon">◆</span><span class="drive-file-name">${escHtml(f.name.replace(/\.ivx$/, ''))}</span>`;
+      item.addEventListener('click', () => { driveOpenFile(f.id, f.name); driveFileList.style.display = 'none'; });
+      driveFileList.appendChild(item);
+    }
+  } catch(e) {
+    driveFileList.innerHTML = `<div class="drive-empty">Error: ${e.message}</div>`;
+  }
+}
+
+// ── Open file ─────────────────────────────────────────────────────────────────
+async function driveOpenFile(id, name) {
+  if (driveUnsaved) {
+    if (!confirm('You have unsaved changes. Open this file anyway?')) return;
+  }
+  try {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`, {
+      headers: { 'Authorization': 'Bearer ' + driveToken },
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+    srcEl.value = text;
+    updateHighlight();
+    scheduleRender();
+    driveCurrentId   = id;
+    driveCurrentName = name;
+    driveUnsaved     = false;
+    driveUpdateHeader();
+    // Update active state in list
+    driveFileList.querySelectorAll('.drive-file-item').forEach(el => {
+      el.classList.toggle('active', el.dataset.id === id);
+    });
+  } catch(e) {
+    alert('Could not open file: ' + e.message);
+  }
+}
+
+// ── Save file ─────────────────────────────────────────────────────────────────
+async function driveSaveFile() {
+  if (!driveToken) return;
+  if (!driveCurrentId) { driveNewFile(); return; }
+  try {
+    await fetch(`https://www.googleapis.com/upload/drive/v3/files/${driveCurrentId}?uploadType=media`, {
+      method:  'PATCH',
+      headers: { 'Authorization': 'Bearer ' + driveToken, 'Content-Type': 'text/plain' },
+      body:    srcEl.value,
+    });
+    driveUnsaved = false;
+    driveUpdateHeader();
+  } catch(e) {
+    alert('Save failed: ' + e.message);
+  }
+}
+
+// ── New file ──────────────────────────────────────────────────────────────────
+async function driveNewFile() {
+  if (!driveToken || !driveFolderId) return;
+  const rawName = prompt('File name:', 'untitled');
+  if (!rawName) return;
+  const name = rawName.endsWith('.ivx') ? rawName : rawName + '.ivx';
+  try {
+    // Create metadata
+    const meta = await driveAPI('/drive/v3/files', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ name, parents: [driveFolderId], mimeType: 'text/plain' }),
+    });
+    // Upload empty content
+    await fetch(`https://www.googleapis.com/upload/drive/v3/files/${meta.id}?uploadType=media`, {
+      method:  'PATCH',
+      headers: { 'Authorization': 'Bearer ' + driveToken, 'Content-Type': 'text/plain' },
+      body:    '',
+    });
+    driveCurrentId   = meta.id;
+    driveCurrentName = name;
+    driveUnsaved     = false;
+    srcEl.value      = '';
+    updateHighlight();
+    scheduleRender();
+    driveUpdateHeader();
+    await driveListFiles();
+  } catch(e) {
+    alert('Could not create file: ' + e.message);
+  }
+}
+
+// ── Header filename display ───────────────────────────────────────────────────
+function driveUpdateHeader() {
+  if (!driveCurrentName) { driveFilename.textContent = ''; return; }
+  driveFilename.textContent = driveCurrentName.replace(/\.ivx$/, '');
+  driveFilename.className   = 'drive-filename' + (driveUnsaved ? ' unsaved' : '');
+}
+
+// ── Track unsaved changes ─────────────────────────────────────────────────────
+srcEl.addEventListener('input', () => {
+  if (driveCurrentId && !driveUnsaved) {
+    driveUnsaved = true;
+    driveUpdateHeader();
+  }
+});
+
+// ── Keyboard shortcut: Ctrl/Cmd+S to save ────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    if (driveToken) driveSaveFile();
+  }
+});
+
+driveNewBtn .addEventListener('click', driveNewFile);
+driveSaveBtn.addEventListener('click', driveSaveFile);
+
+window.addEventListener('load', driveInit);
+
+// ── Panel collapse (editor + graph) ──────────────────────────────────────────
+(function() {
+  const COLLAPSED_HDR = 32;
+
+  // Editor panel
+  const epEl       = document.getElementById('ep');
+  const epMinBtn   = document.getElementById('ep-minimize');
+  let epCollapsed  = false;
+
+  epMinBtn.addEventListener('click', () => {
+    epCollapsed = !epCollapsed;
+    epEl.classList.toggle('collapsed', epCollapsed);
+    epMinBtn.textContent = epCollapsed ? '▶' : '—';
+    epMinBtn.title = epCollapsed ? 'Expand editor' : 'Collapse editor';
+    window.dispatchEvent(new Event('resize')); // trigger SVG resize
+  });
+
+  // Graph panel
+  const gpEl       = document.getElementById('gp');
+  const gpMinBtn   = document.getElementById('gp-minimize');
+  let gpCollapsed  = false;
+
+  gpMinBtn.addEventListener('click', () => {
+    gpCollapsed = !gpCollapsed;
+    gpEl.classList.toggle('collapsed', gpCollapsed);
+    gpMinBtn.textContent = gpCollapsed ? '◀' : '—';
+    gpMinBtn.title = gpCollapsed ? 'Expand flowchart' : 'Collapse flowchart';
+    window.dispatchEvent(new Event('resize'));
+  });
+})();
+
+// ── Mobile tabs ───────────────────────────────────────────────────────────────
+(function() {
+  const tabs = document.querySelectorAll('.mob-tab');
+  const epEl = document.getElementById('ep');
+  const gpEl = document.getElementById('gp');
+
+  function switchTab(panel) {
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.panel === panel));
+    epEl.classList.toggle('mob-hidden', panel !== 'ep');
+    gpEl.classList.toggle('mob-hidden', panel !== 'gp');
+    if (panel === 'gp') window.dispatchEvent(new Event('resize'));
+  }
+
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => switchTab(tab.dataset.panel));
+  });
+
+  // Default: show editor on mobile
+  if (window.innerWidth <= 700) switchTab('ep');
+})();
+
+// ── Bug report ────────────────────────────────────────────────────────────────
+document.getElementById('bug-btn').addEventListener('click', () => {
+  // Remove any existing modal
+  document.getElementById('bug-modal')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'bug-modal';
+  Object.assign(overlay.style, {
+    position: 'fixed', inset: '0', background: 'rgba(0,0,0,.6)',
+    zIndex: '20000', display: 'flex', alignItems: 'center', justifyContent: 'center',
+  });
+
+  const box = document.createElement('div');
+  Object.assign(box.style, {
+    background: '#1c1c28', border: '1px solid #3a3a5c', borderRadius: '10px',
+    padding: '20px', width: '460px', maxWidth: '90vw',
+    display: 'flex', flexDirection: 'column', gap: '12px',
+    fontFamily: 'system-ui, sans-serif', boxShadow: '0 16px 48px rgba(0,0,0,.6)',
+  });
+
+  // Title
+  const title = document.createElement('div');
+  title.textContent = '🐛 Report a Bug';
+  Object.assign(title.style, { fontSize: '15px', fontWeight: '700', color: '#cdd6f4' });
+  box.appendChild(title);
+
+  // Description label + textarea
+  const lbl = document.createElement('label');
+  lbl.textContent = 'What went wrong?';
+  Object.assign(lbl.style, { fontSize: '12px', color: '#9ca3af' });
+  box.appendChild(lbl);
+
+  const desc = document.createElement('textarea');
+  desc.placeholder = 'Describe the bug — what you did, what you expected, what happened instead…';
+  desc.rows = 5;
+  Object.assign(desc.style, {
+    background: '#0f0f14', color: '#cdd6f4', border: '1px solid #3a3a5c',
+    borderRadius: '6px', padding: '8px 10px', fontSize: '12px',
+    fontFamily: 'inherit', resize: 'vertical', outline: 'none', width: '100%',
+    boxSizing: 'border-box',
+  });
+  box.appendChild(desc);
+
+  // Include source checkbox
+  const srcRow = document.createElement('label');
+  Object.assign(srcRow.style, { display: 'flex', alignItems: 'center', gap: '8px',
+    fontSize: '12px', color: '#9ca3af', cursor: 'pointer' });
+  const srcCheck = document.createElement('input');
+  srcCheck.type = 'checkbox';
+  srcCheck.checked = true;
+  srcRow.appendChild(srcCheck);
+  srcRow.appendChild(document.createTextNode('Include current program source'));
+  box.appendChild(srcRow);
+
+  // Buttons
+  const btnRow = document.createElement('div');
+  Object.assign(btnRow.style, { display: 'flex', gap: '8px', justifyContent: 'flex-end' });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  Object.assign(cancelBtn.style, {
+    background: 'none', border: '1px solid #3a3a5c', color: '#6b7280',
+    borderRadius: '5px', padding: '6px 14px', cursor: 'pointer', fontSize: '12px',
+    fontFamily: 'inherit',
+  });
+  cancelBtn.addEventListener('click', () => overlay.remove());
+
+  const sendBtn = document.createElement('button');
+  sendBtn.textContent = 'Open in Email';
+  Object.assign(sendBtn.style, {
+    background: '#1f4d6e', border: '1px solid #60a5fa', color: '#93c5fd',
+    borderRadius: '5px', padding: '6px 14px', cursor: 'pointer', fontSize: '12px',
+    fontFamily: 'inherit', fontWeight: '600',
+  });
+
+  sendBtn.addEventListener('click', () => {
+    const userDesc  = desc.value.trim() || '(no description provided)';
+    const ivxSource = srcCheck.checked && typeof srcEl !== 'undefined'
+      ? srcEl.value.trim() : '';
+    const browserInfo = `Browser: ${navigator.userAgent}`;
+    const ivxVersion  = 'IVX Build v3';
+
+    let body = `Bug Report\n${'─'.repeat(40)}\n\n${userDesc}\n\n`;
+    body += `${browserInfo}\n${ivxVersion}\n`;
+    if (ivxSource) body += `\nProgram Source:\n${'─'.repeat(40)}\n${ivxSource}\n`;
+
+    const subject = encodeURIComponent('IVX Bug Report');
+    const bodyEnc = encodeURIComponent(body);
+    window.location.href = `mailto:iceboltstartup@gmail.com?subject=${subject}&body=${bodyEnc}`;
+    overlay.remove();
+  });
+
+  btnRow.appendChild(cancelBtn);
+  btnRow.appendChild(sendBtn);
+  box.appendChild(btnRow);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  // Close on outside click
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  setTimeout(() => desc.focus(), 50);
 });

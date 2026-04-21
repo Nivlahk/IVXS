@@ -455,18 +455,15 @@ const BUILTIN_DEFS = {
           return String(a).localeCompare(String(b));
         });
       } else {
-        // User-supplied comparator: Array.sort cannot await, so pre-compute
-        // a numeric score for each element by calling fn(item, list[0]) and
-        // sorting by that score. This handles the common case (key extractor).
         const fn = args[1];
-        const scores = await Promise.all(copy.map(async item => {
+        copy.sort(async (a, b) => {
           const env = fn.closure.child();
-          const p0 = fn.params[0];
-          if (p0) env.set(typeof p0 === 'string' ? p0 : p0.name, item);
+          const p0 = fn.params[0]; const p1 = fn.params[1];
+          if (p0) env.set(typeof p0 === 'string' ? p0 : p0.name, a);
+          if (p1) env.set(typeof p1 === 'string' ? p1 : p1.name, b);
           const r = await interp.execBlock(fn.body, env);
           return r?.value ?? 0;
-        }));
-        copy.sort((a, b) => scores[copy.indexOf(a)] - scores[copy.indexOf(b)]);
+        });
       }
       return copy;
     },
@@ -2439,10 +2436,20 @@ class Interpreter {
         };
         if (leftArr && rightArr) {
           const len = Math.min(left.length, right.length);
-          return Array.from({length: len}, (_, i) => applyOp(left[i], right[i]));
+          return Array.from({length: len}, (_, i) => {
+            const a = left[i], b = right[i];
+            // 2D: both elements are rows → recurse element-wise on the rows
+            if (Array.isArray(a) && Array.isArray(b)) {
+              const rowLen = Math.min(a.length, b.length);
+              return Array.from({length: rowLen}, (_, j) => applyOp(a[j], b[j]));
+            }
+            if (Array.isArray(a)) return a.map(v => applyOp(v, b));
+            if (Array.isArray(b)) return b.map(v => applyOp(a, v));
+            return applyOp(a, b);
+          });
         }
-        if (leftArr)  return left.map(v => applyOp(v, right));
-        if (rightArr) return right.map(v => applyOp(left, v));
+        if (leftArr)  return left.map(v => Array.isArray(v) ? v.map(c => applyOp(c, right)) : applyOp(v, right));
+        if (rightArr) return right.map(v => Array.isArray(v) ? v.map(c => applyOp(left, c)) : applyOp(left, v));
       }
     }
 
