@@ -727,22 +727,3 @@ path[data-edge-from]:hover{filter:drop-shadow(0 0 4px #89b4fa);stroke:#89b4fa !i
   color: #4b5563;
   font-family: system-ui, sans-serif;
 }
-/* moved from index.html inline styles */
-#app {
-  opacity: 0;
-  transition: opacity .3s;
-}
-
-#drive-hdr-signed-in {
-  display: none;
-}
-
-#drive-file-list {
-  display: none;
-}
-
-#gc.pui,
-#cp.pui,
-#controls {
-  display: none;
-}
