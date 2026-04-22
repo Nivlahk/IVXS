@@ -2780,36 +2780,7 @@ srcEl.addEventListener('keydown', e => {
   }
 });
 
-
-// Help menu dropdown toggle
-const helpMenuBtn = document.getElementById('help-menu-btn');
-const helpMenu    = document.getElementById('help-menu');
-helpMenuBtn.addEventListener('click', e => {
-  e.stopPropagation();
-  const open = helpMenu.style.display === 'flex';
-  helpMenu.style.display = open ? 'none' : 'flex';
-  helpMenuBtn.classList.toggle('active', !open);
-});
-document.addEventListener('click', e => {
-  if (!helpMenuBtn.contains(e.target) && !helpMenu.contains(e.target)) {
-    helpMenu.style.display = 'none';
-    helpMenuBtn.classList.remove('active');
-  }
-});
-
-document.querySelectorAll('[data-ins]').forEach(function(btn) {
-  btn.addEventListener('click', function handleInsertClick() {
-    const ins = btn.dataset.ins;
-    const s = srcEl.selectionStart, e2 = srcEl.selectionEnd;
-    srcEl.value = srcEl.value.slice(0, s) + ins + srcEl.value.slice(e2);
-    srcEl.selectionStart = srcEl.selectionEnd = s + ins.length;
-    srcEl.focus();
-    updateHighlight();
-    scheduleRender();
-    helpMenu.style.display = 'none';
-    helpMenuBtn.classList.remove('active');
-  });
-});
+// Clear button — help menu and data-ins handled by ivx-demos.js
 document.getElementById('clr').addEventListener('click', function handleClearClick() {
   srcEl.value = '';
   srcEl.focus();

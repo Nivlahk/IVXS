@@ -1,6 +1,6 @@
 // ivx-demos.js — Keyword Demo Panel
 // Replaces the keywords dropdown with animated SVG demos.
-// Depends on: ivx-editor.js (srcEl, updateHighlight, scheduleRender)
+// Depends on: ivx-render.js (srcEl, updateHighlight, scheduleRender)
 // Licensed under the Apache License, Version 2.0
 // Copyright 2026 IVX
 
@@ -22,25 +22,20 @@ const DC = {
 };
 
 // ── SVG helpers ───────────────────────────────────────────────────────────────
-// Build a <tspan fill="…">text</tspan> — escapes & < > safely
 function ts(text, color) {
   const safe = String(text)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
-  return color
-    ? `<tspan fill="${color}">${safe}</tspan>`
-    : `<tspan>${safe}</tspan>`;
+  return color ? `<tspan fill="${color}">${safe}</tspan>` : `<tspan>${safe}</tspan>`;
 }
 
-// A monospace code line at (x,y), optional animation class, optional opacity
 function codeLine(x, y, parts, cls = '') {
   const inner = parts.map(([t, c]) => ts(t, c)).join('');
   const clsAttr = cls ? ` class="${cls}"` : '';
   return `<text x="${x}" y="${y}" font-family="monospace" font-size="12.5"${clsAttr}>${inner}</text>`;
 }
 
-// Standard code panel (left side — dark editor window with traffic lights)
 function codePanel(width = 330, height = 280) {
   return `
     <rect x="20" y="20" width="${width}" height="${height}" rx="6" fill="#12121a" stroke="#2a2a40"/>
@@ -49,7 +44,6 @@ function codePanel(width = 330, height = 280) {
     <circle cx="70" cy="40" r="4" fill="#00e5a0"/>`;
 }
 
-// Standard terminal panel (right side)
 function termPanel(x, y, width, height, label = 'TERMINAL') {
   return `
     <rect x="${x}" y="${y}" width="${width}" height="${height}" rx="6" fill="#0d0d12" stroke="#2a2a40"/>
@@ -57,22 +51,19 @@ function termPanel(x, y, width, height, label = 'TERMINAL') {
     <line x1="${x}" y1="${y + 30}" x2="${x + width}" y2="${y + 30}" stroke="#1e1e2e"/>`;
 }
 
-// Wrap SVG body with a viewBox and font
-function svg(body, vw = 580, vh = 300) {
+// Renamed from 'svg' to 'mkSvg' to avoid collision with ivx-render.js's
+// `const svg = document.getElementById('canvas')`
+function mkSvg(body, vw = 580, vh = 300) {
   return `<svg viewBox="0 0 ${vw} ${vh}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block;font-family:monospace">${body}</svg>`;
 }
 
 // ── Demo definitions ──────────────────────────────────────────────────────────
-// Each entry: { id, label, color, tagline, insert, svgFn }
-//   svgFn() → SVG string (animations restart when the element is replaced)
-
 const IVX_DEMOS = [
-  // ── make ────────────────────────────────────────────────────────────────────
   {
     id: 'make', label: 'make', color: DC.K,
     tagline: 'Assign a value to a variable',
     insert: 'make ',
-    svgFn: () => svg(`
+    svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-mk1{0%,100%{opacity:0}8%,92%{opacity:1}}
         @keyframes ivx-mk2{0%,20%,100%{opacity:0}30%,92%{opacity:1}}
@@ -100,13 +91,11 @@ const IVX_DEMOS = [
       <text x="384" y="218" font-family="monospace" font-size="13" fill="${DC.B}" class="ivx-mk3">yes</text>
     `),
   },
-
-  // ── say ─────────────────────────────────────────────────────────────────────
   {
     id: 'say', label: 'say', color: '#ED8936',
     tagline: 'Print a value to the terminal',
     insert: 'say ',
-    svgFn: () => svg(`
+    svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-sy1{0%,10%,100%{opacity:0}20%,92%{opacity:1}}
         @keyframes ivx-sy2{0%,28%,100%{opacity:0}38%,92%{opacity:1}}
@@ -133,13 +122,11 @@ const IVX_DEMOS = [
       <rect x="384" y="158" width="2" height="13" fill="#ED8936" class="ivx-sycur ivx-sy4"/>
     `),
   },
-
-  // ── take ────────────────────────────────────────────────────────────────────
   {
     id: 'take', label: 'take', color: DC.G,
     tagline: 'Read input from the user',
     insert: 'take ',
-    svgFn: () => svg(`
+    svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-tkp1{0%,8%,100%{opacity:0}16%,92%{opacity:1}}
         @keyframes ivx-tkt1{0%,20%,100%{opacity:0}30%,92%{opacity:1}}
@@ -171,13 +158,11 @@ const IVX_DEMOS = [
       <text x="384" y="154" font-family="monospace" font-size="11" fill="#ED8936" class="ivx-tkout">you are 30</text>
     `),
   },
-
-  // ── give ────────────────────────────────────────────────────────────────────
   {
     id: 'give', label: 'give', color: DC.K,
     tagline: 'Return a value from a function',
     insert: 'give ',
-    svgFn: () => svg(`
+    svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-gvcall{0%,15%,100%{opacity:0}25%,92%{opacity:1}}
         @keyframes ivx-gvr1{0%,30%,100%{opacity:0}42%,92%{opacity:1}}
@@ -201,13 +186,11 @@ const IVX_DEMOS = [
       <text x="384" y="214" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-gvr2">= double(6) = 12</text>
     `),
   },
-
-  // ── if ──────────────────────────────────────────────────────────────────────
   {
     id: 'if', label: 'if', color: '#89b4fa',
     tagline: 'Branch on a condition',
     insert: 'if ',
-    svgFn: () => svg(`
+    svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-ifa{0%,8%,100%{opacity:0}18%,92%{opacity:1}}
         @keyframes ivx-ifb{0%,35%,55%,100%{opacity:0}45%,52%{opacity:1}}
@@ -240,13 +223,11 @@ const IVX_DEMOS = [
       <text x="384" y="248" font-family="monospace" font-size="16" fill="#ED8936" font-weight="bold" class="ivx-ifc">C grade</text>
     `),
   },
-
-  // ── else ────────────────────────────────────────────────────────────────────
   {
     id: 'else', label: 'else', color: '#89b4fa',
     tagline: 'Alternate branch when if is false',
     insert: 'else ',
-    svgFn: () => svg(`
+    svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-ela{0%,10%,100%{opacity:0}20%,92%{opacity:1}}
         @keyframes ivx-elb{0%,40%,100%{opacity:0}50%,92%{opacity:1}}
@@ -269,13 +250,11 @@ const IVX_DEMOS = [
       <text x="384" y="152" font-family="monospace" font-size="22" fill="#ED8936" font-weight="bold" class="ivx-elb">cold</text>
     `),
   },
-
-  // ── loop ────────────────────────────────────────────────────────────────────
   {
     id: 'loop', label: 'loop', color: DC.K,
     tagline: 'Repeat while a condition is true',
     insert: 'loop ',
-    svgFn: () => svg(`
+    svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-lp1{0%,8%,100%{opacity:0}16%,92%{opacity:1}}
         @keyframes ivx-lp2{0%,22%,100%{opacity:0}30%,92%{opacity:1}}
@@ -305,13 +284,11 @@ const IVX_DEMOS = [
       <text x="384" y="230" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-lpdone">loop exits</text>
     `),
   },
-
-  // ── for ─────────────────────────────────────────────────────────────────────
   {
     id: 'for', label: 'for', color: DC.K,
     tagline: 'Iterate over a list — i = value, ii = index',
     insert: 'for ',
-    svgFn: () => svg(`
+    svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-fr1{0%,8%,38%,100%{opacity:0}16%,34%{opacity:1}}
         @keyframes ivx-fr2{0%,38%,68%,100%{opacity:0}46%,64%{opacity:1}}
@@ -343,13 +320,11 @@ const IVX_DEMOS = [
       <text x="464" y="128" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-fr3">blue</text>
     `),
   },
-
-  // ── end ─────────────────────────────────────────────────────────────────────
   {
     id: 'end', label: 'end', color: '#f87171',
     tagline: 'Terminate a flow path early',
     insert: 'end ',
-    svgFn: () => svg(`
+    svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-enstep{0%,8%,100%{opacity:0}16%,92%{opacity:1}}
         @keyframes ivx-enhit{0%,50%,100%{opacity:0}60%,92%{opacity:1}}
@@ -364,7 +339,6 @@ const IVX_DEMOS = [
       ${codeLine(50, 132, [['if', '#89b4fa'], [' num ', DC.V], ['= 9', '#89b4fa']])}
       ${codeLine(64, 156, [['end', '#f87171'], [' say', DC.K], [' "found {num}!"', DC.S]])}
       ${codeLine(50, 180, [['say', DC.K], [' num', DC.V]])}
-      ${codeLine(36, 220, [['note exits entire loop immediately', DC.M]])}
       ${termPanel(370, 20, 190, 260)}
       <text x="384" y="76"  font-family="monospace" font-size="13" fill="#ED8936" class="ivx-enstep">3</text>
       <text x="384" y="100" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-enstep">7</text>
@@ -377,13 +351,11 @@ const IVX_DEMOS = [
       <text x="384" y="216" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-enhit">1 never visited</text>
     `),
   },
-
-  // ── fun ─────────────────────────────────────────────────────────────────────
   {
     id: 'fun', label: 'fun', color: DC.F,
     tagline: 'Define a reusable function',
     insert: 'fun ',
-    svgFn: () => svg(`
+    svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-fncall{0%,15%,100%{opacity:0}25%,92%{opacity:1}}
         @keyframes ivx-fnr1{0%,30%,100%{opacity:0}42%,92%{opacity:1}}
@@ -405,13 +377,11 @@ const IVX_DEMOS = [
       <text x="384" y="210" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-fnr2">greeting overridden</text>
     `),
   },
-
-  // ── class ───────────────────────────────────────────────────────────────────
   {
     id: 'class', label: 'class', color: DC.C,
     tagline: 'Define a blueprint for objects',
     insert: 'class ',
-    svgFn: () => svg(`
+    svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-clinst{0%,18%,100%{opacity:0}28%,92%{opacity:1}}
         @keyframes ivx-clcall{0%,45%,100%{opacity:0}55%,92%{opacity:1}}
@@ -439,13 +409,11 @@ const IVX_DEMOS = [
       <text x="344" y="248" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-clout">10 + 1 + 1 = 12</text>
     `),
   },
-
-  // ── try / err ───────────────────────────────────────────────────────────────
   {
     id: 'try', label: 'try / err', color: '#f59e0b',
     tagline: 'Catch and handle runtime errors',
     insert: 'try\n  \nerr e\n  ',
-    svgFn: () => svg(`
+    svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-tryok{0%,8%,55%,100%{opacity:0}18%,50%{opacity:1}}
         @keyframes ivx-tryerr{0%,58%,100%{opacity:0}68%,94%{opacity:1}}
@@ -467,7 +435,6 @@ const IVX_DEMOS = [
       ${codeLine(36, 160, [['err', '#f87171'], [' msg', DC.V]])}
       ${codeLine(50, 184, [['say', DC.K], [' "Failed: ', DC.S], ['{msg}', DC.V], ['"', DC.S]])}
       ${codeLine(36, 224, [['say', DC.K], [' "done"', DC.S]])}
-      ${codeLine(36, 248, [['note always runs', DC.M]])}
       ${termPanel(370, 20, 190, 260)}
       <text x="384" y="72"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-tryok">✓ fetch ok</text>
       <text x="384" y="90"  font-family="monospace" font-size="11" fill="#ED8936" class="ivx-tryok">{ status: 200 }</text>
@@ -480,13 +447,11 @@ const IVX_DEMOS = [
       <text x="384" y="214" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-trycont2">always runs ↑</text>
     `),
   },
-
-  // ── dot ─────────────────────────────────────────────────────────────────────
   {
     id: 'dot', label: 'dot', color: '#9ca3af',
     tagline: 'Explicit connector — merge branches in the flowchart',
     insert: 'dot\n',
-    svgFn: () => svg(`
+    svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-dtflow{from{stroke-dashoffset:120}60%,100%{stroke-dashoffset:0}}
         @keyframes ivx-dtpulse{0%,100%{r:7;opacity:.6}50%{r:10;opacity:1}}
@@ -501,7 +466,6 @@ const IVX_DEMOS = [
       <line x1="28" y1="166" x2="264" y2="166" stroke="#2a2a3e"/>
       ${codeLine(36, 186, [['dot', '#9ca3af']])}
       ${codeLine(36, 210, [['say', DC.K], [' "either way, done"', DC.S]])}
-      ${codeLine(36, 248, [['note both branches meet here', DC.M]])}
       <g transform="translate(296,20)">
         <rect width="264" height="260" rx="6" fill="#0d0d12" stroke="#2a2a40"/>
         <text x="14" y="23" font-family="monospace" font-size="9" fill="#4b5563" letter-spacing="1">FLOWCHART</text>
@@ -521,13 +485,11 @@ const IVX_DEMOS = [
       </g>
     `),
   },
-
-  // ── wait ────────────────────────────────────────────────────────────────────
   {
     id: 'wait', label: 'wait', color: DC.G,
     tagline: 'Pause or block until a trigger fires',
     insert: 'wait ',
-    svgFn: () => svg(`
+    svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-wtidle{0%,8%,100%{opacity:0}16%,52%{opacity:1}58%{opacity:0}}
         @keyframes ivx-wtfire{0%,55%,100%{opacity:0}65%,92%{opacity:1}}
@@ -555,13 +517,11 @@ const IVX_DEMOS = [
       <text x="350" y="186" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-wtreply">Re: deploy today? → "On it!"</text>
     `),
   },
-
-  // ── ask ─────────────────────────────────────────────────────────────────────
   {
     id: 'ask', label: 'ask', color: DC.A,
     tagline: 'Call an AI model and get a response',
     insert: 'ask gemini ',
-    svgFn: () => svg(`
+    svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-aksend{0%,10%,100%{opacity:0}20%,45%{opacity:1}55%{opacity:0}}
         @keyframes ivx-akd1{0%,25%,100%{opacity:0}35%{opacity:1}50%{opacity:0}}
@@ -594,13 +554,11 @@ const IVX_DEMOS = [
       <text x="352" y="168" font-family="monospace" font-size="10" fill="${DC.D}" class="ivx-akresp">Silicon chips followed…</text>
     `),
   },
-
-  // ── email ───────────────────────────────────────────────────────────────────
   {
     id: 'email', label: 'email', color: DC.G,
     tagline: 'Send an email via Gmail',
     insert: 'email "" subject "" body ',
-    svgFn: () => svg(`
+    svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-emup{0%,15%{opacity:0;transform:translateY(0)}25%{opacity:1;transform:translateY(0)}55%{opacity:1;transform:translateY(-50px)}65%{opacity:0}}
         @keyframes ivx-eminbox{0%,60%,100%{opacity:0}70%,92%{opacity:1}}
@@ -623,13 +581,11 @@ const IVX_DEMOS = [
       <text x="350" y="106" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-eminbox">Thanks for joining us.</text>
     `),
   },
-
-  // ── sheets ──────────────────────────────────────────────────────────────────
   {
     id: 'sheets', label: 'sheets', color: DC.G,
     tagline: 'Read and write Google Sheets',
     insert: 'sheets ',
-    svgFn: () => svg(`
+    svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-shread{0%,8%,100%{opacity:0}18%,92%{opacity:1}}
         @keyframes ivx-shappend{0%,55%,100%{fill:#1a1a26}65%,90%{fill:rgba(74,222,128,0.18)}}
@@ -671,13 +627,11 @@ const IVX_DEMOS = [
       </g>
     `),
   },
-
-  // ── key ─────────────────────────────────────────────────────────────────────
   {
     id: 'key', label: 'key', color: DC.K,
     tagline: 'Set a global API credential',
     insert: 'key ',
-    svgFn: () => svg(`
+    svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-keyr1{0%,20%,100%{opacity:0}30%,92%{opacity:1}}
         @keyframes ivx-keyr2{0%,50%,100%{opacity:0}60%,92%{opacity:1}}
@@ -688,7 +642,6 @@ const IVX_DEMOS = [
       ${codeLine(36, 82,  [['key', DC.K], [' "my-gemini-api-key"', DC.S]])}
       ${codeLine(36, 108, [['make', DC.K], [' r1 ', DC.V], ['ask', DC.A], [' gemini ', DC.D], ['"Hello!"', DC.S]])}
       ${codeLine(36, 134, [['make', DC.K], [' r2 ', DC.V], ['ask', DC.A], [' gemini ', DC.D], ['"Goodbye!"', DC.S]])}
-      ${codeLine(36, 170, [['note key applies to all ask calls below it', DC.M]])}
       ${termPanel(370, 20, 190, 260)}
       <text x="384" y="68"  font-family="monospace" font-size="10" fill="${DC.M}">🔑 credential set</text>
       <text x="384" y="100" font-family="monospace" font-size="12" fill="#ED8936" class="ivx-keyr1">Hello!</text>
@@ -697,13 +650,11 @@ const IVX_DEMOS = [
       <text x="384" y="184" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-keyr2">the same key</text>
     `),
   },
-
-  // ── from … use ──────────────────────────────────────────────────────────────
   {
     id: 'from', label: 'from … use', color: DC.G,
     tagline: 'Import named functions from a URL',
     insert: 'from  use ',
-    svgFn: () => svg(`
+    svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-frimport{0%,10%,100%{opacity:0}20%,92%{opacity:1}}
         @keyframes ivx-fruse{0%,35%,100%{opacity:0}45%,92%{opacity:1}}
@@ -714,7 +665,6 @@ const IVX_DEMOS = [
       ${codeLine(36, 82,  [['from', DC.G], [' https://ivxs.tech/std/math ', '#56b6c2'], ['use', DC.G], [' fibonacci', DC.F]])}
       ${codeLine(36, 108, [['say', DC.K], [' fibonacci', DC.F], ['(10)', DC.D]], 'ivx-frimport')}
       ${codeLine(36, 134, [['say', DC.K], [' fibonacci', DC.F], ['(7)', DC.D]], 'ivx-frimport')}
-      ${codeLine(36, 170, [['note fibonacci is now available as a local function', DC.M]])}
       ${termPanel(400, 20, 160, 200)}
       <text x="414" y="90"  font-family="monospace" font-size="16" fill="#ED8936" class="ivx-fruse">55</text>
       <text x="414" y="120" font-family="monospace" font-size="16" fill="#ED8936" class="ivx-fruse">13</text>
@@ -723,10 +673,9 @@ const IVX_DEMOS = [
   },
 ];
 
-// ── Demo index for O(1) lookup ────────────────────────────────────────────────
+// ── Demo index ────────────────────────────────────────────────────────────────
 const IVX_DEMO_MAP = Object.fromEntries(IVX_DEMOS.map(d => [d.id, d]));
 
-// ── Section layout ────────────────────────────────────────────────────────────
 const IVX_DEMO_SECTIONS = [
   { label: 'Data',         ids: ['make', 'say', 'take', 'give'] },
   { label: 'Control Flow', ids: ['if', 'else', 'loop', 'for', 'end'] },
@@ -734,28 +683,23 @@ const IVX_DEMO_SECTIONS = [
   { label: 'Network & AI', ids: ['ask', 'wait', 'email', 'sheets', 'key', 'from'] },
 ];
 
-// ── Panel state ───────────────────────────────────────────────────────────────
 let _demoPanel = null;
 let _currentDemoId = 'make';
 
-// ── Build the panel DOM (once) ────────────────────────────────────────────────
 function _buildDemoPanel() {
   const panel = document.createElement('div');
   panel.id = 'ivx-demo-panel';
 
-  // Sidebar
   const sidebar = document.createElement('div');
   sidebar.id = 'ivx-demo-sidebar';
 
   IVX_DEMO_SECTIONS.forEach(sec => {
     const secEl = document.createElement('div');
     secEl.className = 'ivx-demo-section';
-
     const lbl = document.createElement('div');
     lbl.className = 'ivx-demo-section-label';
     lbl.textContent = sec.label;
     secEl.appendChild(lbl);
-
     sec.ids.forEach(id => {
       const demo = IVX_DEMO_MAP[id];
       if (!demo) return;
@@ -766,104 +710,84 @@ function _buildDemoPanel() {
       btn.addEventListener('click', () => _selectDemo(id));
       secEl.appendChild(btn);
     });
-
     sidebar.appendChild(secEl);
   });
 
-  // Main area
   const main = document.createElement('div');
   main.id = 'ivx-demo-main';
 
-  // Header row inside main
   const hdr = document.createElement('div');
   hdr.id = 'ivx-demo-hdr';
 
   const titleEl = document.createElement('span');
   titleEl.id = 'ivx-demo-title';
-
   const sep = document.createElement('span');
   sep.id = 'ivx-demo-sep';
-
   const taglineEl = document.createElement('span');
   taglineEl.id = 'ivx-demo-tagline';
 
   const replayBtn = document.createElement('button');
   replayBtn.id = 'ivx-demo-replay';
   replayBtn.textContent = '↺ replay';
-  replayBtn.title = 'Restart animation';
   replayBtn.addEventListener('click', () => _replayDemo());
 
   const insertBtn = document.createElement('button');
   insertBtn.id = 'ivx-demo-insert';
   insertBtn.textContent = '← insert';
-  insertBtn.title = 'Insert this keyword into the editor';
   insertBtn.addEventListener('click', () => _insertDemo());
 
   hdr.append(titleEl, sep, taglineEl, replayBtn, insertBtn);
 
-  // SVG viewport
   const viewport = document.createElement('div');
   viewport.id = 'ivx-demo-viewport';
 
   main.append(hdr, viewport);
   panel.append(sidebar, main);
-
   return panel;
 }
 
-// ── Render a demo into the viewport ──────────────────────────────────────────
 function _renderDemo(id) {
   const demo = IVX_DEMO_MAP[id];
   if (!demo) return;
   _currentDemoId = id;
 
-  // Update header
-  const titleEl  = document.getElementById('ivx-demo-title');
+  const titleEl   = document.getElementById('ivx-demo-title');
   const taglineEl = document.getElementById('ivx-demo-tagline');
-  if (titleEl)  { titleEl.textContent = demo.label; titleEl.style.color = demo.color; }
-  if (taglineEl) taglineEl.textContent = demo.tagline;
+  if (titleEl)   { titleEl.textContent = demo.label; titleEl.style.color = demo.color; }
+  if (taglineEl)   taglineEl.textContent = demo.tagline;
 
-  // Replace SVG — removing and re-inserting restarts CSS animations
   const viewport = document.getElementById('ivx-demo-viewport');
   if (!viewport) return;
   viewport.innerHTML = demo.svgFn();
 
-  // Update sidebar active state
   document.querySelectorAll('.ivx-demo-kw-btn').forEach(btn => {
     const active = btn.dataset.demoId === id;
     btn.classList.toggle('ivx-demo-kw-btn--active', active);
-    btn.style.color = active ? demo.color : '';
+    btn.style.color           = active ? demo.color : '';
     btn.style.borderLeftColor = active ? demo.color : '';
-    btn.style.background = active ? `${demo.color}18` : '';
+    btn.style.background      = active ? `${demo.color}18` : '';
   });
 }
 
-function _selectDemo(id) {
-  _renderDemo(id);
-}
-
-function _replayDemo() {
-  _renderDemo(_currentDemoId);
-}
+function _selectDemo(id) { _renderDemo(id); }
+function _replayDemo()   { _renderDemo(_currentDemoId); }
 
 function _insertDemo() {
   const demo = IVX_DEMO_MAP[_currentDemoId];
   if (!demo || typeof srcEl === 'undefined') return;
-  const s = srcEl.selectionStart;
-  const e = srcEl.selectionEnd;
+  const s = srcEl.selectionStart, e = srcEl.selectionEnd;
   srcEl.value = srcEl.value.slice(0, s) + demo.insert + srcEl.value.slice(e);
   srcEl.selectionStart = srcEl.selectionEnd = s + demo.insert.length;
   srcEl.focus();
   if (typeof updateHighlight === 'function') updateHighlight();
-  if (typeof scheduleRender === 'function') scheduleRender();
+  if (typeof scheduleRender  === 'function') scheduleRender();
   _closePanel();
 }
 
-// ── Open / close ──────────────────────────────────────────────────────────────
 function _openPanel() {
   if (!_demoPanel) {
     _demoPanel = _buildDemoPanel();
-    document.getElementById('ep')?.appendChild(_demoPanel);
+    document.getElementById('ep').appendChild(_demoPanel);
   }
   _demoPanel.style.display = 'flex';
   _renderDemo(_currentDemoId);
@@ -874,30 +798,23 @@ function _closePanel() {
 }
 
 function _togglePanel() {
-  if (!_demoPanel || _demoPanel.style.display === 'none') {
-    _openPanel();
-  } else {
-    _closePanel();
-  }
+  if (!_demoPanel || _demoPanel.style.display === 'none') _openPanel();
+  else _closePanel();
 }
 
-// ── Wire up the existing Keywords button ──────────────────────────────────────
-// Replaces the old help-menu dropdown behaviour entirely.
-(function initDemoPanel() {
+// ── Wire up the Keywords button ───────────────────────────────────────────────
+window.addEventListener('load', function initDemoPanel() {
   const btn = document.getElementById('help-menu-btn');
   const oldMenu = document.getElementById('help-menu');
   if (!btn) return;
 
-  // Hide the old dropdown permanently — we no longer use it
   if (oldMenu) oldMenu.remove();
-  document.querySelectorAll('[data-ins]').forEach(b => b.removeAttribute('data-ins'));
-  // Change button label
-  btn.textContent = 'Keywords';
-  btn.classList.remove('active');
 
-  // Remove all old listeners by cloning the button
+  // Clone to strip any lingering listeners
   const fresh = btn.cloneNode(true);
   btn.parentNode.replaceChild(fresh, btn);
+
+  fresh.textContent = 'Keywords';
 
   fresh.addEventListener('click', e => {
     e.stopPropagation();
@@ -905,7 +822,6 @@ function _togglePanel() {
     fresh.classList.toggle('on', _demoPanel?.style.display !== 'none');
   });
 
-  // Close on outside click
   document.addEventListener('click', e => {
     if (_demoPanel && _demoPanel.style.display !== 'none') {
       if (!_demoPanel.contains(e.target) && e.target !== fresh) {
@@ -914,4 +830,4 @@ function _togglePanel() {
       }
     }
   });
-})();
+});
