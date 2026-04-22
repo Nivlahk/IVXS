@@ -450,10 +450,9 @@
         caveats: null,
         ivxcode: `wait every time "08:00"
   make s sheets "Tasks"
-  make rows s.read("A1:B50")
-  make body ""
+  make rows s.read(A1:B50)
   for rows
-    make body "{body}- {i[0]}: {i[1]}\n"
+    make body "{body?}- {i[0]}: {i[1]}\n"
   email "you@example.com" subject "Daily digest" body body`
       },
       {
@@ -464,7 +463,7 @@
         analysis: "take file.csv hands you a list of dicts, where() filters it, and for iterates — three lines of real logic.",
         caveats: null,
         ivxcode: `take file.csv
-make filtered where(file, "status", "=", "active")
+make filtered where(file.status = "active")
 for row in filtered
   say "{row["name"]} — {row["email"]}"`
       },
@@ -477,8 +476,8 @@ for row in filtered
         caveats: null,
         ivxcode: `make s1 sheets "Customers"
 make s2 sheets "Orders"
-make customers s1.read("A1:C200")
-make orders s2.read("A1:D500")
+make customers s1.read(A1:C200)
+make orders s2.read(A1:D500)
 make merged join(customers, orders, "id", "customer_id")
 for row in merged
   say "{row["name"]}: {row["total"]}"`
@@ -504,10 +503,9 @@ for row in merged
         caveats: null,
         ivxcode: `wait every time "09:00"
   make s sheets "Sales"
-  make data s.read("A1:E100")
-  make total 0
+  make data s.read(A1:E100)
   for row in data
-    make total total + int(row[4])
+    make total? + int(row[4])
   email "boss@example.com" subject "Weekly sales report" body "Total this week: {total}"`
       },
       {
@@ -518,7 +516,7 @@ for row in merged
         analysis: "IVX handles the data transformation naturally. Actual filesystem renaming isn't native, but the record manipulation and output is clean.",
         caveats: "No direct filesystem access — output records to Drive or a sheet instead.",
         ivxcode: `make s sheets "Files"
-make files s.read("A1:B100")
+make files s.read(A1:B100)
 for file in files
   make oldname file[0]
   make newname lower(replace(oldname, " ", "_"))
@@ -559,7 +557,7 @@ wait every time "00:00"
         caveats: null,
         ivxcode: `make src sheets "Source"
 make dst sheets "Destination"
-make data src.read("A1:Z500")
+make data src.read(A1:Z500)
 for row in data
   dst.append(row)
 say "Synced {size(data)} rows"`

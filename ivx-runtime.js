@@ -808,15 +808,29 @@ function tableCompare(left, op, right) {
 
 function tableWhere(args, node) {
   const rows = tableToObjectRows(args[0]);
+
+  // Predicate form: where(table, fn) — fn is an IVXFunction taking a row
+  // This is used when the user passes a lambda: where(table, fun(r) then give r.status = "active")
+  // Note: the parser rewrites where(table.col op value) into positional form at parse time,
+  // so this branch handles explicit lambda predicates passed by the user.
+  if (args.length === 2 && args[1] && typeof args[1] === 'object' && 'body' in args[1]) {
+    // Return rows unevaluated — the async predicate case is handled in evalCall special-casing.
+    // For sync builtins we can't await, so fall through to positional form.
+    // (Async predicate where() is handled separately via the 'where' builtin's async path)
+  }
+
+  // Positional form: where(table, col, op?, value)
+  // This is always what arrives after the parser's _rewriteWhereArg transforms
+  // where(table.col op value) → where(table, "col", "op", value)
   const col = String(args[1] ?? '');
-  if (!col) throw new RuntimeError("where() requires a column name", node?.line);
+  if (!col) throw new RuntimeError("where() requires a column name or predicate", node?.line);
 
   let op = '=';
   let val = NONE;
   if (args.length >= 4) {
     op = String(args[2] ?? '=');
     val = ivxToPlain(args[3]);
-  } else {
+  } else if (args.length === 3) {
     val = ivxToPlain(args[2]);
   }
 
@@ -1584,6 +1598,7 @@ class Interpreter {
       IndexAccess: (node, env) => this._evalIndexAccessExpr(node, env),
       LazyDecl: (node, env) => this._evalLazyDeclExpr(node, env),
       BinOp: (node, env) => this.evalBinOp(node, env),
+      Fetch: (node, env) => this._evalFetchExpr(node, env),
       Post: (node, env) => this._evalPostExpr(node, env),
       UnaryOp: (node, env) => this._evalUnaryOpExpr(node, env),
       Call: (node, env) => this.evalCall(node, env),
@@ -1893,7 +1908,14 @@ class Interpreter {
           const modEnv = this.globals.child();
           const parsed = parse(src);
           await this.execBlock(parsed.ast.body, modEnv);
-          if (node.names && node.names.length > 0) {
+          const imports = node.imports ?? [];
+          if (imports.length > 0) {
+            for (const { name, alias } of imports) {
+              const val = modEnv.get(name);
+              if (val === undefined) throw new RuntimeError(`Module does not export '${name}'`, node.line);
+              env.set(alias, val);
+            }
+          } else if (node.names && node.names.length > 0) {
             for (const name of node.names) {
               const val = modEnv.get(name);
               if (val === undefined) throw new RuntimeError(`Module does not export '${name}'`, node.line);
@@ -1903,6 +1925,7 @@ class Interpreter {
             for (const [k, v] of modEnv.vars) env.set(k, v);
           }
         } catch (e) {
+          if (e instanceof RuntimeError) throw e;
           throw new RuntimeError(`Import failed from ${node.url}: ${e.message}`, node.line);
         }
         break;
@@ -1953,21 +1976,34 @@ class Interpreter {
       }
       sv = parts.join('');
     }
-    if (typeof sv === 'string' && (sv.startsWith('http://') || sv.startsWith('https://'))) {
-      try {
-        const res = await fetch(sv);
-        const ct = res.headers.get('content-type') || '';
-        if (ct.includes('application/json')) return await res.json();
-        return await res.text();
-      } catch (e) {
-        throw new RuntimeError(`fetch failed for ${sv}: ${e.message}`, node.line);
-      }
-    }
+    // String is a plain value. Fetching is explicit via the 'fetch' keyword.
     return sv;
   }
 
   async _evalBoolLit(node) {
     return node.value;
+  }
+
+  // ── fetch <url> — explicit HTTP GET ───────────────────────────────────────
+  async _evalFetchExpr(node, env) {
+    const url = await this.evalExpr(node.url, env);
+    const urlStr = String(url ?? '').trim();
+    if (!urlStr.startsWith('http://') && !urlStr.startsWith('https://')) {
+      throw new RuntimeError(
+        `fetch: expected a URL starting with http:// or https://, got: ${urlStr}`,
+        node.line
+      );
+    }
+    try {
+      const res = await fetch(urlStr);
+      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('application/json')) return await res.json();
+      return await res.text();
+    } catch (e) {
+      if (e instanceof RuntimeError) throw e;
+      throw new RuntimeError(`fetch failed for ${urlStr}: ${e.message}`, node.line);
+    }
   }
 
 
