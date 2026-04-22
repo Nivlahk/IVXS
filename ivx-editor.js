@@ -1,8 +1,13 @@
 // ivx-editor.js — IVX Editor UI
-// Source textarea, syntax highlighting, line numbers, render scheduling
-// Depends on: ivx-core.js, ivx-runtime.js, ivx-render.js
-// Licensed under the Apache License, Version 2.0
-// Copyright 2026 IVX
+// Source editor DOM refs, starter program, render scheduling, _ivxInit,
+// export (SVG/PNG/JSON), syntax highlighting, step controls.
+// Depends on: ivx-render.js (renderGraph, graphBounds, svg, currentGraph,
+//             nodePositions, lastRenderedBlocks, isFirstRender, currentGraph,
+//             highlightNode, startTrace, stopTrace, isVideoPlaying,
+//             updateVideoButton, speedSel),
+//             ivx-parser.js (parseivx)
+// PROPRIETARY AND CONFIDENTIAL
+// Copyright 2026 IVX. All rights reserved.
 
 'use strict';
 
@@ -78,39 +83,7 @@ srcEl.addEventListener('keydown', e => {
   }
 });
 
-// Help menu dropdown toggle
-const helpMenuBtn = document.getElementById('help-menu-btn');
-const helpMenu    = document.getElementById('help-menu');
-
-helpMenuBtn.addEventListener('click', e => {
-  e.stopPropagation();
-  const open = helpMenu.style.display !== 'none';
-  helpMenu.style.display = open ? 'none' : 'flex';
-  helpMenuBtn.classList.toggle('active', !open);
-});
-
-document.addEventListener('click', e => {
-  if (!helpMenuBtn.contains(e.target) && !helpMenu.contains(e.target)) {
-    helpMenu.style.display = 'none';
-    helpMenuBtn.classList.remove('active');
-  }
-});
-
-document.querySelectorAll('[data-ins]').forEach(function(btn) {
-  btn.addEventListener('click', function handleInsertClick() {
-    const ins = btn.dataset.ins;
-    const s = srcEl.selectionStart, e2 = srcEl.selectionEnd;
-    srcEl.value = srcEl.value.slice(0, s) + ins + srcEl.value.slice(e2);
-    srcEl.selectionStart = srcEl.selectionEnd = s + ins.length;
-    srcEl.focus();
-    updateHighlight();
-    scheduleRender();
-    // Close dropdown after inserting
-    helpMenu.style.display = 'none';
-    helpMenuBtn.classList.remove('active');
-  });
-});
-
+// Clear button — help menu and data-ins handled by ivx-demos.js
 document.getElementById('clr').addEventListener('click', function handleClearClick() {
   srcEl.value = '';
   srcEl.focus();
@@ -118,8 +91,174 @@ document.getElementById('clr').addEventListener('click', function handleClearCli
   scheduleRender();
 });
 
+// ── Step controls ─────────────────────────────────────────────────────────────
+let _walkOrder = [], _walkIdx = 0, _stepTimer = null, _stepRunning = false;
+
+function getWalkOrder(graph) {
+  const visited = new Set(), order = [], adj = new Map();
+  for (const e of graph.edges)
+    (adj.get(e.from) ?? (adj.set(e.from, []), adj.get(e.from))).push(e.to);
+  const q = [graph.startNodeId];
+  while (q.length) {
+    const id = q.shift();
+    if (id == null || visited.has(id)) continue;
+    visited.add(id);
+    const n = graph.nodes.find(n => n.id === id);
+    if (n && n.kind !== 'Function') order.push(id);
+    for (const nxt of (adj.get(id) || [])) if (!visited.has(nxt)) q.push(nxt);
+  }
+  return order;
+}
+
+function stepTo(idx) {
+  if (!_walkOrder.length) return;
+  _walkIdx = Math.max(0, Math.min(idx, _walkOrder.length - 1));
+  highlightNode(_walkOrder[_walkIdx], _walkOrder[_walkIdx + 1] ?? null);
+}
+function stepNext() { if (_walkIdx < _walkOrder.length - 1) stepTo(_walkIdx + 1); }
+function stepPrev() { if (_walkIdx > 0) stepTo(_walkIdx - 1); }
+
+function stepStartAuto() {
+  if (_stepRunning) return; _stepRunning = true;
+  const tick = () => {
+    if (!_stepRunning || _walkIdx >= _walkOrder.length - 1) { stepStopAuto(); return; }
+    stepNext();
+    _stepTimer = setTimeout(tick, 300 / (Number(document.getElementById('spd').value) || 1));
+  };
+  tick();
+}
+function stepStopAuto() { _stepRunning = false; clearTimeout(_stepTimer); }
+
+document.getElementById('sprev').addEventListener('click', () => { stepStopAuto(); stepPrev(); });
+document.getElementById('snext').addEventListener('click', () => { stepStopAuto(); stepNext(); });
+document.getElementById('splay').addEventListener('click', stepStartAuto);
+document.getElementById('spause').addEventListener('click', stepStopAuto);
+// ── Comments toggle ──────────────────────────────────────────────────────────
+document.getElementById('cmtbtn').addEventListener('click', function toggleComments() {
+  showComments = !showComments;
+  const cmtBtnEl = document.getElementById('cmtbtn');
+  if (cmtBtnEl) cmtBtnEl.classList.toggle('on', showComments);
+  if (currentGraph) renderGraph(currentGraph);
+});
+
+// ── Called by renderer after load ─────────────────────────────────────────────
+function _ivxInit() {
+  doRender();
+  // Dismiss loading screen
+  const loader = document.getElementById('ivx-loader');
+  const app    = document.getElementById('app');
+  if (loader) {
+    setTimeout(() => {
+      loader.classList.add('done');
+      app.style.opacity = '1';
+      setTimeout(() => loader.remove(), 450);
+    }, 200);
+  } else {
+    app.style.opacity = '1';
+  }
+}
 
 
+// ── Export ────────────────────────────────────────────────────────────────────
+function exportSVG() {
+  const bbox = graphBounds;
+  const pad = 20;
+  // Clone the canvas SVG and set a clean viewBox covering the full graph
+  const clone = svg.cloneNode(true);
+  clone.setAttribute('viewBox', `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad*2} ${bbox.height + pad*2}`);
+  clone.setAttribute('width',  String(bbox.width  + pad*2));
+  clone.setAttribute('height', String(bbox.height + pad*2));
+  clone.style.background = '#0f0f14';
+  // Inline the CSS animation keyframes so the exported SVG is self-contained
+  const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+  style.textContent = `
+    text { font-family: system-ui, sans-serif; font-size: 12px; fill: #eee; }
+    @keyframes flow-a { to { stroke-dashoffset: -18 } }
+    @keyframes flow-b { from { stroke-dashoffset: -9 } to { stroke-dashoffset: -27 } }
+    .flow-a { animation: flow-a .45s linear infinite; }
+    .flow-b { animation: flow-b .45s linear infinite; }
+  `;
+  clone.insertBefore(style, clone.firstChild);
+
+  const meta = document.createElementNS('http://www.w3.org/2000/svg', 'metadata');
+  meta.setAttribute('id', 'ivx-metadata');
+  meta.textContent = JSON.stringify({
+    format: 'ivx.graph.v1',
+    exportedAt: new Date().toISOString(),
+    blocks: lastRenderedBlocks,
+  });
+  clone.insertBefore(meta, clone.firstChild);
+
+  return new XMLSerializer().serializeToString(clone);
+}
+
+function downloadFile(filename, content, mime) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], { type: mime }));
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function exportJSON() {
+  if (!currentGraph) return;
+  const nodeInfo = new Map(currentGraph.nodes.map(n => [n.id, n]));
+  const map = {};
+  for (const node of currentGraph.nodes) {
+    map[node.id] = { type: node.kind, to: [] };
+  }
+  for (const edge of currentGraph.edges) {
+    if (map[edge.from]) {
+      const target = nodeInfo.get(edge.to);
+      map[edge.from].to.push({
+        id: edge.to,
+        type: target ? target.kind : 'Unknown',
+        label: edge.label ?? null
+      });
+    }
+  }
+  const payload = {
+    format: 'ivx.graph.v1',
+    graph: map,
+    blocks: lastRenderedBlocks,
+  };
+  downloadFile('graph.json', JSON.stringify(payload, null, 2), 'application/json');
+}
+
+function exportAsSVG() {
+  downloadFile('graph.svg', exportSVG(), 'image/svg+xml');
+}
+
+function exportAsPNG() {
+  const svgStr = exportSVG();
+  const blob = new Blob([svgStr], { type: 'image/svg+xml' });
+  const url  = URL.createObjectURL(blob);
+  const img  = new Image();
+  const pad  = 20;
+  img.onload = () => {
+    const w = graphBounds.width  + pad*2;
+    const h = graphBounds.height + pad*2;
+    const canvas = document.createElement('canvas');
+    // Render at 2x for crisp export on high-DPI screens
+    canvas.width  = w * 2;
+    canvas.height = h * 2;
+    const ctx2d = canvas.getContext('2d');
+    ctx2d.scale(2, 2);
+    ctx2d.fillStyle = '#0f0f14';
+    ctx2d.fillRect(0, 0, w, h);
+    ctx2d.drawImage(img, 0, 0, w, h);
+    URL.revokeObjectURL(url);
+    canvas.toBlob(b => downloadFile('graph.png', b, 'image/png'), 'image/png');
+  };
+  img.src = url;
+}
+
+document.getElementById('export-btn').addEventListener('click', () => {
+  const fmt = document.getElementById('export-fmt').value;
+  if      (fmt === 'json') exportJSON();
+  else if (fmt === 'svg')  exportAsSVG();
+  else if (fmt === 'png')  exportAsPNG();
+});
 // ── Syntax highlighting ───────────────────────────────────────────────────────
 const hlEl     = document.getElementById('src-hl');
 const gutterEl = document.getElementById('src-gutter-inner');
@@ -351,3 +490,4 @@ srcEl.addEventListener('scroll', () => { srcEl.scrollTop = 0; srcEl.scrollLeft =
 
 srcEl.addEventListener('input', updateHighlight);
 updateHighlight();
+
