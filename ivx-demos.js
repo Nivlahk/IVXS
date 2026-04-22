@@ -1,0 +1,917 @@
+// ivx-demos.js — Keyword Demo Panel
+// Replaces the keywords dropdown with animated SVG demos.
+// Depends on: ivx-editor.js (srcEl, updateHighlight, scheduleRender)
+// Licensed under the Apache License, Version 2.0
+// Copyright 2026 IVX
+
+'use strict';
+
+// ── Colour palette (matches syntax highlighter) ───────────────────────────────
+const DC = {
+  K: '#cba6f7',  // keyword purple
+  V: '#9cdcfe',  // variable blue
+  S: '#ce9178',  // string orange
+  N: '#b5cea8',  // number green
+  B: '#4a7fff',  // boolean blue
+  F: '#c9a227',  // function gold
+  C: '#4ec9b0',  // class teal
+  G: '#4ade80',  // google green
+  A: '#a78bfa',  // AI purple
+  D: '#cdd6f4',  // default text
+  M: '#6b7280',  // muted grey
+};
+
+// ── SVG helpers ───────────────────────────────────────────────────────────────
+// Build a <tspan fill="…">text</tspan> — escapes & < > safely
+function ts(text, color) {
+  const safe = String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  return color
+    ? `<tspan fill="${color}">${safe}</tspan>`
+    : `<tspan>${safe}</tspan>`;
+}
+
+// A monospace code line at (x,y), optional animation class, optional opacity
+function codeLine(x, y, parts, cls = '') {
+  const inner = parts.map(([t, c]) => ts(t, c)).join('');
+  const clsAttr = cls ? ` class="${cls}"` : '';
+  return `<text x="${x}" y="${y}" font-family="monospace" font-size="12.5"${clsAttr}>${inner}</text>`;
+}
+
+// Standard code panel (left side — dark editor window with traffic lights)
+function codePanel(width = 330, height = 280) {
+  return `
+    <rect x="20" y="20" width="${width}" height="${height}" rx="6" fill="#12121a" stroke="#2a2a40"/>
+    <circle cx="40" cy="40" r="4" fill="#e05050"/>
+    <circle cx="55" cy="40" r="4" fill="#f0a030"/>
+    <circle cx="70" cy="40" r="4" fill="#00e5a0"/>`;
+}
+
+// Standard terminal panel (right side)
+function termPanel(x, y, width, height, label = 'TERMINAL') {
+  return `
+    <rect x="${x}" y="${y}" width="${width}" height="${height}" rx="6" fill="#0d0d12" stroke="#2a2a40"/>
+    <text x="${x + 14}" y="${y + 23}" font-family="monospace" font-size="9" fill="#4b5563" letter-spacing="1">${label}</text>
+    <line x1="${x}" y1="${y + 30}" x2="${x + width}" y2="${y + 30}" stroke="#1e1e2e"/>`;
+}
+
+// Wrap SVG body with a viewBox and font
+function svg(body, vw = 580, vh = 300) {
+  return `<svg viewBox="0 0 ${vw} ${vh}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block;font-family:monospace">${body}</svg>`;
+}
+
+// ── Demo definitions ──────────────────────────────────────────────────────────
+// Each entry: { id, label, color, tagline, insert, svgFn }
+//   svgFn() → SVG string (animations restart when the element is replaced)
+
+const IVX_DEMOS = [
+  // ── make ────────────────────────────────────────────────────────────────────
+  {
+    id: 'make', label: 'make', color: DC.K,
+    tagline: 'Assign a value to a variable',
+    insert: 'make ',
+    svgFn: () => svg(`
+      <style>
+        @keyframes ivx-mk1{0%,100%{opacity:0}8%,92%{opacity:1}}
+        @keyframes ivx-mk2{0%,20%,100%{opacity:0}30%,92%{opacity:1}}
+        @keyframes ivx-mk3{0%,42%,100%{opacity:0}52%,92%{opacity:1}}
+        @keyframes ivx-mk4{0%,64%,100%{opacity:0}72%,92%{opacity:1}}
+        .ivx-mk1{animation:ivx-mk1 7s ease infinite}
+        .ivx-mk2{animation:ivx-mk2 7s ease infinite}
+        .ivx-mk3{animation:ivx-mk3 7s ease infinite}
+        .ivx-mk4{animation:ivx-mk4 7s ease infinite}
+      </style>
+      ${codePanel(330, 260)}
+      ${codeLine(36, 82,  [['make ', DC.K], ['name ', DC.V], ['"Alice"', DC.S]])}
+      ${codeLine(36, 108, [['make ', DC.K], ['score ', DC.V], ['42', DC.N]], 'ivx-mk1')}
+      ${codeLine(36, 134, [['make ', DC.K], ['score ', DC.V], ['+ 8', DC.K], ['  note score → 50', DC.M]], 'ivx-mk2')}
+      ${codeLine(36, 160, [['make ', DC.K], ['active ', DC.V], ['yes', DC.B]], 'ivx-mk3')}
+      ${codeLine(36, 186, [['make ', DC.K], ['self', DC.C], ['.', DC.D], ['name ', DC.V], ['"Bob"', DC.S]], 'ivx-mk4')}
+      ${termPanel(370, 20, 190, 260)}
+      <text x="384" y="70"  font-family="monospace" font-size="11" fill="${DC.M}">name =</text>
+      <text x="384" y="86"  font-family="monospace" font-size="13" fill="${DC.S}">"Alice"</text>
+      <text x="384" y="114" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-mk1">score =</text>
+      <text x="384" y="130" font-family="monospace" font-size="13" fill="${DC.N}" class="ivx-mk1">42</text>
+      <text x="384" y="158" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-mk2">score + 8 =</text>
+      <text x="384" y="174" font-family="monospace" font-size="13" fill="${DC.N}" class="ivx-mk2">50</text>
+      <text x="384" y="202" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-mk3">active =</text>
+      <text x="384" y="218" font-family="monospace" font-size="13" fill="${DC.B}" class="ivx-mk3">yes</text>
+    `),
+  },
+
+  // ── say ─────────────────────────────────────────────────────────────────────
+  {
+    id: 'say', label: 'say', color: '#ED8936',
+    tagline: 'Print a value to the terminal',
+    insert: 'say ',
+    svgFn: () => svg(`
+      <style>
+        @keyframes ivx-sy1{0%,10%,100%{opacity:0}20%,92%{opacity:1}}
+        @keyframes ivx-sy2{0%,28%,100%{opacity:0}38%,92%{opacity:1}}
+        @keyframes ivx-sy3{0%,50%,100%{opacity:0}60%,92%{opacity:1}}
+        @keyframes ivx-sy4{0%,70%,100%{opacity:0}78%,92%{opacity:1}}
+        @keyframes ivx-sycur{50%{opacity:0}}
+        .ivx-sy1{animation:ivx-sy1 7s ease infinite}
+        .ivx-sy2{animation:ivx-sy2 7s ease infinite}
+        .ivx-sy3{animation:ivx-sy3 7s ease infinite}
+        .ivx-sy4{animation:ivx-sy4 7s ease infinite}
+        .ivx-sycur{animation:ivx-sycur 1s infinite}
+      </style>
+      ${codePanel(330, 260)}
+      ${codeLine(36, 82,  [['make', DC.K], [' x ', DC.V], ['7', DC.N]])}
+      ${codeLine(36, 108, [['say', '#ED8936'], [' "Hello!"', DC.S]])}
+      ${codeLine(36, 134, [['say', '#ED8936'], [' x', DC.V]])}
+      ${codeLine(36, 160, [['say', '#ED8936'], [' "x is ', DC.S], ['{x}', DC.V], ['"', DC.S]])}
+      ${codeLine(36, 186, [['say', '#ED8936'], [' x ', DC.V], ['* 2', DC.K]])}
+      ${termPanel(370, 20, 190, 260)}
+      <text x="384" y="74"  font-family="monospace" font-size="13" fill="#ED8936" class="ivx-sy1">Hello!</text>
+      <text x="384" y="100" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-sy2">7</text>
+      <text x="384" y="126" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-sy3">x is 7</text>
+      <text x="384" y="152" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-sy4">14</text>
+      <rect x="384" y="158" width="2" height="13" fill="#ED8936" class="ivx-sycur ivx-sy4"/>
+    `),
+  },
+
+  // ── take ────────────────────────────────────────────────────────────────────
+  {
+    id: 'take', label: 'take', color: DC.G,
+    tagline: 'Read input from the user',
+    insert: 'take ',
+    svgFn: () => svg(`
+      <style>
+        @keyframes ivx-tkp1{0%,8%,100%{opacity:0}16%,92%{opacity:1}}
+        @keyframes ivx-tkt1{0%,20%,100%{opacity:0}30%,92%{opacity:1}}
+        @keyframes ivx-tkp2{0%,35%,100%{opacity:0}43%,92%{opacity:1}}
+        @keyframes ivx-tkt2{0%,48%,100%{opacity:0}58%,92%{opacity:1}}
+        @keyframes ivx-tkout{0%,65%,100%{opacity:0}73%,92%{opacity:1}}
+        @keyframes ivx-tkcur{50%{opacity:0}}
+        .ivx-tkp1{animation:ivx-tkp1 8s ease infinite}
+        .ivx-tkt1{animation:ivx-tkt1 8s ease infinite}
+        .ivx-tkp2{animation:ivx-tkp2 8s ease infinite}
+        .ivx-tkt2{animation:ivx-tkt2 8s ease infinite}
+        .ivx-tkout{animation:ivx-tkout 8s ease infinite}
+        .ivx-tkcur{animation:ivx-tkcur 0.8s infinite}
+      </style>
+      ${codePanel(330, 200)}
+      ${codeLine(36, 82,  [['take', DC.G], [' name', DC.V]])}
+      ${codeLine(36, 108, [['take', DC.G], [' int', DC.B], ['(', DC.D], ['age', DC.V], [')', DC.D]])}
+      ${codeLine(36, 134, [['say', DC.K], [' "Hi ', DC.S], ['{name}', DC.V], [', you are ', DC.S], ['{age}', DC.V], ['"', DC.S]])}
+      ${termPanel(370, 20, 190, 260)}
+      <text x="384" y="72"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-tkp1">name ›</text>
+      <rect x="422" y="59" width="120" height="18" rx="3" fill="#1e1e2e" stroke="${DC.G}" stroke-width="0.8" class="ivx-tkp1"/>
+      <text x="428" y="72"  font-family="monospace" font-size="11" fill="${DC.D}" class="ivx-tkt1">Alice</text>
+      <rect x="455" y="61" width="2" height="14" fill="${DC.G}" class="ivx-tkp1 ivx-tkcur"/>
+      <text x="384" y="102" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-tkp2">age ›</text>
+      <rect x="420" y="89" width="120" height="18" rx="3" fill="#1e1e2e" stroke="${DC.G}" stroke-width="0.8" class="ivx-tkp2"/>
+      <text x="426" y="102" font-family="monospace" font-size="11" fill="${DC.D}" class="ivx-tkt2">30</text>
+      <rect x="439" y="91" width="2" height="14" fill="${DC.G}" class="ivx-tkp2 ivx-tkcur"/>
+      <text x="384" y="138" font-family="monospace" font-size="11" fill="#ED8936" class="ivx-tkout">Hi Alice,</text>
+      <text x="384" y="154" font-family="monospace" font-size="11" fill="#ED8936" class="ivx-tkout">you are 30</text>
+    `),
+  },
+
+  // ── give ────────────────────────────────────────────────────────────────────
+  {
+    id: 'give', label: 'give', color: DC.K,
+    tagline: 'Return a value from a function',
+    insert: 'give ',
+    svgFn: () => svg(`
+      <style>
+        @keyframes ivx-gvcall{0%,15%,100%{opacity:0}25%,92%{opacity:1}}
+        @keyframes ivx-gvr1{0%,30%,100%{opacity:0}42%,92%{opacity:1}}
+        @keyframes ivx-gvr2{0%,52%,100%{opacity:0}62%,92%{opacity:1}}
+        .ivx-gvcall{animation:ivx-gvcall 8s ease infinite}
+        .ivx-gvr1{animation:ivx-gvr1 8s ease infinite}
+        .ivx-gvr2{animation:ivx-gvr2 8s ease infinite}
+      </style>
+      ${codePanel(330, 260)}
+      <rect x="28" y="58" width="314" height="74" rx="4" fill="${DC.F}" fill-opacity=".05" stroke="${DC.F}" stroke-opacity=".2"/>
+      ${codeLine(36, 78,  [['fun', DC.F], [' double', DC.F], ['(n)', DC.D]])}
+      ${codeLine(50, 104, [['give', DC.K], [' n ', DC.V], ['* 2', DC.K]])}
+      ${codeLine(36, 148, [['say', DC.K], [' double', DC.F], ['(6)', DC.D]], 'ivx-gvcall')}
+      ${codeLine(36, 174, [['say', DC.K], [' double', DC.F], ['(21)', DC.D]], 'ivx-gvcall')}
+      ${codeLine(36, 200, [['say', DC.K], [' double', DC.F], ['(', DC.D], ['double', DC.F], ['(3))', DC.D]], 'ivx-gvcall')}
+      ${termPanel(370, 20, 190, 260)}
+      <text x="384" y="90"  font-family="monospace" font-size="26" fill="#ED8936" font-weight="bold" class="ivx-gvr1">12</text>
+      <text x="384" y="134" font-family="monospace" font-size="26" fill="#ED8936" font-weight="bold" class="ivx-gvr1">42</text>
+      <text x="384" y="178" font-family="monospace" font-size="26" fill="#ED8936" font-weight="bold" class="ivx-gvr2">12</text>
+      <text x="384" y="200" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-gvr2">double(double(3))</text>
+      <text x="384" y="214" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-gvr2">= double(6) = 12</text>
+    `),
+  },
+
+  // ── if ──────────────────────────────────────────────────────────────────────
+  {
+    id: 'if', label: 'if', color: '#89b4fa',
+    tagline: 'Branch on a condition',
+    insert: 'if ',
+    svgFn: () => svg(`
+      <style>
+        @keyframes ivx-ifa{0%,8%,100%{opacity:0}18%,92%{opacity:1}}
+        @keyframes ivx-ifb{0%,35%,55%,100%{opacity:0}45%,52%{opacity:1}}
+        @keyframes ivx-ifc{0%,60%,100%{opacity:0}70%,92%{opacity:1}}
+        @keyframes ivx-ifhlb{0%,35%,55%,100%{fill:transparent}45%,52%{fill:rgba(137,180,250,0.1)}}
+        @keyframes ivx-ifhlc{0%,60%,100%{fill:transparent}70%,92%{fill:rgba(137,180,250,0.1)}}
+        .ivx-ifa{animation:ivx-ifa 8s ease infinite}
+        .ivx-ifb{animation:ivx-ifb 8s ease infinite}
+        .ivx-ifc{animation:ivx-ifc 8s ease infinite}
+        .ivx-ifhlb{animation:ivx-ifhlb 8s ease infinite}
+        .ivx-ifhlc{animation:ivx-ifhlc 8s ease infinite}
+      </style>
+      ${codePanel(330, 260)}
+      ${codeLine(36, 82,  [['make', DC.K], [' score ', DC.V], ['85', DC.N]])}
+      ${codeLine(36, 108, [['if', '#89b4fa'], [' score ', DC.V], ['>= 90', '#89b4fa']])}
+      ${codeLine(50, 132, [['say', DC.K], [' "A grade"', DC.S]])}
+      <rect x="28" y="142" width="314" height="22" rx="2" class="ivx-ifhlb"/>
+      ${codeLine(36, 158, [['else if', '#89b4fa'], [' score ', DC.V], ['>= 80', '#89b4fa']])}
+      ${codeLine(50, 182, [['say', DC.K], [' "B grade"', DC.S]])}
+      <rect x="28" y="192" width="314" height="22" rx="2" class="ivx-ifhlc"/>
+      ${codeLine(36, 208, [['else', '#89b4fa']])}
+      ${codeLine(50, 232, [['say', DC.K], [' "C grade"', DC.S]])}
+      ${termPanel(370, 20, 190, 260)}
+      <text x="384" y="70"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ifa">score = 85</text>
+      <text x="384" y="88"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ifa">85 ≥ 90? no</text>
+      <text x="384" y="108" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ifb">85 ≥ 80? yes</text>
+      <text x="384" y="148" font-family="monospace" font-size="22" fill="#ED8936" font-weight="bold" class="ivx-ifb">B grade</text>
+      <text x="384" y="196" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ifc">score = 65</text>
+      <text x="384" y="214" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ifc">65 ≥ 80? no →</text>
+      <text x="384" y="248" font-family="monospace" font-size="16" fill="#ED8936" font-weight="bold" class="ivx-ifc">C grade</text>
+    `),
+  },
+
+  // ── else ────────────────────────────────────────────────────────────────────
+  {
+    id: 'else', label: 'else', color: '#89b4fa',
+    tagline: 'Alternate branch when if is false',
+    insert: 'else ',
+    svgFn: () => svg(`
+      <style>
+        @keyframes ivx-ela{0%,10%,100%{opacity:0}20%,92%{opacity:1}}
+        @keyframes ivx-elb{0%,40%,100%{opacity:0}50%,92%{opacity:1}}
+        @keyframes ivx-elhlb{0%,35%,100%{fill:transparent}45%,92%{fill:rgba(137,180,250,0.1)}}
+        .ivx-ela{animation:ivx-ela 7s ease infinite}
+        .ivx-elb{animation:ivx-elb 7s ease infinite}
+        .ivx-elhlb{animation:ivx-elhlb 7s ease infinite}
+      </style>
+      ${codePanel(330, 220)}
+      ${codeLine(36, 82,  [['make', DC.K], [' temp ', DC.V], ['15', DC.N]])}
+      ${codeLine(36, 108, [['if', '#89b4fa'], [' temp ', DC.V], ['> 20', '#89b4fa']])}
+      ${codeLine(50, 132, [['say', DC.K], [' "warm"', DC.S]])}
+      <rect x="28" y="142" width="314" height="22" rx="2" class="ivx-elhlb"/>
+      ${codeLine(36, 158, [['else', '#89b4fa']])}
+      ${codeLine(50, 182, [['say', DC.K], [' "cold"', DC.S]])}
+      ${termPanel(370, 20, 190, 220)}
+      <text x="384" y="70"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ela">temp = 15</text>
+      <text x="384" y="88"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ela">15 &gt; 20? no</text>
+      <text x="384" y="108" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ela">→ else branch</text>
+      <text x="384" y="152" font-family="monospace" font-size="22" fill="#ED8936" font-weight="bold" class="ivx-elb">cold</text>
+    `),
+  },
+
+  // ── loop ────────────────────────────────────────────────────────────────────
+  {
+    id: 'loop', label: 'loop', color: DC.K,
+    tagline: 'Repeat while a condition is true',
+    insert: 'loop ',
+    svgFn: () => svg(`
+      <style>
+        @keyframes ivx-lp1{0%,8%,100%{opacity:0}16%,92%{opacity:1}}
+        @keyframes ivx-lp2{0%,22%,100%{opacity:0}30%,92%{opacity:1}}
+        @keyframes ivx-lp3{0%,36%,100%{opacity:0}44%,92%{opacity:1}}
+        @keyframes ivx-lp4{0%,50%,100%{opacity:0}58%,92%{opacity:1}}
+        @keyframes ivx-lp5{0%,64%,100%{opacity:0}72%,92%{opacity:1}}
+        @keyframes ivx-lpdone{0%,78%,100%{opacity:0}86%,92%{opacity:1}}
+        .ivx-lp1{animation:ivx-lp1 8s ease infinite}
+        .ivx-lp2{animation:ivx-lp2 8s ease infinite}
+        .ivx-lp3{animation:ivx-lp3 8s ease infinite}
+        .ivx-lp4{animation:ivx-lp4 8s ease infinite}
+        .ivx-lp5{animation:ivx-lp5 8s ease infinite}
+        .ivx-lpdone{animation:ivx-lpdone 8s ease infinite}
+      </style>
+      ${codePanel(330, 200)}
+      ${codeLine(36, 82,  [['loop', DC.K], [' count? ', DC.V], ['< 5', '#89b4fa']])}
+      ${codeLine(50, 108, [['say', DC.K], [' count', DC.V]])}
+      ${codeLine(50, 134, [['make', DC.K], [' count ', DC.V], ['+ 1', DC.K]])}
+      ${codeLine(36, 170, [['note count? starts at 0', DC.M]])}
+      ${termPanel(370, 20, 190, 260)}
+      <text x="384" y="74"  font-family="monospace" font-size="16" fill="#ED8936" class="ivx-lp1">0</text>
+      <text x="384" y="100" font-family="monospace" font-size="16" fill="#ED8936" class="ivx-lp2">1</text>
+      <text x="384" y="126" font-family="monospace" font-size="16" fill="#ED8936" class="ivx-lp3">2</text>
+      <text x="384" y="152" font-family="monospace" font-size="16" fill="#ED8936" class="ivx-lp4">3</text>
+      <text x="384" y="178" font-family="monospace" font-size="16" fill="#ED8936" class="ivx-lp5">4</text>
+      <text x="384" y="216" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-lpdone">5 &lt; 5 → false</text>
+      <text x="384" y="230" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-lpdone">loop exits</text>
+    `),
+  },
+
+  // ── for ─────────────────────────────────────────────────────────────────────
+  {
+    id: 'for', label: 'for', color: DC.K,
+    tagline: 'Iterate over a list — i = value, ii = index',
+    insert: 'for ',
+    svgFn: () => svg(`
+      <style>
+        @keyframes ivx-fr1{0%,8%,38%,100%{opacity:0}16%,34%{opacity:1}}
+        @keyframes ivx-fr2{0%,38%,68%,100%{opacity:0}46%,64%{opacity:1}}
+        @keyframes ivx-fr3{0%,68%,92%,100%{opacity:0}76%,90%{opacity:1}}
+        @keyframes ivx-frh1{0%,8%,38%,100%{fill:#1a1a26}16%,34%{fill:rgba(137,180,250,0.18)}}
+        @keyframes ivx-frh2{0%,38%,68%,100%{fill:#1a1a26}46%,64%{fill:rgba(137,180,250,0.18)}}
+        @keyframes ivx-frh3{0%,68%,92%,100%{fill:#1a1a26}76%,90%{fill:rgba(137,180,250,0.18)}}
+        .ivx-fr1{animation:ivx-fr1 9s ease infinite}
+        .ivx-fr2{animation:ivx-fr2 9s ease infinite}
+        .ivx-fr3{animation:ivx-fr3 9s ease infinite}
+        .ivx-frh1{animation:ivx-frh1 9s ease infinite}
+        .ivx-frh2{animation:ivx-frh2 9s ease infinite}
+        .ivx-frh3{animation:ivx-frh3 9s ease infinite}
+      </style>
+      ${codePanel(310, 220)}
+      ${codeLine(36, 82,  [['make', DC.K], [' colors ', DC.V], ['["red","green","blue"]', DC.M]])}
+      ${codeLine(36, 108, [['for', DC.K], [' color ', DC.V], ['in', DC.K], [' colors', DC.V]])}
+      ${codeLine(50, 134, [['say', DC.K], [' color', DC.V]])}
+      ${codeLine(36, 175, [['note i = value, ii = index', DC.M]])}
+      <rect x="330" y="30" width="110" height="26" rx="3" fill="#1a1a2e" stroke="#2a2a3e" class="ivx-frh1"/>
+      <text x="344" y="47" font-family="monospace" font-size="12" fill="${DC.S}">"red"</text>
+      <rect x="330" y="62" width="110" height="26" rx="3" fill="#1a1a2e" stroke="#2a2a3e" class="ivx-frh2"/>
+      <text x="344" y="79" font-family="monospace" font-size="12" fill="${DC.S}">"green"</text>
+      <rect x="330" y="94" width="110" height="26" rx="3" fill="#1a1a2e" stroke="#2a2a3e" class="ivx-frh3"/>
+      <text x="344" y="111" font-family="monospace" font-size="12" fill="${DC.S}">"blue"</text>
+      ${termPanel(450, 20, 110, 220, 'OUT')}
+      <text x="464" y="76"  font-family="monospace" font-size="13" fill="#ED8936" class="ivx-fr1">red</text>
+      <text x="464" y="102" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-fr2">green</text>
+      <text x="464" y="128" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-fr3">blue</text>
+    `),
+  },
+
+  // ── end ─────────────────────────────────────────────────────────────────────
+  {
+    id: 'end', label: 'end', color: '#f87171',
+    tagline: 'Terminate a flow path early',
+    insert: 'end ',
+    svgFn: () => svg(`
+      <style>
+        @keyframes ivx-enstep{0%,8%,100%{opacity:0}16%,92%{opacity:1}}
+        @keyframes ivx-enhit{0%,50%,100%{opacity:0}60%,92%{opacity:1}}
+        @keyframes ivx-enshake{0%,60%,100%{transform:translateX(0)}63%{transform:translateX(-4px)}66%{transform:translateX(4px)}69%{transform:translateX(-3px)}72%{transform:translateX(0)}}
+        .ivx-enstep{animation:ivx-enstep 8s ease infinite}
+        .ivx-enhit{animation:ivx-enhit 8s ease infinite}
+        .ivx-enshake{animation:ivx-enshake 8s ease infinite;transform-origin:455px 170px}
+      </style>
+      ${codePanel(330, 240)}
+      ${codeLine(36, 82,  [['make', DC.K], [' nums ', DC.V], ['[3, 7, 2, 9, 1]', DC.M]])}
+      ${codeLine(36, 108, [['for', DC.K], [' num ', DC.V], ['in', DC.K], [' nums', DC.V]])}
+      ${codeLine(50, 132, [['if', '#89b4fa'], [' num ', DC.V], ['= 9', '#89b4fa']])}
+      ${codeLine(64, 156, [['end', '#f87171'], [' say', DC.K], [' "found {num}!"', DC.S]])}
+      ${codeLine(50, 180, [['say', DC.K], [' num', DC.V]])}
+      ${codeLine(36, 220, [['note exits entire loop immediately', DC.M]])}
+      ${termPanel(370, 20, 190, 260)}
+      <text x="384" y="76"  font-family="monospace" font-size="13" fill="#ED8936" class="ivx-enstep">3</text>
+      <text x="384" y="100" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-enstep">7</text>
+      <text x="384" y="124" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-enstep">2</text>
+      <g class="ivx-enshake">
+        <rect x="372" y="138" width="180" height="30" rx="3" fill="#f87171" fill-opacity=".1" stroke="#f87171" stroke-opacity=".5" class="ivx-enhit"/>
+        <text x="384" y="158" font-family="monospace" font-size="13" fill="#f87171" font-weight="bold" class="ivx-enhit">found 9!</text>
+      </g>
+      <text x="384" y="202" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-enhit">loop stopped —</text>
+      <text x="384" y="216" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-enhit">1 never visited</text>
+    `),
+  },
+
+  // ── fun ─────────────────────────────────────────────────────────────────────
+  {
+    id: 'fun', label: 'fun', color: DC.F,
+    tagline: 'Define a reusable function',
+    insert: 'fun ',
+    svgFn: () => svg(`
+      <style>
+        @keyframes ivx-fncall{0%,15%,100%{opacity:0}25%,92%{opacity:1}}
+        @keyframes ivx-fnr1{0%,30%,100%{opacity:0}42%,92%{opacity:1}}
+        @keyframes ivx-fnr2{0%,52%,100%{opacity:0}62%,92%{opacity:1}}
+        .ivx-fncall{animation:ivx-fncall 8s ease infinite}
+        .ivx-fnr1{animation:ivx-fnr1 8s ease infinite}
+        .ivx-fnr2{animation:ivx-fnr2 8s ease infinite}
+      </style>
+      ${codePanel(330, 260)}
+      <rect x="28" y="58" width="314" height="92" rx="4" fill="${DC.F}" fill-opacity=".05" stroke="${DC.F}" stroke-opacity=".2"/>
+      ${codeLine(36, 78,  [['fun', DC.F], [' greet', DC.F], ['(name, greeting', DC.D], ['? ', DC.K], ['"Hi"', DC.S], [')', DC.D]])}
+      ${codeLine(50, 104, [['give', DC.K], [' "{greeting}, {name}!"', DC.S]])}
+      ${codeLine(50, 128, [['note greeting defaults to "Hi"', DC.M]])}
+      ${codeLine(36, 172, [['say', DC.K], [' greet', DC.F], ['("Alice")', DC.D]], 'ivx-fncall')}
+      ${codeLine(36, 198, [['say', DC.K], [' greet', DC.F], ['("Bob", "Hey")', DC.D]], 'ivx-fncall')}
+      ${termPanel(370, 20, 190, 260)}
+      <text x="384" y="110" font-family="monospace" font-size="17" fill="#ED8936" font-weight="bold" class="ivx-fnr1">Hi, Alice!</text>
+      <text x="384" y="170" font-family="monospace" font-size="17" fill="#ED8936" font-weight="bold" class="ivx-fnr2">Hey, Bob!</text>
+      <text x="384" y="210" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-fnr2">greeting overridden</text>
+    `),
+  },
+
+  // ── class ───────────────────────────────────────────────────────────────────
+  {
+    id: 'class', label: 'class', color: DC.C,
+    tagline: 'Define a blueprint for objects',
+    insert: 'class ',
+    svgFn: () => svg(`
+      <style>
+        @keyframes ivx-clinst{0%,18%,100%{opacity:0}28%,92%{opacity:1}}
+        @keyframes ivx-clcall{0%,45%,100%{opacity:0}55%,92%{opacity:1}}
+        @keyframes ivx-clout{0%,62%,100%{opacity:0}72%,92%{opacity:1}}
+        .ivx-clinst{animation:ivx-clinst 8s ease infinite}
+        .ivx-clcall{animation:ivx-clcall 8s ease infinite}
+        .ivx-clout{animation:ivx-clout 8s ease infinite}
+      </style>
+      ${codePanel(310, 260)}
+      <rect x="28" y="58" width="294" height="182" rx="4" fill="${DC.C}" fill-opacity=".04" stroke="${DC.C}" stroke-opacity=".15"/>
+      ${codeLine(36, 78,  [['class', DC.C], [' Counter', DC.D]])}
+      ${codeLine(50, 100, [['init', DC.F], ['(start', DC.D], ['? ', DC.K], ['0', DC.N], [')', DC.D]])}
+      ${codeLine(50, 122, [['fun', DC.F], [' bump', DC.F], ['()', DC.D]])}
+      ${codeLine(64, 144, [['make', DC.K], [' self', DC.C], ['.', DC.D], ['start ', DC.V], ['+ 1', DC.K]])}
+      ${codeLine(50, 166, [['fun', DC.F], [' value', DC.F], ['()', DC.D]])}
+      ${codeLine(64, 188, [['give', DC.K], [' self', DC.C], ['.', DC.D], ['start', DC.V]])}
+      ${termPanel(330, 20, 240, 260)}
+      <text x="344" y="72"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-clinst">make c Counter(10)</text>
+      <rect x="336" y="80" width="224" height="54" rx="4" fill="#1a1a2e" stroke="#3a3a5c" class="ivx-clinst"/>
+      <text x="348" y="100" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-clinst">start = 10</text>
+      <text x="348" y="120" font-family="monospace" font-size="10" fill="#4b5563" class="ivx-clinst">methods: bump, value</text>
+      <text x="344" y="160" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-clcall">c.bump()  c.bump()</text>
+      <text x="344" y="178" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-clcall">say c.value()</text>
+      <text x="344" y="224" font-family="monospace" font-size="28" fill="#ED8936" font-weight="bold" class="ivx-clout">12</text>
+      <text x="344" y="248" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-clout">10 + 1 + 1 = 12</text>
+    `),
+  },
+
+  // ── try / err ───────────────────────────────────────────────────────────────
+  {
+    id: 'try', label: 'try / err', color: '#f59e0b',
+    tagline: 'Catch and handle runtime errors',
+    insert: 'try\n  \nerr e\n  ',
+    svgFn: () => svg(`
+      <style>
+        @keyframes ivx-tryok{0%,8%,55%,100%{opacity:0}18%,50%{opacity:1}}
+        @keyframes ivx-tryerr{0%,58%,100%{opacity:0}68%,94%{opacity:1}}
+        @keyframes ivx-trycont{0%,30%,100%{opacity:0}40%,92%{opacity:1}}
+        @keyframes ivx-trycont2{0%,80%,100%{opacity:0}88%,94%{opacity:1}}
+        @keyframes ivx-tryshake{0%,68%,100%{transform:translateX(0)}71%{transform:translateX(-4px)}74%{transform:translateX(4px)}77%{transform:translateX(-3px)}80%{transform:translateX(0)}}
+        .ivx-tryok{animation:ivx-tryok 9s ease infinite}
+        .ivx-tryerr{animation:ivx-tryerr 9s ease infinite}
+        .ivx-trycont{animation:ivx-trycont 9s ease infinite}
+        .ivx-trycont2{animation:ivx-trycont2 9s ease infinite}
+        .ivx-tryshake{animation:ivx-tryshake 9s ease infinite;transform-origin:455px 180px}
+      </style>
+      ${codePanel(330, 260)}
+      <rect x="28" y="58" width="6" height="76" rx="3" fill="#f59e0b" fill-opacity=".5"/>
+      ${codeLine(36, 78,  [['try', '#f59e0b']])}
+      ${codeLine(50, 104, [['make', DC.K], [' data ', DC.V], ['https://api.x.com', '#56b6c2']])}
+      ${codeLine(50, 128, [['say', DC.K], [' data', DC.V]])}
+      <rect x="28" y="140" width="6" height="64" rx="3" fill="#f87171" fill-opacity=".5"/>
+      ${codeLine(36, 160, [['err', '#f87171'], [' msg', DC.V]])}
+      ${codeLine(50, 184, [['say', DC.K], [' "Failed: ', DC.S], ['{msg}', DC.V], ['"', DC.S]])}
+      ${codeLine(36, 224, [['say', DC.K], [' "done"', DC.S]])}
+      ${codeLine(36, 248, [['note always runs', DC.M]])}
+      ${termPanel(370, 20, 190, 260)}
+      <text x="384" y="72"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-tryok">✓ fetch ok</text>
+      <text x="384" y="90"  font-family="monospace" font-size="11" fill="#ED8936" class="ivx-tryok">{ status: 200 }</text>
+      <text x="384" y="118" font-family="monospace" font-size="11" fill="#ED8936" class="ivx-trycont">done</text>
+      <g class="ivx-tryshake">
+        <rect x="372" y="140" width="180" height="28" rx="3" fill="#f87171" fill-opacity=".1" stroke="#f87171" stroke-opacity=".5" class="ivx-tryerr"/>
+        <text x="384" y="158" font-family="monospace" font-size="11" fill="#f87171" class="ivx-tryerr">Failed: network error</text>
+      </g>
+      <text x="384" y="196" font-family="monospace" font-size="11" fill="#ED8936" class="ivx-trycont2">done</text>
+      <text x="384" y="214" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-trycont2">always runs ↑</text>
+    `),
+  },
+
+  // ── dot ─────────────────────────────────────────────────────────────────────
+  {
+    id: 'dot', label: 'dot', color: '#9ca3af',
+    tagline: 'Explicit connector — merge branches in the flowchart',
+    insert: 'dot\n',
+    svgFn: () => svg(`
+      <style>
+        @keyframes ivx-dtflow{from{stroke-dashoffset:120}60%,100%{stroke-dashoffset:0}}
+        @keyframes ivx-dtpulse{0%,100%{r:7;opacity:.6}50%{r:10;opacity:1}}
+        .ivx-dtflow{stroke-dasharray:120;animation:ivx-dtflow 3s ease infinite}
+        .ivx-dtpulse{animation:ivx-dtpulse 1.5s ease infinite}
+      </style>
+      ${codePanel(280, 260)}
+      ${codeLine(36, 82,  [['if', '#89b4fa'], [' x ', DC.V], ['> 10', '#89b4fa']])}
+      ${codeLine(50, 106, [['say', DC.K], [' "big"', DC.S]])}
+      ${codeLine(36, 130, [['else', '#89b4fa']])}
+      ${codeLine(50, 154, [['say', DC.K], [' "small"', DC.S]])}
+      <line x1="28" y1="166" x2="264" y2="166" stroke="#2a2a3e"/>
+      ${codeLine(36, 186, [['dot', '#9ca3af']])}
+      ${codeLine(36, 210, [['say', DC.K], [' "either way, done"', DC.S]])}
+      ${codeLine(36, 248, [['note both branches meet here', DC.M]])}
+      <g transform="translate(296,20)">
+        <rect width="264" height="260" rx="6" fill="#0d0d12" stroke="#2a2a40"/>
+        <text x="14" y="23" font-family="monospace" font-size="9" fill="#4b5563" letter-spacing="1">FLOWCHART</text>
+        <line x1="0" y1="30" x2="264" y2="30" stroke="#1e1e2e"/>
+        <polygon points="132,48 172,78 132,108 92,78" fill="#004b8d" stroke="#4a9eff" stroke-width="1.5"/>
+        <text x="132" y="82" font-family="monospace" font-size="9" fill="#fff" text-anchor="middle">x &gt; 10</text>
+        <path d="M 92 78 L 52 138" stroke="#4ade80" stroke-width="1.5" fill="none" class="ivx-dtflow"/>
+        <rect x="14" y="138" width="74" height="22" rx="3" fill="#1e2d3e" stroke="#4ade80" stroke-opacity=".5"/>
+        <text x="51" y="153" font-family="monospace" font-size="9" fill="${DC.D}" text-anchor="middle">"big"</text>
+        <path d="M 172 78 L 212 138" stroke="#f87171" stroke-width="1.5" fill="none" class="ivx-dtflow"/>
+        <rect x="176" y="138" width="74" height="22" rx="3" fill="#1e2d3e" stroke="#f87171" stroke-opacity=".5"/>
+        <text x="213" y="153" font-family="monospace" font-size="9" fill="${DC.D}" text-anchor="middle">"small"</text>
+        <path d="M 51 160 Q 51 200 132 200" stroke="#9ca3af" stroke-width="1.5" fill="none" class="ivx-dtflow"/>
+        <path d="M 213 160 Q 213 200 132 200" stroke="#9ca3af" stroke-width="1.5" fill="none" class="ivx-dtflow"/>
+        <circle cx="132" cy="200" class="ivx-dtpulse" fill="#bbb"/>
+        <text x="132" y="234" font-family="monospace" font-size="9" fill="#6b7280" text-anchor="middle">dot — merge point</text>
+      </g>
+    `),
+  },
+
+  // ── wait ────────────────────────────────────────────────────────────────────
+  {
+    id: 'wait', label: 'wait', color: DC.G,
+    tagline: 'Pause or block until a trigger fires',
+    insert: 'wait ',
+    svgFn: () => svg(`
+      <style>
+        @keyframes ivx-wtidle{0%,8%,100%{opacity:0}16%,52%{opacity:1}58%{opacity:0}}
+        @keyframes ivx-wtfire{0%,55%,100%{opacity:0}65%,92%{opacity:1}}
+        @keyframes ivx-wtrow{0%,55%,100%{fill:#1a1a26}65%,92%{fill:rgba(74,222,128,0.18)}}
+        @keyframes ivx-wtreply{0%,72%,100%{opacity:0}80%,92%{opacity:1}}
+        .ivx-wtidle{animation:ivx-wtidle 9s ease infinite}
+        .ivx-wtfire{animation:ivx-wtfire 9s ease infinite}
+        .ivx-wtrow{animation:ivx-wtrow 9s ease infinite}
+        .ivx-wtreply{animation:ivx-wtreply 9s ease infinite}
+      </style>
+      ${codePanel(310, 250)}
+      ${codeLine(36, 82,  [['wait every', DC.G], [' email', DC.D]])}
+      ${codeLine(50, 104, [['by', DC.K], [' "boss@example.com"', DC.S]])}
+      ${codeLine(50, 128, [['make', DC.K], [' subj ', DC.V], ['request', DC.D], ['["subject"]', DC.M]])}
+      ${codeLine(50, 152, [['email', DC.G], [' "boss@example.com"', DC.S]])}
+      ${codeLine(64, 174, [['subject', DC.M], [' "Re: {subj}"', DC.S]])}
+      ${codeLine(64, 196, [['body', DC.M], [' "On it!"', DC.S]])}
+      ${termPanel(330, 20, 240, 260, 'INBOX')}
+      <text x="344" y="76"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-wtidle">⏳ waiting for email…</text>
+      <rect x="338" y="88"  width="224" height="42" rx="3" class="ivx-wtrow"/>
+      <text x="350" y="106" font-family="monospace" font-size="10" fill="${DC.G}" font-weight="bold" class="ivx-wtfire">From: boss@example.com</text>
+      <text x="350" y="122" font-family="monospace" font-size="10" fill="${DC.D}" class="ivx-wtfire">Subject: deploy today?</text>
+      <rect x="338" y="152" width="224" height="42" rx="3" fill="#1a2e1a" stroke="${DC.G}" stroke-opacity=".5" class="ivx-wtreply"/>
+      <text x="350" y="170" font-family="monospace" font-size="10" fill="${DC.G}" font-weight="bold" class="ivx-wtreply">Auto-reply sent ✓</text>
+      <text x="350" y="186" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-wtreply">Re: deploy today? → "On it!"</text>
+    `),
+  },
+
+  // ── ask ─────────────────────────────────────────────────────────────────────
+  {
+    id: 'ask', label: 'ask', color: DC.A,
+    tagline: 'Call an AI model and get a response',
+    insert: 'ask gemini ',
+    svgFn: () => svg(`
+      <style>
+        @keyframes ivx-aksend{0%,10%,100%{opacity:0}20%,45%{opacity:1}55%{opacity:0}}
+        @keyframes ivx-akd1{0%,25%,100%{opacity:0}35%{opacity:1}50%{opacity:0}}
+        @keyframes ivx-akd2{0%,30%,100%{opacity:0}40%{opacity:1}55%{opacity:0}}
+        @keyframes ivx-akd3{0%,35%,100%{opacity:0}45%{opacity:1}60%{opacity:0}}
+        @keyframes ivx-akresp{0%,55%,100%{opacity:0}65%,92%{opacity:1}}
+        .ivx-aksend{animation:ivx-aksend 8s ease infinite}
+        .ivx-akd1{animation:ivx-akd1 8s ease infinite}
+        .ivx-akd2{animation:ivx-akd2 8s ease infinite}
+        .ivx-akd3{animation:ivx-akd3 8s ease infinite}
+        .ivx-akresp{animation:ivx-akresp 8s ease infinite}
+      </style>
+      ${codePanel(310, 200)}
+      ${codeLine(36, 82,  [['key', DC.K], [' "my-gemini-key"', DC.S]])}
+      ${codeLine(36, 108, [['make', DC.K], [' result ', DC.V], ['ask', DC.A], [' gemini', DC.D]])}
+      ${codeLine(50, 132, [['"Summarise computing history"', DC.S]])}
+      ${codeLine(36, 158, [['say', DC.K], [' result', DC.V]])}
+      ${termPanel(330, 20, 240, 270)}
+      <rect x="342" y="62" width="214" height="24" rx="4" fill="${DC.A}" fill-opacity=".12" stroke="${DC.A}" stroke-opacity=".4" class="ivx-aksend"/>
+      <text x="352" y="77" font-family="monospace" font-size="10" fill="${DC.A}" class="ivx-aksend">Summarise computing history</text>
+      <circle cx="360" cy="108" r="5" fill="${DC.A}" class="ivx-akd1"/>
+      <circle cx="378" cy="108" r="5" fill="${DC.A}" class="ivx-akd2"/>
+      <circle cx="396" cy="108" r="5" fill="${DC.A}" class="ivx-akd3"/>
+      <rect x="342" y="68" width="214" height="118" rx="4" fill="#1a1a2e" stroke="#3a3a5c" class="ivx-akresp"/>
+      <text x="352" y="88"  font-family="monospace" font-size="10" fill="${DC.D}" class="ivx-akresp">Computing began with</text>
+      <text x="352" y="104" font-family="monospace" font-size="10" fill="${DC.D}" class="ivx-akresp">Babbage's Analytical</text>
+      <text x="352" y="120" font-family="monospace" font-size="10" fill="${DC.D}" class="ivx-akresp">Engine in the 1830s.</text>
+      <text x="352" y="136" font-family="monospace" font-size="10" fill="${DC.D}" class="ivx-akresp">ENIAC (1945) was the</text>
+      <text x="352" y="152" font-family="monospace" font-size="10" fill="${DC.D}" class="ivx-akresp">first electronic computer.</text>
+      <text x="352" y="168" font-family="monospace" font-size="10" fill="${DC.D}" class="ivx-akresp">Silicon chips followed…</text>
+    `),
+  },
+
+  // ── email ───────────────────────────────────────────────────────────────────
+  {
+    id: 'email', label: 'email', color: DC.G,
+    tagline: 'Send an email via Gmail',
+    insert: 'email "" subject "" body ',
+    svgFn: () => svg(`
+      <style>
+        @keyframes ivx-emup{0%,15%{opacity:0;transform:translateY(0)}25%{opacity:1;transform:translateY(0)}55%{opacity:1;transform:translateY(-50px)}65%{opacity:0}}
+        @keyframes ivx-eminbox{0%,60%,100%{opacity:0}70%,92%{opacity:1}}
+        .ivx-emup{animation:ivx-emup 7s ease infinite}
+        .ivx-eminbox{animation:ivx-eminbox 7s ease infinite}
+      </style>
+      ${codePanel(310, 220)}
+      ${codeLine(36, 82,  [['make', DC.K], [' to ', DC.V], ['"alice@example.com"', DC.S]])}
+      ${codeLine(36, 108, [['email', DC.G], [' to', DC.V]])}
+      ${codeLine(50, 132, [['subject', DC.M], [' "Welcome!"', DC.S]])}
+      ${codeLine(50, 156, [['body', DC.M], [' "Thanks for joining us."', DC.S]])}
+      <g class="ivx-emup">
+        <rect x="115" y="178" width="150" height="40" rx="4" fill="#1a2e1a" stroke="${DC.G}" stroke-width="1.5"/>
+        <text x="126" y="195" font-family="monospace" font-size="10" fill="${DC.G}" font-weight="bold">Welcome!</text>
+        <text x="126" y="210" font-family="monospace" font-size="9"  fill="${DC.M}">Thanks for joining us.</text>
+      </g>
+      ${termPanel(330, 20, 240, 260, 'INBOX · alice@…')}
+      <rect x="338" y="68" width="224" height="50" rx="4" fill="#1a2e1a" stroke="${DC.G}" stroke-opacity=".6" class="ivx-eminbox"/>
+      <text x="350" y="88"  font-family="monospace" font-size="11" fill="${DC.G}" font-weight="bold" class="ivx-eminbox">Welcome! ✓</text>
+      <text x="350" y="106" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-eminbox">Thanks for joining us.</text>
+    `),
+  },
+
+  // ── sheets ──────────────────────────────────────────────────────────────────
+  {
+    id: 'sheets', label: 'sheets', color: DC.G,
+    tagline: 'Read and write Google Sheets',
+    insert: 'sheets ',
+    svgFn: () => svg(`
+      <style>
+        @keyframes ivx-shread{0%,8%,100%{opacity:0}18%,92%{opacity:1}}
+        @keyframes ivx-shappend{0%,55%,100%{fill:#1a1a26}65%,90%{fill:rgba(74,222,128,0.18)}}
+        @keyframes ivx-shapptext{0%,58%,100%{opacity:0}68%,90%{opacity:1}}
+        .ivx-shread{animation:ivx-shread 8s ease infinite}
+        .ivx-shappend{animation:ivx-shappend 8s ease infinite}
+        .ivx-shapptext{animation:ivx-shapptext 8s ease infinite}
+      </style>
+      ${codePanel(300, 240)}
+      ${codeLine(36, 82,  [['make', DC.K], [' s ', DC.V], ['sheets', DC.G], [' "Sales"', DC.S]])}
+      ${codeLine(36, 106, [['make', DC.K], [' data ', DC.V], ['s', DC.V], ['.read', DC.F], ['("A1:C5")', DC.D]])}
+      ${codeLine(36, 130, [['for', DC.K], [' row ', DC.V], ['in', DC.K], [' data', DC.V]])}
+      ${codeLine(50, 154, [['say', DC.K], [' row', DC.V], ['[0]', DC.M]])}
+      ${codeLine(36, 178, [['s', DC.V], ['.append', DC.F], ['(["Eve", 99, "West"])', DC.D]])}
+      <g transform="translate(316,20)">
+        <rect width="244" height="260" rx="6" fill="#0d0d12" stroke="#2a2a40"/>
+        <text x="14" y="23" font-family="monospace" font-size="9" fill="${DC.G}" letter-spacing="1">Sales</text>
+        <line x1="0" y1="30" x2="244" y2="30" stroke="#1e1e2e"/>
+        <rect x="8" y="36" width="228" height="20" rx="2" fill="#1e3a1e"/>
+        <text x="16" y="50" font-family="monospace" font-size="9" fill="${DC.G}">Name</text>
+        <text x="76" y="50" font-family="monospace" font-size="9" fill="${DC.G}">Sales</text>
+        <text x="126" y="50" font-family="monospace" font-size="9" fill="${DC.G}">Region</text>
+        <rect x="8" y="60" width="228" height="20" rx="2" fill="#1a1a26" class="ivx-shread"/>
+        <text x="16" y="74" font-family="monospace" font-size="9" fill="${DC.D}" class="ivx-shread">Alice</text>
+        <text x="76" y="74" font-family="monospace" font-size="9" fill="${DC.N}" class="ivx-shread">1200</text>
+        <text x="126" y="74" font-family="monospace" font-size="9" fill="${DC.D}" class="ivx-shread">West</text>
+        <rect x="8" y="82" width="228" height="20" rx="2" fill="#1a1a26" class="ivx-shread"/>
+        <text x="16" y="96" font-family="monospace" font-size="9" fill="${DC.D}" class="ivx-shread">Bob</text>
+        <text x="76" y="96" font-family="monospace" font-size="9" fill="${DC.N}" class="ivx-shread">980</text>
+        <text x="126" y="96" font-family="monospace" font-size="9" fill="${DC.D}" class="ivx-shread">East</text>
+        <rect x="8" y="104" width="228" height="20" rx="2" fill="#1a1a26" class="ivx-shread"/>
+        <text x="16" y="118" font-family="monospace" font-size="9" fill="${DC.D}" class="ivx-shread">Carol</text>
+        <text x="76" y="118" font-family="monospace" font-size="9" fill="${DC.N}" class="ivx-shread">1450</text>
+        <text x="126" y="118" font-family="monospace" font-size="9" fill="${DC.D}" class="ivx-shread">West</text>
+        <rect x="8" y="126" width="228" height="20" rx="2" class="ivx-shappend"/>
+        <text x="16"  y="140" font-family="monospace" font-size="9" fill="${DC.G}" class="ivx-shapptext">Eve</text>
+        <text x="76"  y="140" font-family="monospace" font-size="9" fill="${DC.G}" class="ivx-shapptext">99</text>
+        <text x="126" y="140" font-family="monospace" font-size="9" fill="${DC.G}" class="ivx-shapptext">West ← new</text>
+      </g>
+    `),
+  },
+
+  // ── key ─────────────────────────────────────────────────────────────────────
+  {
+    id: 'key', label: 'key', color: DC.K,
+    tagline: 'Set a global API credential',
+    insert: 'key ',
+    svgFn: () => svg(`
+      <style>
+        @keyframes ivx-keyr1{0%,20%,100%{opacity:0}30%,92%{opacity:1}}
+        @keyframes ivx-keyr2{0%,50%,100%{opacity:0}60%,92%{opacity:1}}
+        .ivx-keyr1{animation:ivx-keyr1 7s ease infinite}
+        .ivx-keyr2{animation:ivx-keyr2 7s ease infinite}
+      </style>
+      ${codePanel(330, 200)}
+      ${codeLine(36, 82,  [['key', DC.K], [' "my-gemini-api-key"', DC.S]])}
+      ${codeLine(36, 108, [['make', DC.K], [' r1 ', DC.V], ['ask', DC.A], [' gemini ', DC.D], ['"Hello!"', DC.S]])}
+      ${codeLine(36, 134, [['make', DC.K], [' r2 ', DC.V], ['ask', DC.A], [' gemini ', DC.D], ['"Goodbye!"', DC.S]])}
+      ${codeLine(36, 170, [['note key applies to all ask calls below it', DC.M]])}
+      ${termPanel(370, 20, 190, 260)}
+      <text x="384" y="68"  font-family="monospace" font-size="10" fill="${DC.M}">🔑 credential set</text>
+      <text x="384" y="100" font-family="monospace" font-size="12" fill="#ED8936" class="ivx-keyr1">Hello!</text>
+      <text x="384" y="130" font-family="monospace" font-size="12" fill="#ED8936" class="ivx-keyr2">Goodbye!</text>
+      <text x="384" y="170" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-keyr2">both calls used</text>
+      <text x="384" y="184" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-keyr2">the same key</text>
+    `),
+  },
+
+  // ── from … use ──────────────────────────────────────────────────────────────
+  {
+    id: 'from', label: 'from … use', color: DC.G,
+    tagline: 'Import named functions from a URL',
+    insert: 'from  use ',
+    svgFn: () => svg(`
+      <style>
+        @keyframes ivx-frimport{0%,10%,100%{opacity:0}20%,92%{opacity:1}}
+        @keyframes ivx-fruse{0%,35%,100%{opacity:0}45%,92%{opacity:1}}
+        .ivx-frimport{animation:ivx-frimport 7s ease infinite}
+        .ivx-fruse{animation:ivx-fruse 7s ease infinite}
+      </style>
+      ${codePanel(380, 200)}
+      ${codeLine(36, 82,  [['from', DC.G], [' https://ivxs.tech/std/math ', '#56b6c2'], ['use', DC.G], [' fibonacci', DC.F]])}
+      ${codeLine(36, 108, [['say', DC.K], [' fibonacci', DC.F], ['(10)', DC.D]], 'ivx-frimport')}
+      ${codeLine(36, 134, [['say', DC.K], [' fibonacci', DC.F], ['(7)', DC.D]], 'ivx-frimport')}
+      ${codeLine(36, 170, [['note fibonacci is now available as a local function', DC.M]])}
+      ${termPanel(400, 20, 160, 200)}
+      <text x="414" y="90"  font-family="monospace" font-size="16" fill="#ED8936" class="ivx-fruse">55</text>
+      <text x="414" y="120" font-family="monospace" font-size="16" fill="#ED8936" class="ivx-fruse">13</text>
+      <text x="414" y="156" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-fruse">fib(10), fib(7)</text>
+    `, 580, 220),
+  },
+];
+
+// ── Demo index for O(1) lookup ────────────────────────────────────────────────
+const IVX_DEMO_MAP = Object.fromEntries(IVX_DEMOS.map(d => [d.id, d]));
+
+// ── Section layout ────────────────────────────────────────────────────────────
+const IVX_DEMO_SECTIONS = [
+  { label: 'Data',         ids: ['make', 'say', 'take', 'give'] },
+  { label: 'Control Flow', ids: ['if', 'else', 'loop', 'for', 'end'] },
+  { label: 'Functions',    ids: ['fun', 'class', 'try', 'dot'] },
+  { label: 'Network & AI', ids: ['ask', 'wait', 'email', 'sheets', 'key', 'from'] },
+];
+
+// ── Panel state ───────────────────────────────────────────────────────────────
+let _demoPanel = null;
+let _currentDemoId = 'make';
+
+// ── Build the panel DOM (once) ────────────────────────────────────────────────
+function _buildDemoPanel() {
+  const panel = document.createElement('div');
+  panel.id = 'ivx-demo-panel';
+
+  // Sidebar
+  const sidebar = document.createElement('div');
+  sidebar.id = 'ivx-demo-sidebar';
+
+  IVX_DEMO_SECTIONS.forEach(sec => {
+    const secEl = document.createElement('div');
+    secEl.className = 'ivx-demo-section';
+
+    const lbl = document.createElement('div');
+    lbl.className = 'ivx-demo-section-label';
+    lbl.textContent = sec.label;
+    secEl.appendChild(lbl);
+
+    sec.ids.forEach(id => {
+      const demo = IVX_DEMO_MAP[id];
+      if (!demo) return;
+      const btn = document.createElement('button');
+      btn.className = 'ivx-demo-kw-btn';
+      btn.dataset.demoId = id;
+      btn.textContent = demo.label;
+      btn.addEventListener('click', () => _selectDemo(id));
+      secEl.appendChild(btn);
+    });
+
+    sidebar.appendChild(secEl);
+  });
+
+  // Main area
+  const main = document.createElement('div');
+  main.id = 'ivx-demo-main';
+
+  // Header row inside main
+  const hdr = document.createElement('div');
+  hdr.id = 'ivx-demo-hdr';
+
+  const titleEl = document.createElement('span');
+  titleEl.id = 'ivx-demo-title';
+
+  const sep = document.createElement('span');
+  sep.id = 'ivx-demo-sep';
+
+  const taglineEl = document.createElement('span');
+  taglineEl.id = 'ivx-demo-tagline';
+
+  const replayBtn = document.createElement('button');
+  replayBtn.id = 'ivx-demo-replay';
+  replayBtn.textContent = '↺ replay';
+  replayBtn.title = 'Restart animation';
+  replayBtn.addEventListener('click', () => _replayDemo());
+
+  const insertBtn = document.createElement('button');
+  insertBtn.id = 'ivx-demo-insert';
+  insertBtn.textContent = '← insert';
+  insertBtn.title = 'Insert this keyword into the editor';
+  insertBtn.addEventListener('click', () => _insertDemo());
+
+  hdr.append(titleEl, sep, taglineEl, replayBtn, insertBtn);
+
+  // SVG viewport
+  const viewport = document.createElement('div');
+  viewport.id = 'ivx-demo-viewport';
+
+  main.append(hdr, viewport);
+  panel.append(sidebar, main);
+
+  return panel;
+}
+
+// ── Render a demo into the viewport ──────────────────────────────────────────
+function _renderDemo(id) {
+  const demo = IVX_DEMO_MAP[id];
+  if (!demo) return;
+  _currentDemoId = id;
+
+  // Update header
+  const titleEl  = document.getElementById('ivx-demo-title');
+  const taglineEl = document.getElementById('ivx-demo-tagline');
+  if (titleEl)  { titleEl.textContent = demo.label; titleEl.style.color = demo.color; }
+  if (taglineEl) taglineEl.textContent = demo.tagline;
+
+  // Replace SVG — removing and re-inserting restarts CSS animations
+  const viewport = document.getElementById('ivx-demo-viewport');
+  if (!viewport) return;
+  viewport.innerHTML = demo.svgFn();
+
+  // Update sidebar active state
+  document.querySelectorAll('.ivx-demo-kw-btn').forEach(btn => {
+    const active = btn.dataset.demoId === id;
+    btn.classList.toggle('ivx-demo-kw-btn--active', active);
+    btn.style.color = active ? demo.color : '';
+    btn.style.borderLeftColor = active ? demo.color : '';
+    btn.style.background = active ? `${demo.color}18` : '';
+  });
+}
+
+function _selectDemo(id) {
+  _renderDemo(id);
+}
+
+function _replayDemo() {
+  _renderDemo(_currentDemoId);
+}
+
+function _insertDemo() {
+  const demo = IVX_DEMO_MAP[_currentDemoId];
+  if (!demo || typeof srcEl === 'undefined') return;
+  const s = srcEl.selectionStart;
+  const e = srcEl.selectionEnd;
+  srcEl.value = srcEl.value.slice(0, s) + demo.insert + srcEl.value.slice(e);
+  srcEl.selectionStart = srcEl.selectionEnd = s + demo.insert.length;
+  srcEl.focus();
+  if (typeof updateHighlight === 'function') updateHighlight();
+  if (typeof scheduleRender === 'function') scheduleRender();
+  _closePanel();
+}
+
+// ── Open / close ──────────────────────────────────────────────────────────────
+function _openPanel() {
+  if (!_demoPanel) {
+    _demoPanel = _buildDemoPanel();
+    document.getElementById('ep')?.appendChild(_demoPanel);
+  }
+  _demoPanel.style.display = 'flex';
+  _renderDemo(_currentDemoId);
+}
+
+function _closePanel() {
+  if (_demoPanel) _demoPanel.style.display = 'none';
+}
+
+function _togglePanel() {
+  if (!_demoPanel || _demoPanel.style.display === 'none') {
+    _openPanel();
+  } else {
+    _closePanel();
+  }
+}
+
+// ── Wire up the existing Keywords button ──────────────────────────────────────
+// Replaces the old help-menu dropdown behaviour entirely.
+(function initDemoPanel() {
+  const btn = document.getElementById('help-menu-btn');
+  const oldMenu = document.getElementById('help-menu');
+  if (!btn) return;
+
+  // Hide the old dropdown permanently — we no longer use it
+  if (oldMenu) oldMenu.remove();
+  document.querySelectorAll('[data-ins]').forEach(b => b.removeAttribute('data-ins'));
+  // Change button label
+  btn.textContent = 'Keywords';
+  btn.classList.remove('active');
+
+  // Remove all old listeners by cloning the button
+  const fresh = btn.cloneNode(true);
+  btn.parentNode.replaceChild(fresh, btn);
+
+  fresh.addEventListener('click', e => {
+    e.stopPropagation();
+    _togglePanel();
+    fresh.classList.toggle('on', _demoPanel?.style.display !== 'none');
+  });
+
+  // Close on outside click
+  document.addEventListener('click', e => {
+    if (_demoPanel && _demoPanel.style.display !== 'none') {
+      if (!_demoPanel.contains(e.target) && e.target !== fresh) {
+        _closePanel();
+        fresh.classList.remove('on');
+      }
+    }
+  });
+})();
