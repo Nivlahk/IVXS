@@ -2025,6 +2025,34 @@ class Interpreter {
       if (e instanceof RuntimeError) this.onError(e);
       else throw e;
     }
+
+    // Deploy WaitBlock nodes to Apps Script after execution, so any globals
+    // set by the program (sheet names, addresses, etc.) are available to the
+    // transpiler as baked-in literals.
+    if (typeof AppsScriptTranspiler !== 'undefined' && typeof driveToken !== 'undefined' && driveToken) {
+      const waitBlocks = AppsScriptTranspiler.extractWaitBlocks(parsed.ast);
+      if (waitBlocks.length > 0) {
+        this.onOutput?.('☁ Deploying ' + waitBlocks.length + ' trigger(s) to Apps Script…');
+        try {
+          const programId   = (typeof driveCurrentId   !== 'undefined' ? driveCurrentId   : null);
+          const programName = (typeof driveCurrentName !== 'undefined' ? driveCurrentName : 'untitled');
+          const { scriptId, triggerCount, firstDeploy, setupFnName } = await AppsScriptTranspiler.deploy(
+            waitBlocks,
+            this.globals.vars,
+            driveToken,
+            programId,
+            programName
+          );
+          this.onOutput?.('✓ Deployed ' + triggerCount + ' trigger(s) to Apps Script for “' + programName + '”');
+          if (firstDeploy) {
+            this.onOutput?.('⚠ First deploy for this program: open the Apps Script project, run ' + setupFnName + '() once to install triggers.');
+            this.onOutput?.('  https://script.google.com/home/projects/' + scriptId + '/edit');
+          }
+        } catch (e) {
+          this.onOutput?.('✗ Apps Script deploy failed: ' + (e.message ?? String(e)));
+        }
+      }
+    }
   }
 
   _resolveClassObject(name, env = this.globals) {
@@ -2287,47 +2315,16 @@ class Interpreter {
     return NONE;
   }
 
-  // Returns the string name of an Excel-style cell/col ref if the AST node
-  // is an Identifier matching /^[A-Z]+\d*$/i — e.g. A0, B2, AA, ZZ10.
-  // Returns null for anything else, meaning normal evaluation should proceed.
-  _excelIdentifierString(exprNode) {
-    if (!exprNode || exprNode.type !== 'Identifier') return null;
-    if (/^[A-Za-z]+\d*$/.test(exprNode.name) && /[A-Za-z]/.test(exprNode.name)) {
-      // Must start with letters — pure-digit names are normal variables
-      // Also exclude known loop vars (i, j, k, ii, etc.) when used standalone
-      // with no digits, since those are almost always iteration variables.
-      // But i0, j1, k2 etc. look like cell refs and should be treated as such.
-      const hasDigit = /\d/.test(exprNode.name);
-      const isLoopVar = /^(i{1,3}|j{1,3}|k{1,3})$/.test(exprNode.name);
-      if (hasDigit || !isLoopVar) {
-        return exprNode.name.toUpperCase();
-      }
-    }
-    return null;
-  }
-
   async _resolveIndexSpec(spec, env, node, label, { allowString = false } = {}) {
     if (!spec || spec.omitted) return { omitted: true, isSlice: false, value: null, start: null, end: null };
     if (spec.isSlice) {
-      // For slices, check each bound for Excel-style identifiers before evaluating
-      let startRaw, endRaw;
-      if (spec.start) {
-        const excelStart = this._excelIdentifierString(spec.start);
-        startRaw = excelStart !== null ? excelStart : await this.evalExpr(spec.start, env);
-      } else {
-        startRaw = null;
-      }
-      if (spec.end) {
-        const excelEnd = this._excelIdentifierString(spec.end);
-        endRaw = excelEnd !== null ? excelEnd : await this.evalExpr(spec.end, env);
-      } else {
-        endRaw = null;
-      }
+      const startRaw = spec.start ? await this.evalExpr(spec.start, env) : null;
+      const endRaw = spec.end ? await this.evalExpr(spec.end, env) : null;
 
-      const start = (allowString || typeof startRaw === 'string')
+      const start = allowString && typeof startRaw === 'string'
         ? startRaw
         : this._toSliceBound(startRaw, node, `${label} start`);
-      const end = (allowString || typeof endRaw === 'string')
+      const end = allowString && typeof endRaw === 'string'
         ? endRaw
         : this._toSliceBound(endRaw, node, `${label} end`);
 
@@ -2337,15 +2334,6 @@ class Interpreter {
         start,
         end,
       };
-    }
-
-    // For single index: intercept Excel-style identifiers (A0, B2, AA10, etc.)
-    // so they are treated as cell references on any 2D list, not variable lookups.
-    if (spec.expr) {
-      const excelStr = this._excelIdentifierString(spec.expr);
-      if (excelStr !== null) {
-        return { omitted: false, isSlice: false, value: excelStr, start: null, end: null };
-      }
     }
 
     const raw = spec.expr ? await this.evalExpr(spec.expr, env) : null;
