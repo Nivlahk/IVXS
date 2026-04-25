@@ -661,6 +661,10 @@ function computeBranchInfo(graph, byId, childOf, parentOf) {
 
 function computeLayering(graph, byId) {
   const depth = new Map(graph.nodes.map(n => [n.id, (n.kind==='Start'||n.kind==='Function'||n.kind==='WaitBlock') ? 0 : Infinity]));
+  // Err handler nodes are laid out as side islands (like fun bodies) — exclude from sequential depth
+  for (const n of graph.nodes) {
+    if (n.meta?.includes('error-handler-of')) depth.set(n.id, 0);
+  }
   const fwdEdges = graph.edges.filter(e => { const a=byId.get(e.from),b=byId.get(e.to); return a&&b&&fwd(a,b); });
   for (let pass = 0; pass < 50; pass++) {
     let changed = false;
@@ -675,6 +679,7 @@ function computeLayering(graph, byId) {
     .sort((a,b) => a.line!==b.line ? a.line-b.line : a.segmentIndex!==b.segmentIndex ? a.segmentIndex-b.segmentIndex : a.id-b.id)
     .forEach(n => {
       if (n.kind==='Function' || n.kind==='WaitBlock') depth.set(n.id, 0);
+      else if (n.meta?.includes('error-handler-of')) { /* already set to 0 above */ }
       else if (!isFinite(depth.get(n.id))) depth.set(n.id, fallback++);
     });
   return depth;
@@ -729,6 +734,26 @@ function computeLayout(graph) {
     if (connPos && fromPos) {
       fromPos.centerX = fromPos.x = connPos.centerX - XSTEP;
       fromPos.centerY = fromPos.y = connPos.centerY;
+    }
+  }
+
+  // Err handler nodes: position as a left-side island, like a function body but to the LEFT.
+  // Vertically centered on the Y midpoint of the try body nodes.
+  for (const n of graph.nodes) {
+    const m = n.meta?.match(/error-handler-of=(\d+)/);
+    if (!m) continue;
+    const tryNodeId = parseInt(m[1], 10);
+    const tryNode   = graph.nodes.find(nd => nd.id === tryNodeId);
+    if (!tryNode) continue;
+    const bodyMeta  = tryNode.meta?.match(/try-body=\[([^\]]*)\]/);
+    if (!bodyMeta) continue;
+    const bodyIds   = bodyMeta[1].split(',').map(id => parseInt(id.trim(), 10)).filter(id => !isNaN(id));
+    const bodyYs    = bodyIds.map(id => positions.get(id)?.centerY).filter(v => v != null);
+    const midY      = bodyYs.length ? (Math.min(...bodyYs) + Math.max(...bodyYs)) / 2 : BASEY;
+    const ep        = positions.get(n.id);
+    if (ep) {
+      ep.centerX = ep.x = centerX0 - XSTEP * 2.5;  // left of main column
+      ep.centerY = ep.y = midY;
     }
   }
 
@@ -1253,9 +1278,15 @@ function drawEdge(x1,y1,x2,y2,label,bow=0,fromId,toId) {
 function renderEdges(graph, positions, hidden, extra=[], blockBoxes=[]) {
   const nodeBlock = new Map();
   for (const box of blockBoxes) for (const id of box.group) nodeBlock.set(id,box);
+  // Build set of err handler node ids — their edges aren't drawn as flow edges
+  const errHandlerIds = new Set(
+    graph.nodes.filter(n => n.meta?.includes('error-handler-of')).map(n => n.id)
+  );
   loopBowSign = 1;
   for (const e of [...graph.edges,...extra]) {
     if (hidden.has(e.from)||hidden.has(e.to)) continue;
+    // Skip edges connecting to/from err handler side islands
+    if (errHandlerIds.has(e.from) || errHandlerIds.has(e.to)) continue;
     const bF=nodeBlock.get(e.from), bT=nodeBlock.get(e.to);
     if (bF && bF===bT && bF.collapsed) continue;
     const fp=positions.get(e.from), tp=positions.get(e.to);
@@ -1276,11 +1307,40 @@ function renderTryBrackets(graph, positions, hidden) {
     const fp = positions.get(ids[0]), lp = positions.get(ids[ids.length - 1]);
     if (!fp || !lp) continue;
 
-    const bx  = fp.x - 16;  // 16px left of the node's actual left edge
-    const top = fp.y;
-    const bot = lp.y + (lp.height || 0);
-    el('path', { d: `M ${bx+10} ${top} L ${bx} ${top} L ${bx} ${bot} L ${bx+10} ${bot}`, fill: 'none', stroke: '#f59e0b', 'stroke-width': 1.5, style: 'pointer-events:none;' }, svg);
-    createLabel('try', bx - 22, top + (bot - top) / 2 - 6, 40, null, svg, null, 10, 11, '#f59e0b');
+    // ── { bracket on left of try body ────────────────────────────────────────
+    const pad  = 10;
+    const bx   = fp.x - pad - 10;   // bracket vertical bar X
+    const top  = fp.y - pad;
+    const bot  = lp.y + (lp.height || 40) + pad;
+    const armW = 10;                 // horizontal arm length
+
+    el('path', {
+      d: `M ${bx + armW} ${top} L ${bx} ${top} L ${bx} ${bot} L ${bx + armW} ${bot}`,
+      fill: 'none', stroke: '#f59e0b', 'stroke-width': 1.5,
+      style: 'pointer-events:none;'
+    }, svg);
+
+    // "try" label centred on the bracket
+    const midY = (top + bot) / 2;
+    createLabel('try', bx - 28, midY - 6, 28, null, svg, null, 10, 11, '#f59e0b');
+
+    // ── Dashed arc from bracket midpoint to err handler ───────────────────────
+    const errHandler = graph.nodes.find(n => n.meta?.includes(`error-handler-of=${tryNode.id}`));
+    if (errHandler && !hidden.has(errHandler.id)) {
+      const ep = positions.get(errHandler.id);
+      if (ep) {
+        const ex = ep.centerX + (ep.width || 120) / 2;  // right edge of err node
+        const ey = ep.centerY;
+        // Cubic bezier from bracket midpoint to right edge of err handler
+        const cx1 = bx - 30, cy1 = midY;
+        const cx2 = ex + 30, cy2 = ey;
+        el('path', {
+          d: `M ${bx} ${midY} C ${cx1} ${cy1} ${cx2} ${cy2} ${ex} ${ey}`,
+          fill: 'none', stroke: '#f59e0b', 'stroke-width': 1.2,
+          'stroke-dasharray': '5 3', style: 'pointer-events:none;'
+        }, svg);
+      }
+    }
   }
 }
 
