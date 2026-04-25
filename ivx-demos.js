@@ -677,9 +677,9 @@ const IVX_DEMOS = [
 const IVX_DEMO_MAP = Object.fromEntries(IVX_DEMOS.map(d => [d.id, d]));
 
 const IVX_DEMO_SECTIONS = [
-  { label: 'Data',         ids: ['make', 'say', 'take', 'give'] },
-  { label: 'Control Flow', ids: ['if', 'else', 'loop', 'for', 'end'] },
-  { label: 'Functions',    ids: ['fun', 'class', 'try', 'dot'] },
+  { label: 'Data',         ids: ['make', 'say', 'take'] },
+  { label: 'Control Flow', ids: ['if', 'else', 'loop', 'for', 'end', 'dot', 'try'] },
+  { label: 'Functions',    ids: ['give', 'fun', 'class'] },
   { label: 'Network & AI', ids: ['ask', 'wait', 'email', 'sheets', 'key', 'from'] },
 ];
 
