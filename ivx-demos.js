@@ -57,11 +57,40 @@ function mkSvg(body, vw = 580, vh = 300) {
   return `<svg viewBox="0 0 ${vw} ${vh}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block;font-family:monospace">${body}</svg>`;
 }
 
-// ── Demo definitions ──────────────────────────────────────────────────────────
+// ── Node shape preview ────────────────────────────────────────────────────────
+// Returns an SVG string showing the flowchart node for a keyword
+function nodeShape(kind, label, fill, stroke = '#ccc') {
+  const W = 160, H = 56, cx = W / 2, cy = H / 2;
+  let shape = '';
+  let textY = cy + 4;
+
+  if (kind === 'ellipse') {
+    shape = `<ellipse cx="${cx}" cy="${cy}" rx="${W/2 - 4}" ry="${cy - 4}" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
+  } else if (kind === 'diamond') {
+    shape = `<polygon points="${cx},6 ${W-6},${cy} ${cx},${H-6} 6,${cy}" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
+  } else if (kind === 'parallelogram') {
+    const s = W * 0.1;
+    shape = `<polygon points="6,4 ${W-s},4 ${W-6},${H-4} ${s},${H-4}" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
+  } else if (kind === 'circle') {
+    shape = `<circle cx="${cx}" cy="${cy}" r="14" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
+    textY = cy + 4;
+  } else {
+    // rect
+    shape = `<rect x="6" y="6" width="${W-12}" height="${H-12}" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
+  }
+
+  const text = kind === 'circle' ? '' :
+    `<text x="${cx}" y="${textY}" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="12" fill="#eee">${label}</text>`;
+
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:${W}px;height:${H}px;display:block">${shape}${text}</svg>`;
+}
+
+
 const IVX_DEMOS = [
   {
     id: 'make', label: 'make', color: DC.K,
     tagline: 'Assign a value to a variable',
+    node: () => nodeShape('rect', 'make x 42', '#1e2d3e'),
     insert: 'make ',
     svgFn: () => mkSvg(`
       ${codePanel(330, 240)}
@@ -81,6 +110,7 @@ const IVX_DEMOS = [
   {
     id: 'say', label: 'say', color: '#ED8936',
     tagline: 'Print a value to the terminal',
+    node: () => nodeShape('parallelogram', 'say x', '#ED8936'),
     insert: 'say ',
     svgFn: () => mkSvg(`
       <style>
@@ -112,6 +142,7 @@ const IVX_DEMOS = [
   {
     id: 'take', label: 'take', color: DC.G,
     tagline: 'Read input from the user',
+    node: () => nodeShape('parallelogram', 'take name', '#007f00'),
     insert: 'take ',
     svgFn: () => mkSvg(`
       <style>
@@ -148,6 +179,7 @@ const IVX_DEMOS = [
   {
     id: 'give', label: 'give', color: DC.K,
     tagline: 'Return a value from a function',
+    node: () => nodeShape('ellipse', 'give result', '#92700a'),
     insert: 'give ',
     svgFn: () => mkSvg(`
       <style>
@@ -176,6 +208,7 @@ const IVX_DEMOS = [
   {
     id: 'if', label: 'if', color: '#89b4fa',
     tagline: 'Branch on a condition',
+    node: () => nodeShape('diamond', 'x > 10', '#004b8d'),
     insert: 'if ',
     svgFn: () => mkSvg(`
       <style>
@@ -213,6 +246,7 @@ const IVX_DEMOS = [
   {
     id: 'else', label: 'else', color: '#89b4fa',
     tagline: 'Alternate branch when if is false',
+    node: () => nodeShape('diamond', 'x > 10', '#004b8d'),
     insert: 'else ',
     svgFn: () => mkSvg(`
       <style>
@@ -240,6 +274,7 @@ const IVX_DEMOS = [
   {
     id: 'loop', label: 'loop', color: DC.K,
     tagline: 'Repeat while a condition is true',
+    node: () => nodeShape('diamond', 'count < 5', '#004b8d'),
     insert: 'loop ',
     svgFn: () => mkSvg(`
       <style>
@@ -274,6 +309,7 @@ const IVX_DEMOS = [
   {
     id: 'for', label: 'for', color: DC.K,
     tagline: 'Iterate over a list — i = value, ii = index',
+    node: () => nodeShape('rect', 'for item in list', '#1e2d3e'),
     insert: 'for ',
     svgFn: () => mkSvg(`
       <style>
@@ -310,6 +346,7 @@ const IVX_DEMOS = [
   {
     id: 'end', label: 'end', color: '#f87171',
     tagline: 'Terminate a flow path early',
+    node: () => nodeShape('ellipse', 'END', '#7f0000'),
     insert: 'end ',
     svgFn: () => mkSvg(`
       <style>
@@ -341,6 +378,7 @@ const IVX_DEMOS = [
   {
     id: 'fun', label: 'fun', color: DC.F,
     tagline: 'Define a reusable function',
+    node: () => nodeShape('ellipse', 'greet(name)', '#92700a'),
     insert: 'fun ',
     svgFn: () => mkSvg(`
       <style>
@@ -367,6 +405,7 @@ const IVX_DEMOS = [
   {
     id: 'class', label: 'class', color: DC.C,
     tagline: 'Define a blueprint for objects',
+    node: () => nodeShape('ellipse', 'Counter', '#92700a'),
     insert: 'class ',
     svgFn: () => mkSvg(`
       <style>
@@ -399,6 +438,7 @@ const IVX_DEMOS = [
   {
     id: 'try', label: 'try / err', color: '#f59e0b',
     tagline: 'Catch and handle runtime errors',
+    node: () => nodeShape('rect', 'try', '#1e2d3e', '#f59e0b'),
     insert: 'try\n  \nerr e\n  ',
     svgFn: () => mkSvg(`
       <style>
@@ -437,6 +477,7 @@ const IVX_DEMOS = [
   {
     id: 'dot', label: 'dot', color: '#9ca3af',
     tagline: 'Explicit connector — merge branches in the flowchart',
+    node: () => nodeShape('circle', '', '#bbb'),
     insert: 'dot\n',
     svgFn: () => mkSvg(`
       <style>
@@ -475,6 +516,7 @@ const IVX_DEMOS = [
   {
     id: 'wait', label: 'wait', color: DC.G,
     tagline: 'Pause or block until a trigger fires',
+    node: () => nodeShape('ellipse', 'wait email', '#7c4d00'),
     insert: 'wait ',
     svgFn: () => mkSvg(`
       <style>
@@ -507,6 +549,7 @@ const IVX_DEMOS = [
   {
     id: 'ask', label: 'ask', color: DC.A,
     tagline: 'Call an AI model and get a response',
+    node: () => nodeShape('rect', 'ask gemini', '#1e2d3e'),
     insert: 'ask gemini ',
     svgFn: () => mkSvg(`
       <style>
@@ -544,6 +587,7 @@ const IVX_DEMOS = [
   {
     id: 'email', label: 'email', color: DC.G,
     tagline: 'Send an email via Gmail',
+    node: () => nodeShape('rect', 'email to', '#1e2d3e'),
     insert: 'email "" subject "" body ',
     svgFn: () => mkSvg(`
       <style>
@@ -571,6 +615,7 @@ const IVX_DEMOS = [
   {
     id: 'sheets', label: 'sheets', color: DC.G,
     tagline: 'Read and write Google Sheets',
+    node: () => nodeShape('rect', 'sheets', '#1e2d3e'),
     insert: 'sheets ',
     svgFn: () => mkSvg(`
       <style>
@@ -617,6 +662,7 @@ const IVX_DEMOS = [
   {
     id: 'key', label: 'key', color: DC.K,
     tagline: 'Set a global API credential',
+    node: () => nodeShape('rect', 'key', '#1e2d3e'),
     insert: 'key ',
     svgFn: () => mkSvg(`
       <style>
@@ -640,6 +686,7 @@ const IVX_DEMOS = [
   {
     id: 'from', label: 'from … use', color: DC.G,
     tagline: 'Import and alias functions from a URL',
+    node: () => nodeShape('ellipse', 'from url', '#007f00'),
     insert: 'from \n  use  as \n  use  as ',
     svgFn: () => mkSvg(`
       <style>
@@ -676,6 +723,7 @@ const IVX_DEMOS = [
   {
     id: 'type-string', label: 'string', color: '#ce9178',
     tagline: 'Text in double quotes — supports interpolation with {var}',
+    node: () => nodeShape('rect', '"Hello"', '#1e2d3e'),
     insert: '"" ',
     svgFn: () => {
       const body = `
@@ -706,6 +754,7 @@ const IVX_DEMOS = [
   {
     id: 'type-integer', label: 'integer', color: '#b5cea8',
     tagline: 'Whole numbers — + - * // % ^ and comparisons',
+    node: () => nodeShape('rect', '42', '#1e2d3e'),
     insert: '0',
     svgFn: () => {
       const body = `
@@ -735,6 +784,7 @@ const IVX_DEMOS = [
   {
     id: 'type-float', label: 'float', color: '#14b8a6',
     tagline: 'Decimal numbers — use flt() to convert, / always gives float',
+    node: () => nodeShape('rect', '3.14', '#1e2d3e'),
     insert: '0.0',
     svgFn: () => {
       const body = `
@@ -761,6 +811,7 @@ const IVX_DEMOS = [
   {
     id: 'type-boolean', label: 'boolean', color: '#4a7fff',
     tagline: 'yes or no — combine with and, or, not',
+    node: () => nodeShape('rect', 'yes / no', '#1e2d3e'),
     insert: 'yes',
     svgFn: () => {
       const body = `
@@ -787,6 +838,7 @@ const IVX_DEMOS = [
   {
     id: 'type-none', label: 'none', color: '#ef4444',
     tagline: 'The absence of a value — test with = none',
+    node: () => nodeShape('rect', 'none', '#1e2d3e'),
     insert: 'none',
     svgFn: () => {
       const body = `
@@ -811,6 +863,7 @@ const IVX_DEMOS = [
   {
     id: 'type-list', label: 'list', color: '#9ca3af',
     tagline: 'Ordered collection — index with [n], iterate with for',
+    node: () => nodeShape('rect', '[1, 2, 3]', '#1e2d3e'),
     insert: '[]',
     svgFn: () => {
       const body = `
@@ -836,6 +889,7 @@ const IVX_DEMOS = [
   {
     id: 'type-dict', label: 'dict', color: '#7a4d2e',
     tagline: 'Key-value pairs — access with ["key"], check with in',
+    node: () => nodeShape('rect', '{key: val}', '#1e2d3e'),
     insert: '{}',
     svgFn: () => {
       const pairs = '{"name": "Alice", "age": 30}';
@@ -927,10 +981,22 @@ function _buildDemoPanel() {
 
   hdr.append(titleEl, sep, taglineEl, replayBtn, insertBtn);
 
+  const nodeStrip = document.createElement('div');
+  nodeStrip.id = 'ivx-demo-node-strip';
+
+  const nodeLabel = document.createElement('div');
+  nodeLabel.id = 'ivx-demo-node-label';
+  nodeLabel.textContent = 'flowchart node';
+
+  const nodeEl = document.createElement('div');
+  nodeEl.id = 'ivx-demo-node';
+
+  nodeStrip.append(nodeLabel, nodeEl);
+
   const viewport = document.createElement('div');
   viewport.id = 'ivx-demo-viewport';
 
-  main.append(hdr, viewport);
+  main.append(hdr, nodeStrip, viewport);
   panel.append(sidebar, main);
   return panel;
 }
@@ -944,6 +1010,14 @@ function _renderDemo(id) {
   const taglineEl = document.getElementById('ivx-demo-tagline');
   if (titleEl)   { titleEl.textContent = demo.label; titleEl.style.color = demo.color; }
   if (taglineEl)   taglineEl.textContent = demo.tagline;
+
+  // Node shape preview
+  const nodeEl = document.getElementById('ivx-demo-node');
+  if (nodeEl && demo.node) {
+    nodeEl.innerHTML = demo.node();
+  } else if (nodeEl) {
+    nodeEl.innerHTML = '';
+  }
 
   const viewport = document.getElementById('ivx-demo-viewport');
   if (!viewport) return;

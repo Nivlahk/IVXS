@@ -405,3 +405,28 @@
   #ivx-ex-analysis { display: none; }
   #ivx-ex-title { max-width: 180px; }
 }
+
+/* ── Node shape preview strip ─────────────────────────────────────────────── */
+#ivx-demo-node-strip {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #1a1a2e;
+  background: #080810;
+  flex-shrink: 0;
+}
+
+#ivx-demo-node-label {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 9px;
+  color: #374151;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+#ivx-demo-node {
+  display: flex;
+  align-items: center;
+}
