@@ -808,29 +808,15 @@ function tableCompare(left, op, right) {
 
 function tableWhere(args, node) {
   const rows = tableToObjectRows(args[0]);
-
-  // Predicate form: where(table, fn) — fn is an IVXFunction taking a row
-  // This is used when the user passes a lambda: where(table, fun(r) then give r.status = "active")
-  // Note: the parser rewrites where(table.col op value) into positional form at parse time,
-  // so this branch handles explicit lambda predicates passed by the user.
-  if (args.length === 2 && args[1] && typeof args[1] === 'object' && 'body' in args[1]) {
-    // Return rows unevaluated — the async predicate case is handled in evalCall special-casing.
-    // For sync builtins we can't await, so fall through to positional form.
-    // (Async predicate where() is handled separately via the 'where' builtin's async path)
-  }
-
-  // Positional form: where(table, col, op?, value)
-  // This is always what arrives after the parser's _rewriteWhereArg transforms
-  // where(table.col op value) → where(table, "col", "op", value)
   const col = String(args[1] ?? '');
-  if (!col) throw new RuntimeError("where() requires a column name or predicate", node?.line);
+  if (!col) throw new RuntimeError("where() requires a column name", node?.line);
 
   let op = '=';
   let val = NONE;
   if (args.length >= 4) {
     op = String(args[2] ?? '=');
     val = ivxToPlain(args[3]);
-  } else if (args.length === 3) {
+  } else {
     val = ivxToPlain(args[2]);
   }
 
@@ -1598,7 +1584,6 @@ class Interpreter {
       IndexAccess: (node, env) => this._evalIndexAccessExpr(node, env),
       LazyDecl: (node, env) => this._evalLazyDeclExpr(node, env),
       BinOp: (node, env) => this.evalBinOp(node, env),
-      Fetch: (node, env) => this._evalFetchExpr(node, env),
       Post: (node, env) => this._evalPostExpr(node, env),
       UnaryOp: (node, env) => this._evalUnaryOpExpr(node, env),
       Call: (node, env) => this.evalCall(node, env),
@@ -1622,7 +1607,7 @@ class Interpreter {
   // ── Execute a single statement ────────────────────────────────────────────
   async execStmt(node, env) {
     // Fire onStep so the renderer can highlight the active node
-    if (this.onStep && node.line != null) this.onStep(node.line);
+    if (this.onStep && node.line != null) await this.onStep(node.line);
     switch (node.type) {
 
       case 'Assign': {
@@ -1799,7 +1784,7 @@ class Interpreter {
         let iters = 0;
         while (true) {
           // Re-fire onStep so the Decision node highlights on every iteration
-          if (this.onStep && node.line != null) this.onStep(node.line);
+          if (this.onStep && node.line != null) await this.onStep(node.line);
           const cond = await this.evalExpr(node.condition, env);
           if (!isTruthy(cond)) break;
           if (++iters > this.maxIterations) {
@@ -1827,7 +1812,7 @@ class Interpreter {
         let iters = 0;
         for (const [primary, secondary] of entries) {
           // Re-fire onStep so the Decision node highlights on every iteration
-          if (this.onStep && node.line != null) this.onStep(node.line);
+          if (this.onStep && node.line != null) await this.onStep(node.line);
           if (++iters > this.maxIterations) {
             throw new RuntimeError('For loop exceeded maximum iterations', node.line);
           }
@@ -1908,14 +1893,7 @@ class Interpreter {
           const modEnv = this.globals.child();
           const parsed = parse(src);
           await this.execBlock(parsed.ast.body, modEnv);
-          const imports = node.imports ?? [];
-          if (imports.length > 0) {
-            for (const { name, alias } of imports) {
-              const val = modEnv.get(name);
-              if (val === undefined) throw new RuntimeError(`Module does not export '${name}'`, node.line);
-              env.set(alias, val);
-            }
-          } else if (node.names && node.names.length > 0) {
+          if (node.names && node.names.length > 0) {
             for (const name of node.names) {
               const val = modEnv.get(name);
               if (val === undefined) throw new RuntimeError(`Module does not export '${name}'`, node.line);
@@ -1925,7 +1903,6 @@ class Interpreter {
             for (const [k, v] of modEnv.vars) env.set(k, v);
           }
         } catch (e) {
-          if (e instanceof RuntimeError) throw e;
           throw new RuntimeError(`Import failed from ${node.url}: ${e.message}`, node.line);
         }
         break;
@@ -1976,34 +1953,21 @@ class Interpreter {
       }
       sv = parts.join('');
     }
-    // String is a plain value. Fetching is explicit via the 'fetch' keyword.
+    if (typeof sv === 'string' && (sv.startsWith('http://') || sv.startsWith('https://'))) {
+      try {
+        const res = await fetch(sv);
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) return await res.json();
+        return await res.text();
+      } catch (e) {
+        throw new RuntimeError(`fetch failed for ${sv}: ${e.message}`, node.line);
+      }
+    }
     return sv;
   }
 
   async _evalBoolLit(node) {
     return node.value;
-  }
-
-  // ── fetch <url> — explicit HTTP GET ───────────────────────────────────────
-  async _evalFetchExpr(node, env) {
-    const url = await this.evalExpr(node.url, env);
-    const urlStr = String(url ?? '').trim();
-    if (!urlStr.startsWith('http://') && !urlStr.startsWith('https://')) {
-      throw new RuntimeError(
-        `fetch: expected a URL starting with http:// or https://, got: ${urlStr}`,
-        node.line
-      );
-    }
-    try {
-      const res = await fetch(urlStr);
-      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
-      const ct = res.headers.get('content-type') || '';
-      if (ct.includes('application/json')) return await res.json();
-      return await res.text();
-    } catch (e) {
-      if (e instanceof RuntimeError) throw e;
-      throw new RuntimeError(`fetch failed for ${urlStr}: ${e.message}`, node.line);
-    }
   }
 
 
@@ -2024,34 +1988,6 @@ class Interpreter {
     } catch (e) {
       if (e instanceof RuntimeError) this.onError(e);
       else throw e;
-    }
-
-    // Deploy WaitBlock nodes to Apps Script after execution, so any globals
-    // set by the program (sheet names, addresses, etc.) are available to the
-    // transpiler as baked-in literals.
-    if (typeof AppsScriptTranspiler !== 'undefined' && typeof driveToken !== 'undefined' && driveToken) {
-      const waitBlocks = AppsScriptTranspiler.extractWaitBlocks(parsed.ast);
-      if (waitBlocks.length > 0) {
-        this.onOutput?.('☁ Deploying ' + waitBlocks.length + ' trigger(s) to Apps Script…');
-        try {
-          const programId   = (typeof driveCurrentId   !== 'undefined' ? driveCurrentId   : null);
-          const programName = (typeof driveCurrentName !== 'undefined' ? driveCurrentName : 'untitled');
-          const { scriptId, triggerCount, firstDeploy, setupFnName } = await AppsScriptTranspiler.deploy(
-            waitBlocks,
-            this.globals.vars,
-            driveToken,
-            programId,
-            programName
-          );
-          this.onOutput?.('✓ Deployed ' + triggerCount + ' trigger(s) to Apps Script for “' + programName + '”');
-          if (firstDeploy) {
-            this.onOutput?.('⚠ First deploy for this program: open the Apps Script project, run ' + setupFnName + '() once to install triggers.');
-            this.onOutput?.('  https://script.google.com/home/projects/' + scriptId + '/edit');
-          }
-        } catch (e) {
-          this.onOutput?.('✗ Apps Script deploy failed: ' + (e.message ?? String(e)));
-        }
-      }
     }
   }
 

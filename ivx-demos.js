@@ -90,7 +90,12 @@ const IVX_DEMOS = [
   {
     id: 'make', label: 'make', color: DC.K,
     tagline: 'Assign a value to a variable',
-    node: () => nodeShape('rect', 'make x 42', '#1e2d3e'),
+    node: () => `<svg viewBox="0 0 160 64" xmlns="http://www.w3.org/2000/svg" style="width:160px;height:64px;display:block">
+      <rect x="40" y="6"  width="80" height="18" rx="4" fill="#1a3a5c" stroke="#ccc" stroke-width="1"/>
+      <text x="80" y="18" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="11" font-weight="600" fill="#93c5fd">score</text>
+      <rect x="28" y="24" width="104" height="34" rx="4" fill="#1e2d3e" stroke="#ccc" stroke-width="1.5"/>
+      <text x="80" y="44" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="12" fill="#eee">42</text>
+    </svg>`,
     insert: 'make ',
     svgFn: () => mkSvg(`
       ${codePanel(330, 240)}
@@ -911,12 +916,328 @@ const IVX_DEMOS = [
       return mkSvg(body, 580, 260);
     },
   },
-];
 
+  // ── cf-arrows ────────────────────────────────────────────────────────────────
+  {
+    id: 'cf-arrows', label: 'Arrows & Boxes', color: '#a78bfa',
+    tagline: 'Nodes hide complexity. Arrows show direction over time.',
+    node: () => nodeShape('rect', 'scan barcode', '#1e2d3e'),
+    insert: '',
+    svgFn: () => {
+      const body = `
+      <rect x="10" y="10" width="560" height="260" rx="6" fill="#0d0d12" stroke="#1e1e2e"/>
+
+      <!-- Box 1: scan barcode -->
+      <rect x="40" y="100" width="140" height="80" rx="6" fill="#1e2d3e" stroke="#4a9eff" stroke-width="1.5"/>
+      <text x="110" y="138" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="13" fill="#cdd6f4">scan barcode</text>
+      <text x="110" y="80" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">we don't need to</text>
+      <text x="110" y="93" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">know how it works</text>
+
+      <!-- Arrow -->
+      <line x1="180" y1="140" x2="240" y2="140" stroke="#4a9eff" stroke-width="2"/>
+      <polygon points="240,134 252,140 240,146" fill="#4a9eff"/>
+      <text x="213" y="130" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">direction</text>
+      <text x="213" y="160" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">= time</text>
+
+      <!-- Box 2: lookup price -->
+      <rect x="252" y="100" width="140" height="80" rx="6" fill="#1e2d3e" stroke="#4a9eff" stroke-width="1.5"/>
+      <text x="322" y="138" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="13" fill="#cdd6f4">lookup price</text>
+
+      <!-- Arrow -->
+      <line x1="392" y1="140" x2="452" y2="140" stroke="#4a9eff" stroke-width="2"/>
+      <polygon points="452,134 464,140 452,146" fill="#4a9eff"/>
+
+      <!-- Box 3: charge customer -->
+      <rect x="364" y="100" width="150" height="80" rx="6" fill="#1e2d3e" stroke="#4a9eff" stroke-width="1.5"/>
+      <text x="439" y="138" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="12" fill="#cdd6f4">charge customer</text>
+
+      <text x="290" y="230" text-anchor="middle" font-family="monospace" font-size="11" fill="#4a9eff">boxes = abstractions  •  arrows = time</text>
+      `;
+      return mkSvg(body, 580, 280);
+    },
+  },
+
+  // ── cf-steps ─────────────────────────────────────────────────────────────────
+  {
+    id: 'cf-steps', label: 'One Step at a Time', color: '#a78bfa',
+    tagline: 'Start → Process → Process → End. One in, one out.',
+    node: () => nodeShape('rect', 'buy groceries', '#1e2d3e'),
+    insert: '',
+    svgFn: () => {
+      const body = `
+      <rect x="10" y="10" width="560" height="280" rx="6" fill="#0d0d12" stroke="#1e1e2e"/>
+
+      <!-- Start -->
+      <ellipse cx="80" cy="100" rx="50" ry="22" fill="#007f00" stroke="#4ade80" stroke-width="1.5"/>
+      <text x="80" y="104" text-anchor="middle" dominant-baseline="middle" font-family="system-ui" font-size="12" fill="white">START</text>
+      <text x="80" y="134" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">0 in, 1 out</text>
+
+      <line x1="130" y1="100" x2="158" y2="100" stroke="#4a9eff" stroke-width="1.5"/>
+      <polygon points="158,95 168,100 158,105" fill="#4a9eff"/>
+
+      <!-- Step 1 -->
+      <rect x="168" y="80" width="110" height="40" rx="4" fill="#1e2d3e" stroke="#4a9eff" stroke-width="1.5"/>
+      <text x="223" y="100" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="11" fill="#cdd6f4">walk to store</text>
+      <text x="223" y="132" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">1 in, 1 out</text>
+
+      <line x1="278" y1="100" x2="306" y2="100" stroke="#4a9eff" stroke-width="1.5"/>
+      <polygon points="306,95 316,100 306,105" fill="#4a9eff"/>
+
+      <!-- Step 2 -->
+      <rect x="316" y="80" width="110" height="40" rx="4" fill="#1e2d3e" stroke="#4a9eff" stroke-width="1.5"/>
+      <text x="371" y="100" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="11" fill="#cdd6f4">buy groceries</text>
+
+      <line x1="426" y1="100" x2="454" y2="100" stroke="#4a9eff" stroke-width="1.5"/>
+      <polygon points="454,95 464,100 454,105" fill="#4a9eff"/>
+
+      <!-- End -->
+      <ellipse cx="510" cy="100" rx="50" ry="22" fill="#7f0000" stroke="#f87171" stroke-width="1.5"/>
+      <text x="510" y="104" text-anchor="middle" dominant-baseline="middle" font-family="system-ui" font-size="12" fill="white">END</text>
+      <text x="510" y="134" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">1 in, 0 out</text>
+
+      <!-- Legend -->
+      <text x="290" y="185" text-anchor="middle" font-family="monospace" font-size="11" fill="#6b7280">Node types, defined by their arrows:</text>
+      <ellipse cx="100" cy="225" rx="38" ry="16" fill="#007f00" stroke="#4ade80" stroke-width="1"/>
+      <text x="100" y="229" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="10" fill="white">Start</text>
+      <text x="100" y="250" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">0 in  1 out</text>
+
+      <rect x="208" y="210" width="90" height="30" rx="4" fill="#1e2d3e" stroke="#4a9eff" stroke-width="1.5"/>
+      <text x="253" y="228" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="10" fill="#cdd6f4">Process</text>
+      <text x="253" y="250" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">1 in  1 out</text>
+
+      <ellipse cx="420" cy="225" rx="38" ry="16" fill="#7f0000" stroke="#f87171" stroke-width="1"/>
+      <text x="420" y="229" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="10" fill="white">End</text>
+      <text x="420" y="250" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">1 in  0 out</text>
+      `;
+      return mkSvg(body, 580, 290);
+    },
+  },
+
+  // ── cf-fork ──────────────────────────────────────────────────────────────────
+  {
+    id: 'cf-fork', label: 'Forks in the Road', color: '#a78bfa',
+    tagline: 'Decision nodes have 2+ outgoing arrows — one per condition.',
+    node: () => nodeShape('diamond', 'in stock?', '#004b8d'),
+    insert: 'if ',
+    svgFn: () => {
+      const body = `
+      <rect x="10" y="10" width="560" height="270" rx="6" fill="#0d0d12" stroke="#1e1e2e"/>
+
+      <!-- Decision diamond -->
+      <polygon points="230,50 310,100 230,150 150,100" fill="#004b8d" stroke="#4a9eff" stroke-width="1.5"/>
+      <text x="230" y="104" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="12" fill="white">in stock?</text>
+      <text x="230" y="30" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">1 in,  2+ out</text>
+
+      <!-- Yes arrow → right -->
+      <line x1="310" y1="100" x2="380" y2="100" stroke="#4ade80" stroke-width="1.5"/>
+      <polygon points="380,95 392,100 380,105" fill="#4ade80"/>
+      <text x="343" y="90" text-anchor="middle" font-family="monospace" font-size="10" fill="#4ade80">yes</text>
+
+      <!-- Yes branch: ship it -->
+      <rect x="392" y="80" width="110" height="40" rx="4" fill="#1e2d3e" stroke="#4ade80" stroke-width="1.5"/>
+      <text x="447" y="100" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="11" fill="#cdd6f4">ship it</text>
+
+      <!-- No arrow → down -->
+      <line x1="230" y1="150" x2="230" y2="200" stroke="#f87171" stroke-width="1.5"/>
+      <polygon points="225,200 230,212 235,200" fill="#f87171"/>
+      <text x="248" y="182" font-family="monospace" font-size="10" fill="#f87171">no</text>
+
+      <!-- No branch: back order -->
+      <rect x="163" y="212" width="134" height="40" rx="4" fill="#1e2d3e" stroke="#f87171" stroke-width="1.5"/>
+      <text x="230" y="232" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="11" fill="#cdd6f4">back order</text>
+
+      <text x="80" y="100" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">incoming</text>
+      <line x1="50" y1="100" x2="148" y2="100" stroke="#4a9eff" stroke-width="1.5"/>
+      <polygon points="148,95 160,100 148,105" fill="#4a9eff"/>
+      `;
+      return mkSvg(body, 580, 280);
+    },
+  },
+
+  // ── cf-connector ─────────────────────────────────────────────────────────────
+  {
+    id: 'cf-connector', label: 'Connecting with Dots', color: '#a78bfa',
+    tagline: 'Connectors merge branches back together. Many in, one out.',
+    node: () => nodeShape('circle', '', '#bbb'),
+    insert: 'dot',
+    svgFn: () => {
+      const body = `
+      <rect x="10" y="10" width="560" height="290" rx="6" fill="#0d0d12" stroke="#1e1e2e"/>
+
+      <!-- Decision -->
+      <polygon points="130,80 190,120 130,160 70,120" fill="#004b8d" stroke="#4a9eff" stroke-width="1.5"/>
+      <text x="130" y="124" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="11" fill="white">paid?</text>
+
+      <!-- Yes branch -->
+      <line x1="190" y1="120" x2="240" y2="80" stroke="#4ade80" stroke-width="1.5"/>
+      <polygon points="236,74 248,78 242,88" fill="#4ade80"/>
+      <text x="207" y="90" font-family="monospace" font-size="9" fill="#4ade80">yes</text>
+      <rect x="248" y="58" width="100" height="36" rx="4" fill="#1e2d3e" stroke="#4ade80" stroke-width="1.5"/>
+      <text x="298" y="76" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="11" fill="#cdd6f4">ship order</text>
+
+      <!-- No branch -->
+      <line x1="190" y1="120" x2="240" y2="165" stroke="#f87171" stroke-width="1.5"/>
+      <polygon points="236,160 248,166 240,175" fill="#f87171"/>
+      <text x="207" y="158" font-family="monospace" font-size="9" fill="#f87171">no</text>
+      <rect x="248" y="148" width="100" height="36" rx="4" fill="#1e2d3e" stroke="#f87171" stroke-width="1.5"/>
+      <text x="298" y="166" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="11" fill="#cdd6f4">send invoice</text>
+
+      <!-- Arrows into connector -->
+      <line x1="348" y1="76" x2="400" y2="120" stroke="#4a9eff" stroke-width="1.5"/>
+      <line x1="348" y1="166" x2="400" y2="120" stroke="#4a9eff" stroke-width="1.5"/>
+
+      <!-- Connector dot -->
+      <circle cx="408" cy="120" r="10" fill="#bbb" stroke="#ccc" stroke-width="1.5"/>
+      <text x="408" y="148" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">many in</text>
+      <text x="408" y="160" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">one out</text>
+
+      <!-- Arrow out of connector -->
+      <line x1="418" y1="120" x2="478" y2="120" stroke="#4a9eff" stroke-width="1.5"/>
+      <polygon points="478,115 490,120 478,125" fill="#4a9eff"/>
+
+      <!-- Next step -->
+      <rect x="490" y="100" width="60" height="40" rx="4" fill="#1e2d3e" stroke="#4a9eff" stroke-width="1.5"/>
+      <text x="520" y="120" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="10" fill="#cdd6f4">update</text>
+      <text x="520" y="133" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="10" fill="#cdd6f4">records</text>
+
+      <text x="290" y="235" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">no condition needed — time only flows one way</text>
+      <text x="290" y="252" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">you never need more than 1 out because you can always</text>
+      <text x="290" y="266" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">split a multi-out node into decisions + connectors</text>
+      `;
+      return mkSvg(body, 580, 290);
+    },
+  },
+
+  // ── bc-yesno ─────────────────────────────────────────────────────────────────
+  {
+    id: 'bc-yesno', label: 'Yes and No', color: '#34d399',
+    tagline: 'Everything in a computer is a yes or no. That is all there is.',
+    node: () => nodeShape('diamond', 'on?', '#004b8d'),
+    insert: '',
+    svgFn: () => {
+      const body = `
+      <rect x="10" y="10" width="560" height="280" rx="6" fill="#0d0d12" stroke="#1e1e2e"/>
+
+      <!-- Title -->
+      <text x="290" y="42" text-anchor="middle" font-family="monospace" font-size="13" fill="#e2e8f0">one bit  =  one question  =  one answer</text>
+
+      <!-- OFF switch -->
+      <rect x="60" y="68" width="180" height="160" rx="8" fill="#12121a" stroke="#2a2a40" stroke-width="1.5"/>
+      <text x="150" y="96" text-anchor="middle" font-family="monospace" font-size="11" fill="#6b7280">OFF  /  NO  /  0  /  false</text>
+      <rect x="115" y="106" width="70" height="36" rx="18" fill="#1e1e2e" stroke="#374151" stroke-width="1.5"/>
+      <circle cx="125" cy="124" r="14" fill="#374151"/>
+      <text x="150" y="166" text-anchor="middle" font-family="monospace" font-size="22" fill="#374151">0</text>
+      <text x="150" y="210" text-anchor="middle" font-family="monospace" font-size="11" fill="#6b7280">the light is off</text>
+
+      <!-- ON switch -->
+      <rect x="320" y="68" width="180" height="160" rx="8" fill="#12121a" stroke="#34d399" stroke-width="1.5"/>
+      <text x="410" y="96" text-anchor="middle" font-family="monospace" font-size="11" fill="#34d399">ON  /  YES  /  1  /  true</text>
+      <rect x="375" y="106" width="70" height="36" rx="18" fill="#064e3b" stroke="#34d399" stroke-width="1.5"/>
+      <circle cx="435" cy="124" r="14" fill="#34d399"/>
+      <text x="410" y="166" text-anchor="middle" font-family="monospace" font-size="22" fill="#34d399">1</text>
+      <text x="410" y="210" text-anchor="middle" font-family="monospace" font-size="11" fill="#34d399">the light is on</text>
+
+      <text x="290" y="257" text-anchor="middle" font-family="monospace" font-size="11" fill="#6b7280">every number, letter, image, and program</text>
+      <text x="290" y="272" text-anchor="middle" font-family="monospace" font-size="11" fill="#6b7280">is made of nothing but these two states</text>
+      `;
+      return mkSvg(body, 580, 295);
+    },
+  },
+
+  // ── bc-bytes ─────────────────────────────────────────────────────────────────
+  {
+    id: 'bc-bytes', label: 'Bytes and Encoding', color: '#34d399',
+    tagline: '8 yes/no questions. 256 possible answers. That is a byte.',
+    node: () => nodeShape('rect', '8 bits', '#1e2d3e'),
+    insert: '',
+    svgFn: () => {
+      const attrs  = ['hat?', 'glasses?', 'beard?', 'smiling?', 'red?', 'female?', 'freckles?', 'dark hair?'];
+      const values = [1, 0, 0, 1, 0, 1, 0, 1];  // encodes one specific character
+      const bits   = values.map((v, i) => {
+        const x = 36 + i * 63;
+        const on = v === 1;
+        const col = on ? '#34d399' : '#374151';
+        const bg  = on ? '#064e3b' : '#12121a';
+        const border = on ? '#34d399' : '#2a2a40';
+        return `
+        <rect x="${x}" y="54" width="54" height="80" rx="6" fill="${bg}" stroke="${border}" stroke-width="1.5"/>
+        <text x="${x+27}" y="76" text-anchor="middle" font-family="monospace" font-size="9" fill="${on ? '#6ee7b7' : '#6b7280'}">${attrs[i]}</text>
+        <text x="${x+27}" y="108" text-anchor="middle" font-family="monospace" font-size="24" font-weight="bold" fill="${col}">${v}</text>
+        <text x="${x+27}" y="126" text-anchor="middle" font-family="monospace" font-size="9" fill="${col}">${on ? 'YES' : 'NO'}</text>`;
+      });
+
+      const byteVal = values.reduce((acc, b) => acc * 2 + b, 0);
+
+      const body = `
+      <rect x="10" y="10" width="560" height="280" rx="6" fill="#0d0d12" stroke="#1e1e2e"/>
+      <text x="290" y="38" text-anchor="middle" font-family="monospace" font-size="12" fill="#e2e8f0">Guess Who — which character am I?</text>
+      ${bits.join('')}
+      <text x="290" y="158" text-anchor="middle" font-family="monospace" font-size="11" fill="#6b7280">8 bits  =  1 byte  =  ${byteVal} in decimal  =  one specific character</text>
+      <text x="290" y="185" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">with 8 yes/no questions you can describe 2 × 2 × 2 × 2 × 2 × 2 × 2 × 2  =  256 different things</text>
+
+      <!-- Bit pattern display -->
+      <rect x="140" y="200" width="300" height="32" rx="4" fill="#12121a" stroke="#2a2a40"/>
+      <text x="290" y="220" text-anchor="middle" font-family="monospace" font-size="16" letter-spacing="6" fill="#34d399">${values.join(' ')}</text>
+      <text x="290" y="252" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">= ${byteVal}  — one value out of 256 possible</text>
+      <text x="290" y="270" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">add more bits → more possibilities: 16 bits = 65,536   32 bits = 4 billion</text>
+      `;
+      return mkSvg(body, 580, 285);
+    },
+  },
+
+  // ── bc-types ─────────────────────────────────────────────────────────────────
+  {
+    id: 'bc-types', label: 'Ordering Info into Types', color: '#34d399',
+    tagline: 'Same bits, different meaning. The type decides the interpretation.',
+    node: () => nodeShape('rect', 'type', '#1e2d3e'),
+    insert: '',
+    svgFn: () => {
+      const bits = [0,1,0,0,0,0,0,1];
+      const bitStr = bits.join(' ');
+      const val = bits.reduce((a,b) => a*2+b, 0); // 65
+
+      const interpretations = [
+        { label: 'integer',  value: `${val}`,        color: '#b5cea8', desc: 'the number sixty-five' },
+        { label: 'string',   value: '"A"',            color: '#ce9178', desc: 'the letter A  (ASCII 65)' },
+        { label: 'boolean',  value: 'yes  (nonzero)', color: '#4a7fff', desc: 'truthy — not zero' },
+      ];
+
+      const rows = interpretations.map((t, i) => {
+        const y = 162 + i * 52;
+        return `
+        <rect x="36" y="${y}" width="508" height="40" rx="5" fill="#12121a" stroke="#2a2a40" stroke-width="1"/>
+        <rect x="36" y="${y}" width="90" height="40" rx="5" fill="#1a1a26" stroke="#2a2a40" stroke-width="1"/>
+        <text x="81" y="${y+24}" text-anchor="middle" font-family="monospace" font-size="10" fill="${t.color}">${t.label}</text>
+        <text x="200" y="${y+24}" text-anchor="middle" font-family="monospace" font-size="14" fill="${t.color}">${t.value}</text>
+        <text x="390" y="${y+24}" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">${t.desc}</text>`;
+      });
+
+      const body = `
+      <rect x="10" y="10" width="560" height="335" rx="6" fill="#0d0d12" stroke="#1e1e2e"/>
+      <text x="290" y="38" text-anchor="middle" font-family="monospace" font-size="12" fill="#e2e8f0">the same 8 bits can mean completely different things</text>
+
+      <!-- The byte -->
+      <rect x="140" y="52" width="300" height="40" rx="5" fill="#12121a" stroke="#34d399" stroke-width="1.5"/>
+      <text x="290" y="76" text-anchor="middle" font-family="monospace" font-size="18" letter-spacing="8" fill="#34d399">${bitStr}</text>
+      <text x="290" y="110" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">one byte  —  decimal ${val}  —  the same sequence of bits in every row below</text>
+
+      <!-- Arrow down -->
+      <line x1="290" y1="118" x2="290" y2="148" stroke="#2a2a40" stroke-width="1.5"/>
+      <polygon points="285,148 290,158 295,148" fill="#2a2a40"/>
+      <text x="290" y="142" text-anchor="middle" font-family="monospace" font-size="10" fill="#4b5563">interpreted as...</text>
+
+      ${rows.join('')}
+
+      <text x="290" y="310" text-anchor="middle" font-family="monospace" font-size="11" fill="#6b7280">the bits do not change  —  only the lens changes</text>
+      <text x="290" y="326" text-anchor="middle" font-family="monospace" font-size="11" fill="#4a7fff">that lens is what we call a type</text>
+      `;
+      return mkSvg(body, 580, 340);
+    },
+  },
+];
 
 // ── Demo index ────────────────────────────────────────────────────────────────
 const IVX_DEMO_MAP = Object.fromEntries(IVX_DEMOS.filter(d => d && d.id).map(d => [d.id, d]));
-
 
 const IVX_DEMO_SECTIONS = [
   { label: 'Data',         ids: ['make', 'say', 'take'] },
@@ -924,6 +1245,8 @@ const IVX_DEMO_SECTIONS = [
   { label: 'Functions',    ids: ['give', 'fun', 'class'] },
   { label: 'Network & AI', ids: ['ask', 'wait', 'email', 'sheets', 'key', 'from'] },
   { label: 'Types',        ids: ['type-string', 'type-integer', 'type-float', 'type-boolean', 'type-none', 'type-list', 'type-dict'] },
+  { label: 'How Flowcharts Work',    ids: ['cf-arrows', 'cf-steps', 'cf-fork', 'cf-connector'] },
+  { label: 'Binary Categorization',  ids: ['bc-yesno', 'bc-bytes', 'bc-types'] },
 ];
 
 let _demoPanel = null;

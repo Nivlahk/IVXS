@@ -23,6 +23,8 @@ const TYPE_FILL = { string:'#b45309', integer:'#60a5fa', float:'#14b8a6',
 
 // State
 let currentGraph, currentXSTEP = 140;
+let currentPositions = new Map();
+let _errorNodeId = null; // persists across renders so badge survives re-renders
 let nodePositions = new Map();
 let dragOffsets   = new Map();
 let blockOffsets  = new Map();
@@ -706,6 +708,7 @@ function computeLayout(graph) {
 
   const centerX0 = snap(500, XSTEP);
   const positions = new Map();
+  currentPositions = positions;
   let fnOffset = XSTEP * 4;
 
   for (const node of graph.nodes) {
@@ -1361,6 +1364,7 @@ function renderTryBrackets(graph, positions, hidden) {
 function renderGraph(graph) {
   currentGraph = graph;
   svg.textContent = '';
+  clearErrorNodes();
 
   const { positions, blockBoxes } = computeLayout(graph);
 
@@ -1467,6 +1471,9 @@ function renderGraph(graph) {
   // Try brackets drawn LAST so they're always on top of block backgrounds and edges
   renderTryBrackets(graph, positions, hidden);
 
+  // Re-draw error badge if one was set — svg.textContent='' clears it each render
+  if (_errorNodeId != null) _drawErrorBadge(_errorNodeId);
+
   // Stash blockBoxes so block label/color editing can find them
   if (currentGraph) currentGraph.__blockBoxes = blockBoxes;
 
@@ -1484,6 +1491,52 @@ function renderGraph(graph) {
 }
 
 const applyVB = () => svg.setAttribute('viewBox',`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`);
+
+// ── Error node highlighting ────────────────────────────────────────────────────
+const ERROR_BADGE_CLASS = 'ivx-error-badge';
+
+function clearErrorNodes() {
+  _errorNodeId = null;
+  svg.querySelectorAll('.' + ERROR_BADGE_CLASS).forEach(el => el.remove());
+}
+
+function _drawErrorBadge(nodeId) {
+  svg.querySelectorAll('.' + ERROR_BADGE_CLASS).forEach(el => el.remove());
+  if (nodeId == null) return;
+  const pos = currentPositions.get(nodeId);
+  if (!pos || !pos.width) return; // positions not yet populated
+
+  const bx = (pos.x ?? pos.centerX) + (pos.width  ?? 40) - 4;
+  const by = (pos.y ?? pos.centerY - (pos.height ?? 30) / 2) - 4;
+  const r  = 10;
+
+  const g = el('g', { class: ERROR_BADGE_CLASS }, svg);
+  el('circle', { cx: bx, cy: by, r, fill: '#ef4444', stroke: '#fca5a5', 'stroke-width': 1.5 }, g);
+  const t = el('text', {
+    x: bx, y: by + 4,
+    'text-anchor': 'middle',
+    'font-family': 'system-ui',
+    'font-size': '12',
+    'font-weight': 'bold',
+    fill: 'white',
+    style: 'pointer-events:none;'
+  }, g);
+  t.textContent = '!';
+}
+
+function flashErrorNode(nodeId) {
+  _errorNodeId = nodeId;
+  _drawErrorBadge(nodeId);
+  if (nodeId == null) return;
+  const pos = currentPositions.get(nodeId);
+  if (!pos) return;
+  const cx = pos.centerX ?? ((pos.x ?? 0) + (pos.width ?? 40) / 2);
+  const cy = pos.centerY ?? ((pos.y ?? 0) + (pos.height ?? 30) / 2);
+  viewBox.x = cx - viewBox.width  / 2;
+  viewBox.y = cy - viewBox.height / 2;
+  applyVB();
+  renderMinimap();
+}
 
 // ─── Zoom / Pan ───────────────────────────────────────────────────────────────
 function zoom(factor, cx, cy) {
@@ -1579,6 +1632,8 @@ window.addEventListener('mousemove', e => {
     if (!isDragging && Math.hypot(dx,dy)<3) return;
     isDragging=true; cancelNextClick=true;
     dragOffsets.set(draggedId,{x:dx*viewBox.width/r.width, y:dy*viewBox.height/r.height});
+    // Highlight nearest edge as drop target
+    _highlightDropEdge(draggedId, e, r);
     renderGraph(currentGraph); return;
   }
   if (!isPanning) return;
@@ -1587,15 +1642,182 @@ window.addEventListener('mousemove', e => {
   panStart={x:e.clientX,y:e.clientY};
 });
 
-window.addEventListener('mouseup', () => {
+window.addEventListener('mouseup', e => {
   if (isPanning && panMoved) cancelNextClick=true;
   isPanning=false; svg.classList.remove('panning');
-  // FIX: only set cancelNextClick if we actually dragged, then clear drag state
-  if (isDragging) cancelNextClick=true;
+
+  if (isDragging && draggedId !== null) {
+    cancelNextClick = true;
+    // Check if dropped onto an edge — if so, move the node there
+    const dropped = _tryDropNodeOnEdge(draggedId, e);
+    if (!dropped) {
+      // Not dropped on edge — snap back (clear offset)
+      dragOffsets.delete(draggedId);
+      renderGraph(currentGraph);
+    }
+  }
+
   if (isBlockDragging) cancelNextClick=true;
   draggedId=null; isDragging=false;
   draggedBlockKey=null; isBlockDragging=false;
 });
+
+let _dropTargetEdge = null;
+
+function _highlightDropEdge(nodeId, mouseEvent, svgRect) {
+  const r = svgRect ?? svg.getBoundingClientRect();
+  const svgX = viewBox.x + (mouseEvent.clientX - r.left) / r.width  * viewBox.width;
+  const svgY = viewBox.y + (mouseEvent.clientY - r.top)  / r.height * viewBox.height;
+
+  // Clear previous highlight
+  if (_dropTargetEdge) { _dropTargetEdge.setAttribute('stroke', _dropTargetEdge._origStroke ?? '#4a9eff'); _dropTargetEdge = null; }
+
+  let bestPath = null, bestDist = 40;
+  for (const path of svg.querySelectorAll('path[data-edge-from]')) {
+    const fromId = parseInt(path.getAttribute('data-edge-from'), 10);
+    const toId   = parseInt(path.getAttribute('data-edge-to'), 10);
+    if (fromId === nodeId || toId === nodeId) continue;
+    const len = path.getTotalLength();
+    const steps = Math.min(20, Math.ceil(len / 20));
+    for (let i = 0; i <= steps; i++) {
+      const pt = path.getPointAtLength((i / steps) * len);
+      const dist = Math.hypot(pt.x - svgX, pt.y - svgY);
+      if (dist < bestDist) { bestDist = dist; bestPath = path; }
+    }
+  }
+
+  if (bestPath) {
+    bestPath._origStroke = bestPath.getAttribute('stroke');
+    bestPath.setAttribute('stroke', '#f59e0b');
+    _dropTargetEdge = bestPath;
+  }
+}
+
+// ─── Drop node onto edge ──────────────────────────────────────────────────────
+function _tryDropNodeOnEdge(nodeId, mouseEvent) {
+  if (!currentGraph || !srcEl) return false;
+
+  const node = currentGraph.nodes.find(n => n.id === nodeId);
+  if (!node) return false;
+
+  // Only leaf nodes (no block body) for now
+  const hasBody = currentGraph.nodes.some(n =>
+    n.meta?.includes(`fun-body-of=${nodeId}`) ||
+    n.meta?.includes(`wait-body-of=${nodeId}`) ||
+    n.meta?.includes(`try-body-of=${nodeId}`)
+  );
+  // Also check if any node at the same line has children by looking at source
+  const lines = srcEl.value.split('\n');
+  const nodeLine = node.line; // 0-based preprocessed line
+  // Get the raw source line for this node
+  const rawLine = lines[nodeLine] ?? '';
+  const nodeIndent = rawLine.length - rawLine.trimStart().length;
+  const nextLine = lines[nodeLine + 1] ?? '';
+  const nextIndent = nextLine.trim() ? nextLine.length - nextLine.trimStart().length : 0;
+  const isLeaf = !hasBody && nextIndent <= nodeIndent;
+  if (!isLeaf) return false;
+
+  // Find which edge the mouse is over by checking SVG hit target
+  const r = svg.getBoundingClientRect();
+  const svgX = viewBox.x + (mouseEvent.clientX - r.left) / r.width  * viewBox.width;
+  const svgY = viewBox.y + (mouseEvent.clientY - r.top)  / r.height * viewBox.height;
+
+  // Find nearest edge path within a threshold
+  let bestEdge = null, bestDist = 40; // 40px threshold in SVG coords
+  for (const path of svg.querySelectorAll('path[data-edge-from]')) {
+    const fromId = parseInt(path.getAttribute('data-edge-from'), 10);
+    const toId   = parseInt(path.getAttribute('data-edge-to'),   10);
+    // Skip edges connected to the dragged node itself
+    if (fromId === nodeId || toId === nodeId) continue;
+    // Approximate distance: check a few points along the path
+    const len = path.getTotalLength();
+    const steps = Math.min(20, Math.ceil(len / 20));
+    for (let i = 0; i <= steps; i++) {
+      const pt = path.getPointAtLength((i / steps) * len);
+      const dist = Math.hypot(pt.x - svgX, pt.y - svgY);
+      if (dist < bestDist) { bestDist = dist; bestEdge = { fromId, toId }; }
+    }
+  }
+
+  if (!bestEdge) {
+    // No edge nearby — snap back
+    dragOffsets.delete(nodeId);
+    renderGraph(currentGraph);
+    return false;
+  }
+
+  // Move the node: remove from current source position, insert at edge
+  _moveNodeToEdgeInSource(nodeId, node, bestEdge.fromId, bestEdge.toId);
+  return true;
+}
+
+function _moveNodeToEdgeInSource(nodeId, node, fromEdgeNodeId, toEdgeNodeId) {
+  let lines = srcEl.value.split('\n');
+
+  // Find and remove the node's source line
+  const nodeLine = node.line;
+  const rawLine  = lines[nodeLine];
+  if (rawLine == null) return;
+  lines.splice(nodeLine, 1);
+  srcEl.value = lines.join('\n');
+
+  // Now insert it at the edge position using the existing edge-insert logic,
+  // but with the node's actual content instead of a placeholder
+  const content = rawLine.trim();
+  _insertContentOnEdge(fromEdgeNodeId, toEdgeNodeId, content);
+}
+
+function _insertContentOnEdge(fromNodeId, toNodeId, content) {
+  // Reuse the same position/indent logic as insertNodeOnEdgeInSource
+  // but insert the given content string instead of a new placeholder
+  if (!currentGraph || !srcEl) return;
+  const fromNode = currentGraph.nodes.find(n => n.id === fromNodeId);
+  const toNode   = currentGraph.nodes.find(n => n.id === toNodeId);
+  if (!fromNode || !toNode) return;
+
+  const isImplicit = n => n.meta?.includes('implicit start') || n.meta?.includes('implicit end');
+  let lines = srcEl.value.split('\n');
+
+  const prepToOrig = [], prepToSubLine = [];
+  lines.forEach((raw, idx) => {
+    preprocessControlFlowSyntax(raw).split('\n').forEach((_, k) => {
+      prepToOrig.push(idx); prepToSubLine.push(k);
+    });
+  });
+  const toOrigIdx = pl => (pl < 0 ? -1 : pl >= prepToOrig.length ? lines.length - 1 : prepToOrig[pl]);
+
+  const fromOrigIdx = isImplicit(fromNode) ? -1        : toOrigIdx(fromNode.line);
+  const toOrigIndex = isImplicit(toNode)   ? lines.length : toOrigIdx(toNode.line);
+
+  let spliceAt = fromOrigIdx + 1;
+  let indentSpaces = 0;
+
+  if (isImplicit(fromNode)) {
+    spliceAt = 0; indentSpaces = 0;
+  } else if (isImplicit(toNode)) {
+    const raw = lines[fromOrigIdx] ?? '';
+    indentSpaces = raw.length - raw.trimStart().length;
+    spliceAt = lines.length;
+  } else if (toOrigIndex > fromOrigIdx + 1) {
+    const toRaw = lines[toOrigIndex] ?? '';
+    indentSpaces = toRaw.length - toRaw.trimStart().length;
+    spliceAt = toOrigIndex;
+  } else {
+    const toRaw = lines[toOrigIndex] ?? '';
+    indentSpaces = toRaw.length - toRaw.trimStart().length;
+    spliceAt = fromOrigIdx + 1;
+  }
+
+  // Re-indent the content to match the target scope
+  const contentTrimmed = content.trimStart();
+  const newLine = ' '.repeat(indentSpaces) + contentTrimmed;
+  lines.splice(spliceAt, 0, newLine);
+  srcEl.value = lines.join('\n');
+
+  dragOffsets.delete(parseInt(currentGraph?.nodes.find(n => n.text === contentTrimmed)?.id ?? -1));
+  if (typeof updateHighlight === 'function') updateHighlight();
+  scheduleRender();
+}
 
 // ─── Minimap ──────────────────────────────────────────────────────────────────
 function renderMinimap() {

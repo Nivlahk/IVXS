@@ -94,8 +94,18 @@ function termInput(varName) {
 
 // ── Run button ────────────────────────────────────────────────────────────────
 let _running = false;
+let _resumeBreakpoint = null; // module-level so the resume click can access it
+
+window._ivxResumeBreakpoint = () => {
+  if (_resumeBreakpoint) { _resumeBreakpoint(); _resumeBreakpoint = null; }
+};
 
 termRun.addEventListener('click', async () => {
+  // If paused at a breakpoint, resume instead of starting a new run
+  if (_running && _resumeBreakpoint) {
+    window._ivxResumeBreakpoint();
+    return;
+  }
   if (_running) return;
   _running = true;
   termRun.textContent = '⏹ Running';
@@ -120,6 +130,18 @@ termRun.addEventListener('click', async () => {
   const t0 = performance.now();
 
   let interpGlobals = null;
+  let firstErrorFlagged = false;
+  _resumeBreakpoint = null; // reset for this run
+
+  const flagErrorNode = (line) => {
+    if (firstErrorFlagged || line == null || typeof flashErrorNode !== 'function') return;
+    firstErrorFlagged = true;
+    const nodeId = lineToNodeId.get(line - 1)
+                ?? lineToNodeId.get(line)
+                ?? lineToNodeId.get(line - 2);
+    flashErrorNode(nodeId ?? null);
+  };
+
   const interp = new Interpreter({
     onOutput: async (value) => {
       termOutput(ivxRepr(value));
@@ -132,19 +154,28 @@ termRun.addEventListener('click', async () => {
     onError: (e) => {
       const line = e.ivxLine ?? e.line ?? null;
       termErrorLine(e.message ?? String(e), line ?? null);
+      flagErrorNode(line);
     },
     onWait: (n) => new Promise(r => setTimeout(r, n * 100)),
-    onStep: (srcLine) => {
+    onStep: async (srcLine) => {
       // srcLine is 1-based from AST; graph nodes are 0-based
       const nodeId = lineToNodeId.get(srcLine - 1);
       if (nodeId != null) {
         const last = recorded[recorded.length - 1];
-        // Deduplicate consecutive same-node steps (e.g. tight loops)
-        // but keep repeats for decision nodes so the flash is visible
         const n = currentGraph?.nodes.find(n => n.id === nodeId);
         const isDecision = n?.kind === 'Decision';
         if (!last || last.nodeId !== nodeId || isDecision) {
           recorded.push({ nodeId, ts: performance.now() - t0 });
+        }
+
+        // If this node has a breakpoint, pause execution here
+        if (typeof breakpoints !== 'undefined' && breakpoints.has(nodeId)) {
+          if (typeof highlightNode === 'function') highlightNode(nodeId, null);
+          termInfo(`⏸ paused at breakpoint — click ▶ Run to continue`);
+          termRun.textContent = '▶ Resume';
+          await new Promise(resolve => { _resumeBreakpoint = resolve; });
+          termRun.textContent = '⏹ Running';
+          termInfo(`▶ resumed`);
         }
       }
     },
@@ -156,6 +187,7 @@ termRun.addEventListener('click', async () => {
   } catch(e) {
     const line = e.ivxLine ?? e.line ?? null;
     termErrorLine(e.message ?? String(e), line ?? null);
+    flagErrorNode(line);
   }
 
   termInfo('─── run finished ───');
@@ -214,6 +246,8 @@ termRun.addEventListener('click', async () => {
 // ── Clear button ──────────────────────────────────────────────────────────────
 termClear.addEventListener('click', () => {
   termMsgs.innerHTML = '';
+  if (typeof clearErrorNodes === 'function') clearErrorNodes();
+  if (typeof flashErrorNode === 'function') flashErrorNode(null); // clear _errorNodeId
 });
 
 // ── Resizer drag ──────────────────────────────────────────────────────────────
