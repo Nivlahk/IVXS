@@ -156,12 +156,12 @@ function insertNodeOnEdgeInSource(fromNodeId, toNodeId, nodeKind) {
   const originalSrc = srcEl.value;
   let originalLines = originalSrc.split('\n');
 
+  // ── Source mapping ──────────────────────────────────────────────────────────
   const prepToOrig = [];
   const prepToSubLine = [];
   originalLines.forEach((origLine, origIdx) => {
     const expanded = preprocessControlFlowSyntax(origLine);
-    const subLines = expanded.split('\n');
-    subLines.forEach((_, k) => {
+    expanded.split('\n').forEach((_, k) => {
       prepToOrig.push(origIdx);
       prepToSubLine.push(k);
     });
@@ -178,62 +178,142 @@ function insertNodeOnEdgeInSource(fromNodeId, toNodeId, nodeKind) {
     const noteIdx = raw.indexOf('note ');
     const trimmed = (noteIdx >= 0 ? raw.slice(0, noteIdx) : raw).trim();
     const tokens = trimmed.split(/\s+/).filter(Boolean);
-    let i = 0;
-    let incoming = '';
-    let nodeKey = '';
-    if (i < tokens.length && IN_KEYS.has(tokens[i])) { incoming = tokens[i]; i++; }
-    if (i < tokens.length && NODE_KEYS.has(tokens[i])) { nodeKey = tokens[i]; i++; }
+    let i = 0, incoming = '', nodeKey = '';
+    if (i < tokens.length && IN_KEYS.has(tokens[i]))   { incoming = tokens[i]; i++; }
+    if (i < tokens.length && NODE_KEYS.has(tokens[i])) { nodeKey  = tokens[i]; i++; }
     const rest = tokens.slice(i);
     let outgoing = '';
-    if (rest.length > 0 && OUTGOING_KEYWORDS.includes(rest[rest.length - 1])) {
+    if (rest.length > 0 && OUTGOING_KEYWORDS.includes(rest[rest.length - 1]))
       outgoing = rest[rest.length - 1];
-    }
     return { indentSpaces, incoming, nodeKey, outgoing };
   };
 
   const expandOrigLine = (raw) => preprocessControlFlowSyntax(raw).split('\n');
 
-  // Resolve internal connectors to meaningful source positions:
-  // - if-join: the merge point after an if/else block. Find the last line
-  //   of the if/else block by scanning forward until indent drops back.
-  // - loop-head: same source line as the loop keyword — handled naturally
-  //   by the same-line branch since loop-cond shares the same line.
-
-  const resolveNode = (n) => {
-    if (!n || isImplicit(n)) return n;
-    if (n.kind === 'Connector' && n.meta?.includes('if-join')) {
-      const ifLine = toOrigIdx(n.line);
-      const ifRaw = originalLines[ifLine] || '';
-      const ifIndent = ifRaw.length - ifRaw.trimStart().length;
-      let lastInBlock = ifLine;
-      for (let i = ifLine + 1; i < originalLines.length; i++) {
-        const raw = originalLines[i];
-        if (!raw.trim()) continue;
-        const indent = raw.length - raw.trimStart().length;
-        const trimmed = raw.trimStart();
-        if (indent === ifIndent && trimmed.startsWith('else')) { lastInBlock = i; continue; }
-        if (indent <= ifIndent) break;
-        lastInBlock = i;
-      }
-      return { ...n, _resolvedOrigLine: lastInBlock };
+  // ── Find the if Decision that owns a given node ─────────────────────────────
+  // Used to locate the else line (or absence of one) for a Decision's no-edge.
+  const findIfDecision = (nodeId) => {
+    // Walk edges backwards from nodeId to find the Decision ancestor
+    const edgesTo = currentGraph.edges.filter(e => e.to === nodeId);
+    for (const e of edgesTo) {
+      const src = currentGraph.nodes.find(n => n.id === e.from);
+      if (src?.kind === 'Decision') return src;
+      const found = findIfDecision(e.from);
+      if (found) return found;
     }
-    return n;
+    return null;
   };
 
-  const resolvedFrom = resolveNode(fromNode);
-  const resolvedTo   = resolveNode(toNode);
+  // ── Determine if this is a no-edge from a Decision ──────────────────────────
+  // An edge is a "no-edge" when fromNode is a Decision and the edge label is 'no'
+  const edge = currentGraph.edges.find(e => e.from === fromNodeId && e.to === toNodeId);
+  const isNoEdge = fromNode.kind === 'Decision' && edge?.label === 'no';
 
-  const getOrigLine = (n, resolved) => {
-    if (isImplicit(n)) return n.meta?.includes('implicit start') ? -1 : originalLines.length;
-    if (resolved._resolvedOrigLine != null) return resolved._resolvedOrigLine;
-    return toOrigIdx(n.line);
-  };
+  const keyword  = KIND_TO_KEY[nodeKind] || '';
+  const placeholder = nodeKind === 'End' ? '' : 'new node';
 
-  const fromOrigIdx  = getOrigLine(fromNode, resolvedFrom);
-  const toOrigIndex  = getOrigLine(toNode,   resolvedTo);
+  // ── SPECIAL CASE: no-edge of a Decision ────────────────────────────────────
+  if (isNoEdge) {
+    const decOrigLine = toOrigIdx(fromNode.line);
+    const decRaw     = originalLines[decOrigLine];
+    const decIndent  = decRaw.length - decRaw.trimStart().length;
+    const prefix     = ' '.repeat(decIndent);
+    const innerPfx   = ' '.repeat(decIndent + 2);
+
+    // Scan forward to find where the true-branch body ends and whether an
+    // else line already exists at this decision's indent level.
+    let trueBodyEnd = decOrigLine; // last line of the true branch body
+    let elseLineIdx = -1;          // index of existing else line, or -1
+
+    for (let i = decOrigLine + 1; i < originalLines.length; i++) {
+      const raw = originalLines[i];
+      if (!raw.trim()) continue;
+      const indent  = raw.length - raw.trimStart().length;
+      const trimmed = raw.trimStart();
+      if (indent === decIndent && trimmed.startsWith('else')) {
+        elseLineIdx = i;
+        break;
+      }
+      if (indent <= decIndent) break; // exited the block, no else
+      trueBodyEnd = i;
+    }
+
+    const newNodeContent = keyword
+      ? `${keyword}${placeholder ? ' ' + placeholder : ''}`
+      : placeholder;
+
+    if (elseLineIdx === -1) {
+      // Case A: no else exists — insert "else new node" right after the true body
+      const insertAt = trueBodyEnd + 1;
+      originalLines.splice(insertAt, 0, `${prefix}else ${newNodeContent}`);
+      srcEl.value = originalLines.join('\n');
+      _pendingInsertEditLine = insertAt;
+    } else {
+      // Case B: else exists — prepend "else new node", bump old else content down
+      const elseRaw     = originalLines[elseLineIdx];
+      // Strip the "else " prefix to get the existing content
+      const elseContent = elseRaw.trimStart().replace(/^else\s*/, '').trim();
+      // Replace the else line with "else new node"
+      originalLines[elseLineIdx] = `${prefix}else ${newNodeContent}`;
+      // If there was content on the else line, push it down as an indented child
+      if (elseContent) {
+        originalLines.splice(elseLineIdx + 1, 0, `${innerPfx}${elseContent}`);
+      }
+      srcEl.value = originalLines.join('\n');
+      _pendingInsertEditLine = elseLineIdx;
+    }
+
+    if (typeof updateHighlight === 'function') updateHighlight();
+    scheduleRender();
+    return;
+  }
+
+  // ── SPECIAL CASE: edge inside an else branch → tail of else → if-join ──────
+  // fromNode is inside an else branch, toNode is the if-join connector.
+  // Insert an indented new node at the bottom of the else branch.
+  const toIsIfJoin = toNode.kind === 'Connector' && toNode.meta?.includes('if-join');
+  if (toIsIfJoin) {
+    const fromOrigLine = toOrigIdx(fromNode.line);
+    const fromRaw      = originalLines[fromOrigLine];
+    const fromParsed   = parseLine(fromRaw);
+
+    // Check if fromNode is inside an else branch by looking for an 'else' keyword
+    // at a lower indent above fromOrigLine
+    const fromIndent = fromParsed.indentSpaces;
+    let inElseBranch = false;
+    for (let i = fromOrigLine - 1; i >= 0; i--) {
+      const raw = originalLines[i];
+      if (!raw.trim()) continue;
+      const indent  = raw.length - raw.trimStart().length;
+      const trimmed = raw.trimStart();
+      if (indent < fromIndent) {
+        if (trimmed.startsWith('else')) inElseBranch = true;
+        break;
+      }
+    }
+
+    // Whether in else branch or true branch tail → if-join:
+    // always insert right after fromNode at fromNode's indent
+    const insertAt   = fromOrigLine + 1;
+    const prefix     = ' '.repeat(fromIndent);
+    const newNodeContent = keyword
+      ? `${prefix}${keyword}${placeholder ? ' ' + placeholder : ''}`
+      : `${prefix}${placeholder}`;
+
+    originalLines.splice(insertAt, 0, newNodeContent);
+    srcEl.value = originalLines.join('\n');
+    _pendingInsertEditLine = insertAt;
+    if (typeof updateHighlight === 'function') updateHighlight();
+    scheduleRender();
+    return;
+  }
+
+  // ── GENERAL CASE ────────────────────────────────────────────────────────────
+  const fromOrigIdx  = isImplicit(fromNode) ? -1 : toOrigIdx(fromNode.line);
+  const toOrigIndex  = isImplicit(toNode)   ? originalLines.length : toOrigIdx(toNode.line);
   const fromSubLine  = isImplicit(fromNode) ? 0 : prepToSubLine[fromNode.line];
 
-  let insertAfterOrig;
+  let insertAfterOrig = fromOrigIdx;
   let indentSpaces = 0;
   let inheritedOutgoing = '';
   let spliceAt;
@@ -250,8 +330,8 @@ function insertNodeOnEdgeInSource(fromNodeId, toNodeId, nodeKind) {
     }
     spliceAt = originalLines.length;
   } else if (fromOrigIdx === toOrigIndex) {
-    // fromNode and toNode on the same original line — expand it first
-    const origRaw = originalLines[fromOrigIdx];
+    // Same source line (e.g. loop-head → loop-cond)
+    const origRaw  = originalLines[fromOrigIdx];
     const subLines = expandOrigLine(origRaw);
     originalLines.splice(fromOrigIdx, 1, ...subLines);
     spliceAt = fromOrigIdx + fromSubLine + 1;
@@ -261,50 +341,34 @@ function insertNodeOnEdgeInSource(fromNodeId, toNodeId, nodeKind) {
       inheritedOutgoing = fp.outgoing;
       originalLines[fromOrigIdx + fromSubLine] = fromSubRaw.replace(/\s+(prev|next)\s*$/, '');
     }
-    // For loop-head→loop-cond (same line), the new node goes inside the loop
-    // body, so indent should be the loop keyword's indent + 2, not the keyword's own indent.
-    if (fromNode.kind === 'Connector' && fromNode.meta?.includes('loop-head')) {
-      indentSpaces = fp.indentSpaces + 2;
-    } else {
-      indentSpaces = fp.indentSpaces;
-    }
+    // loop-head→loop-cond: new node goes inside the body at +2 indent
+    indentSpaces = (fromNode.kind === 'Connector' && fromNode.meta?.includes('loop-head'))
+      ? fp.indentSpaces + 2
+      : fp.indentSpaces;
   } else {
-    insertAfterOrig = fromOrigIdx;
     const fromRaw = originalLines[fromOrigIdx];
-    const fp = parseLine(fromRaw);
+    const fp      = parseLine(fromRaw);
     if (fp.outgoing === 'prev' || fp.outgoing === 'next') {
       inheritedOutgoing = fp.outgoing;
       originalLines[fromOrigIdx] = fromRaw.replace(/\s+(prev|next)\s*$/, '');
     }
 
-    // Derive indent from toNode's source line — it defines the scope the new
-    // node lives in (it's being inserted just before toNode in the flow).
-    // Fall back to fromNode's indent only when toNode has no real source line.
     if (toOrigIndex >= 0 && toOrigIndex < originalLines.length) {
       const toParsed = parseLine(originalLines[toOrigIndex]);
-      const toIsResolvedJoin = resolvedTo._resolvedOrigLine != null;
-
-      if (toParsed.incoming === 'else' && !toIsResolvedJoin) {
-        // Inserting on the edge that leads into a real else branch:
-        // place the new node just above the else line at the else's indent.
-        indentSpaces = toParsed.indentSpaces;
+      if (toParsed.incoming === 'else') {
+        // Edge leads into a real else branch — insert just above the else line
+        indentSpaces    = toParsed.indentSpaces;
         insertAfterOrig = toOrigIndex - 1;
         inheritedOutgoing = '';
-      } else if (toIsResolvedJoin) {
-        // toNode is an if-join resolved to the last line of the if/else block.
-        // The new node goes at the end of fromNode's branch — same indent as fromNode.
-        indentSpaces = fp.indentSpaces;
-        // insertAfterOrig stays as fromOrigIdx — insert right after fromNode
       } else if (toOrigIndex > fromOrigIdx + 1) {
-        // Block body between fromNode and toNode — insert just before toNode.
-        indentSpaces = toParsed.indentSpaces;
+        // Block body between fromNode and toNode — insert just before toNode
+        indentSpaces    = toParsed.indentSpaces;
         insertAfterOrig = toOrigIndex - 1;
       } else {
-        // Adjacent — insert right after fromNode at toNode's indent.
+        // Adjacent nodes
         indentSpaces = toParsed.indentSpaces;
       }
     } else {
-      // toNode is implicit end — use fromNode's indent
       indentSpaces = fp.indentSpaces;
     }
 
@@ -312,8 +376,6 @@ function insertNodeOnEdgeInSource(fromNodeId, toNodeId, nodeKind) {
   }
 
   const prefix = ' '.repeat(indentSpaces);
-  const keyword = KIND_TO_KEY[nodeKind] || '';
-  const placeholder = nodeKind === 'End' ? '' : 'new node';
   const outgoingSuffix = inheritedOutgoing ? ' ' + inheritedOutgoing : '';
   const newLine = keyword
     ? `${prefix}${keyword}${placeholder ? ' ' + placeholder : ''}${outgoingSuffix}`
