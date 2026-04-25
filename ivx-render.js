@@ -282,20 +282,26 @@ function insertNodeOnEdgeInSource(fromNodeId, toNodeId, nodeKind) {
     // Fall back to fromNode's indent only when toNode has no real source line.
     if (toOrigIndex >= 0 && toOrigIndex < originalLines.length) {
       const toParsed = parseLine(originalLines[toOrigIndex]);
-      if (toParsed.incoming === 'else') {
-        // Inserting before an else branch: match else indent, insert just above it
+      const toIsResolvedJoin = resolvedTo._resolvedOrigLine != null;
+
+      if (toParsed.incoming === 'else' && !toIsResolvedJoin) {
+        // Inserting on the edge that leads into a real else branch:
+        // place the new node just above the else line at the else's indent.
         indentSpaces = toParsed.indentSpaces;
         insertAfterOrig = toOrigIndex - 1;
         inheritedOutgoing = '';
-      } else {
-        // New node lives in same scope as toNode.
+      } else if (toIsResolvedJoin) {
+        // toNode is an if-join resolved to the last line of the if/else block.
+        // The new node goes at the end of fromNode's branch — same indent as fromNode.
+        indentSpaces = fp.indentSpaces;
+        // insertAfterOrig stays as fromOrigIdx — insert right after fromNode
+      } else if (toOrigIndex > fromOrigIdx + 1) {
+        // Block body between fromNode and toNode — insert just before toNode.
         indentSpaces = toParsed.indentSpaces;
-        // If toNode isn't immediately after fromNode there's a block body
-        // between them (e.g. the body of an if or loop). Insert just before
-        // toNode rather than just after fromNode.
-        if (toOrigIndex > fromOrigIdx + 1) {
-          insertAfterOrig = toOrigIndex - 1;
-        }
+        insertAfterOrig = toOrigIndex - 1;
+      } else {
+        // Adjacent — insert right after fromNode at toNode's indent.
+        indentSpaces = toParsed.indentSpaces;
       }
     } else {
       // toNode is implicit end — use fromNode's indent
