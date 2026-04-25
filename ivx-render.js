@@ -151,17 +151,6 @@ function insertNodeOnEdgeInSource(fromNodeId, toNodeId, nodeKind) {
   const toNode   = currentGraph.nodes.find(n => n.id === toNodeId);
   if (!fromNode || !toNode) return;
 
-  // Block insertion on internal graph edges that have no meaningful
-  // source representation and shouldn't be user-editable:
-  //   - loop-head connector → loop-cond Decision (same line, internal)
-  //   - if-join connector → anything (internal merge point)
-  //   - any connector whose meta marks it as an auto-generated join
-  const isInternalConnector = (n) =>
-    n.kind === 'Connector' && n.meta &&
-    (n.meta.includes('loop-head') || n.meta.includes('if-join') || n.meta.includes('from-join'));
-
-  if (isInternalConnector(fromNode) || isInternalConnector(toNode)) return;
-
   const isImplicit = (n) => n.meta && (n.meta.includes('implicit start') || n.meta.includes('implicit end'));
 
   const originalSrc = srcEl.value;
@@ -202,13 +191,47 @@ function insertNodeOnEdgeInSource(fromNodeId, toNodeId, nodeKind) {
     return { indentSpaces, incoming, nodeKey, outgoing };
   };
 
-  const expandOrigLine = (raw) => {
-    return preprocessControlFlowSyntax(raw).split('\n');
+  const expandOrigLine = (raw) => preprocessControlFlowSyntax(raw).split('\n');
+
+  // Resolve internal connectors to meaningful source positions:
+  // - if-join: the merge point after an if/else block. Find the last line
+  //   of the if/else block by scanning forward until indent drops back.
+  // - loop-head: same source line as the loop keyword — handled naturally
+  //   by the same-line branch since loop-cond shares the same line.
+
+  const resolveNode = (n) => {
+    if (!n || isImplicit(n)) return n;
+    if (n.kind === 'Connector' && n.meta?.includes('if-join')) {
+      const ifLine = toOrigIdx(n.line);
+      const ifRaw = originalLines[ifLine] || '';
+      const ifIndent = ifRaw.length - ifRaw.trimStart().length;
+      let lastInBlock = ifLine;
+      for (let i = ifLine + 1; i < originalLines.length; i++) {
+        const raw = originalLines[i];
+        if (!raw.trim()) continue;
+        const indent = raw.length - raw.trimStart().length;
+        const trimmed = raw.trimStart();
+        if (indent === ifIndent && trimmed.startsWith('else')) { lastInBlock = i; continue; }
+        if (indent <= ifIndent) break;
+        lastInBlock = i;
+      }
+      return { ...n, _resolvedOrigLine: lastInBlock };
+    }
+    return n;
   };
 
-  const fromOrigIdx = isImplicit(fromNode) ? -1 : toOrigIdx(fromNode.line);
-  const toOrigIndex = isImplicit(toNode)   ? originalLines.length : toOrigIdx(toNode.line);
-  const fromSubLine = isImplicit(fromNode) ? 0 : prepToSubLine[fromNode.line];
+  const resolvedFrom = resolveNode(fromNode);
+  const resolvedTo   = resolveNode(toNode);
+
+  const getOrigLine = (n, resolved) => {
+    if (isImplicit(n)) return n.meta?.includes('implicit start') ? -1 : originalLines.length;
+    if (resolved._resolvedOrigLine != null) return resolved._resolvedOrigLine;
+    return toOrigIdx(n.line);
+  };
+
+  const fromOrigIdx  = getOrigLine(fromNode, resolvedFrom);
+  const toOrigIndex  = getOrigLine(toNode,   resolvedTo);
+  const fromSubLine  = isImplicit(fromNode) ? 0 : prepToSubLine[fromNode.line];
 
   let insertAfterOrig;
   let indentSpaces = 0;
@@ -234,10 +257,16 @@ function insertNodeOnEdgeInSource(fromNodeId, toNodeId, nodeKind) {
     spliceAt = fromOrigIdx + fromSubLine + 1;
     const fromSubRaw = subLines[fromSubLine];
     const fp = parseLine(fromSubRaw);
-    indentSpaces = fp.indentSpaces;
     if (fp.outgoing === 'prev' || fp.outgoing === 'next') {
       inheritedOutgoing = fp.outgoing;
       originalLines[fromOrigIdx + fromSubLine] = fromSubRaw.replace(/\s+(prev|next)\s*$/, '');
+    }
+    // For loop-head→loop-cond (same line), the new node goes inside the loop
+    // body, so indent should be the loop keyword's indent + 2, not the keyword's own indent.
+    if (fromNode.kind === 'Connector' && fromNode.meta?.includes('loop-head')) {
+      indentSpaces = fp.indentSpaces + 2;
+    } else {
+      indentSpaces = fp.indentSpaces;
     }
   } else {
     insertAfterOrig = fromOrigIdx;
@@ -1315,16 +1344,7 @@ svg.addEventListener('mousedown', e => {
   if (edgePath) {
     const from=parseInt(edgePath.getAttribute('data-edge-from')||'-1',10);
     const to  =parseInt(edgePath.getAttribute('data-edge-to')  ||'-1',10);
-    if (from>-1&&to>-1) {
-      // Suppress menu for internal graph edges (loop-head, if-join, from-join)
-      const fNode = currentGraph?.nodes.find(n=>n.id===from);
-      const tNode = currentGraph?.nodes.find(n=>n.id===to);
-      const isInternal = (n) => n?.kind==='Connector' && n?.meta &&
-        (n.meta.includes('loop-head') || n.meta.includes('if-join') || n.meta.includes('from-join'));
-      if (!isInternal(fNode) && !isInternal(tNode)) {
-        showEdgeMenu(e,from,to); e.preventDefault(); return;
-      }
-    }
+    if (from>-1&&to>-1) { showEdgeMenu(e,from,to); e.preventDefault(); return; }
   }
 
   // Check for block header drag
