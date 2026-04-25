@@ -239,9 +239,8 @@ ${deleteSelf}
     .filter(t => t.getHandlerFunction().startsWith('ivxTrigger_${safeId}_'))
     .forEach(t => ScriptApp.deleteTrigger(t));
   // Install this program's triggers
-${setups.join('
-')}
-}
+${setups.join('\n')}
+};
 
 // Auto-run setup when the project is first opened (one-time install)
 function onOpen() {
@@ -258,8 +257,7 @@ function onOpen() {
       setupFn,
       '',
       ...functions,
-    ].join('
-');
+    ].join('\n');
 
     return { code, services, setupFnName };
   }
