@@ -1268,27 +1268,19 @@ function renderEdges(graph, positions, hidden, extra=[], blockBoxes=[]) {
 
 // FIX: try-error brackets computed before edges, not after
 function renderTryBrackets(graph, positions, hidden) {
-  for (const tryNode of graph.nodes.filter(n=>n.meta?.includes('try-block'))) {
+  for (const tryNode of graph.nodes.filter(n => n.meta?.includes('try-block'))) {
     const m = tryNode.meta?.match(/try-body=\[([^\]]*)\]/);
     if (!m) continue;
-    const ids = m[1].split(',').map(id=>parseInt(id.trim(),10)).filter(id=>!isNaN(id)&&!hidden.has(id));
+    const ids = m[1].split(',').map(id => parseInt(id.trim(), 10)).filter(id => !isNaN(id) && !hidden.has(id));
     if (!ids.length) continue;
-    const fp=positions.get(ids[0]), lp=positions.get(ids[ids.length-1]);
-    if (!fp||!lp) continue;
+    const fp = positions.get(ids[0]), lp = positions.get(ids[ids.length - 1]);
+    if (!fp || !lp) continue;
 
-    // Reposition error handler BEFORE edges are drawn
-    const errHandler = graph.nodes.find(n=>n.meta?.includes(`error-handler-of=${tryNode.id}`));
-    if (errHandler) {
-      const ep = positions.get(errHandler.id);
-      if (ep) {
-        ep.centerX=ep.x=fp.centerX-currentXSTEP*0.7-currentXSTEP*0.8;
-        ep.centerY=ep.y=(fp.centerY+lp.centerY)/2;
-      }
-    }
-
-    const bx=fp.centerX-currentXSTEP*0.7, top=fp.centerY, bot=lp.centerY;
-    el('path',{d:`M ${bx+15} ${top} L ${bx} ${top} L ${bx} ${bot} L ${bx+15} ${bot}`,fill:'none',stroke:'#f59e0b','stroke-width':2,style:'pointer-events:none;'},svg);
-    createLabel('try',bx-20,top,60,null,svg,null,11,12,'#f59e0b');
+    const bx  = fp.centerX - currentXSTEP * 0.7;
+    const top = fp.y;          // use actual top of first node, not centerY
+    const bot = lp.y + (lp.height || 0);  // use actual bottom of last node
+    el('path', { d: `M ${bx+15} ${top} L ${bx} ${top} L ${bx} ${bot} L ${bx+15} ${bot}`, fill: 'none', stroke: '#f59e0b', 'stroke-width': 2, style: 'pointer-events:none;' }, svg);
+    createLabel('try', bx - 20, top, 60, null, svg, null, 11, 12, '#f59e0b');
   }
 }
 
@@ -1323,10 +1315,30 @@ function renderGraph(graph) {
   applyCollapseShift(blockBoxes, positions);
   nodePositions = positions;
 
-  // FIX: render try brackets BEFORE edges so error handler positions are correct
-  renderTryBrackets(graph, positions, hidden);
+  // FIX: reposition error handlers BEFORE edges, but draw brackets AFTER nodes
+  // so that centerX/centerY are fully resolved from actual rendered sizes.
+  for (const tryNode of graph.nodes.filter(n => n.meta?.includes('try-block'))) {
+    const errHandler = graph.nodes.find(n => n.meta?.includes(`error-handler-of=${tryNode.id}`));
+    if (errHandler) {
+      const m = tryNode.meta?.match(/try-body=\[([^\]]*)\]/);
+      if (m) {
+        const ids = m[1].split(',').map(id => parseInt(id.trim(), 10)).filter(id => !isNaN(id));
+        const fp = positions.get(ids[0]);
+        if (fp) {
+          const ep = positions.get(errHandler.id);
+          if (ep) {
+            ep.centerX = ep.x = fp.centerX - currentXSTEP * 0.7 - currentXSTEP * 0.8;
+            ep.centerY = ep.y = fp.centerY;
+          }
+        }
+      }
+    }
+  }
 
   const funFooterOf = renderNodes(graph, positions, hidden);
+
+  // Draw try brackets AFTER renderNodes so node sizes and positions are final
+  renderTryBrackets(graph, positions, hidden);
 
   // Block backgrounds drawn AFTER renderNodes so real node sizes (width/height) are known.
   // Recompute minX/maxX/minY/maxY from actual rendered positions before drawing.
