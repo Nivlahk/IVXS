@@ -33,7 +33,7 @@ function ts(text, color) {
 function codeLine(x, y, parts, cls = '') {
   const inner = parts.map(([t, c]) => ts(t, c)).join('');
   const clsAttr = cls ? ` class="${cls}"` : '';
-  return `<text x="${x}" y="${y}" font-family="monospace" font-size="12.5"${clsAttr}>${inner}</text>`;
+  return `<text x="${x}" y="${y}" font-family="monospace" font-size="12.5" opacity="1"${clsAttr}>${inner}</text>`;
 }
 
 function codePanel(width = 330, height = 280) {
@@ -64,14 +64,6 @@ const IVX_DEMOS = [
     tagline: 'Assign a value to a variable',
     insert: 'make ',
     svgFn: () => mkSvg(`
-      <style>
-        @keyframes ivx-mk1{0%,100%{opacity:0}8%,92%{opacity:1}}
-        @keyframes ivx-mk2{0%,30%,100%{opacity:0}42%,92%{opacity:1}}
-        @keyframes ivx-mk3{0%,55%,100%{opacity:0}65%,92%{opacity:1}}
-        .ivx-mk1{animation:ivx-mk1 8s ease infinite}
-        .ivx-mk2{animation:ivx-mk2 8s ease infinite}
-        .ivx-mk3{animation:ivx-mk3 8s ease infinite}
-      </style>
       ${codePanel(330, 240)}
       ${codeLine(36, 82,  [['make ', DC.K], ['name ', DC.V], ['"Alice"', DC.S]])}
       ${codeLine(36, 108, [['make ', DC.K], ['score ', DC.V], ['42', DC.N]])}
@@ -80,12 +72,10 @@ const IVX_DEMOS = [
       ${termPanel(370, 20, 190, 240)}
       <text x="384" y="60"  font-family="monospace" font-size="11" fill="${DC.M}">name =</text>
       <text x="384" y="76"  font-family="monospace" font-size="13" fill="${DC.S}">"Alice"</text>
-      <text x="384" y="104" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-mk1">score =</text>
-      <text x="384" y="120" font-family="monospace" font-size="13" fill="${DC.N}" class="ivx-mk1">42</text>
-      <text x="384" y="148" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-mk2">score + 8 =</text>
-      <text x="384" y="164" font-family="monospace" font-size="13" fill="${DC.N}" class="ivx-mk2">50</text>
-      <text x="384" y="192" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-mk3">active =</text>
-      <text x="384" y="208" font-family="monospace" font-size="13" fill="${DC.B}" class="ivx-mk3">yes</text>
+      <text x="384" y="100" font-family="monospace" font-size="11" fill="${DC.M}">score =</text>
+      <text x="384" y="116" font-family="monospace" font-size="13" fill="${DC.N}">42 → 50</text>
+      <text x="384" y="140" font-family="monospace" font-size="11" fill="${DC.M}">active =</text>
+      <text x="384" y="156" font-family="monospace" font-size="13" fill="${DC.B}">yes</text>
     `),
   },
   {
@@ -204,10 +194,10 @@ const IVX_DEMOS = [
       ${codeLine(36, 82,  [['make', DC.K], [' score ', DC.V], ['85', DC.N]])}
       ${codeLine(36, 108, [['if', '#89b4fa'], [' score ', DC.V], ['>= 90', '#89b4fa']])}
       ${codeLine(50, 132, [['say', DC.K], [' "A grade"', DC.S]])}
-      <rect x="28" y="142" width="314" height="22" rx="2" class="ivx-ifhlb"/>
+      <rect x="28" y="142" width="314" height="22" rx="2"/>
       ${codeLine(36, 158, [['else if', '#89b4fa'], [' score ', DC.V], ['>= 80', '#89b4fa']])}
       ${codeLine(50, 182, [['say', DC.K], [' "B grade"', DC.S]])}
-      <rect x="28" y="192" width="314" height="22" rx="2" class="ivx-ifhlc"/>
+      <rect x="28" y="192" width="314" height="22" rx="2"/>
       ${codeLine(36, 208, [['else', '#89b4fa']])}
       ${codeLine(50, 232, [['say', DC.K], [' "C grade"', DC.S]])}
       ${termPanel(370, 20, 190, 260)}
@@ -237,7 +227,7 @@ const IVX_DEMOS = [
       ${codeLine(36, 82,  [['make', DC.K], [' temp ', DC.V], ['15', DC.N]])}
       ${codeLine(36, 108, [['if', '#89b4fa'], [' temp ', DC.V], ['> 20', '#89b4fa']])}
       ${codeLine(50, 132, [['say', DC.K], [' "warm"', DC.S]])}
-      <rect x="28" y="142" width="314" height="22" rx="2" class="ivx-elhlb"/>
+      <rect x="28" y="142" width="314" height="22" rx="2"/>
       ${codeLine(36, 158, [['else', '#89b4fa']])}
       ${codeLine(50, 182, [['say', DC.K], [' "cold"', DC.S]])}
       ${termPanel(370, 20, 190, 220)}
@@ -305,11 +295,11 @@ const IVX_DEMOS = [
       ${codeLine(36, 108, [['for', DC.K], [' color ', DC.V], ['in', DC.K], [' colors', DC.V]])}
       ${codeLine(50, 134, [['say', DC.K], [' color', DC.V]])}
       ${codeLine(36, 175, [['note i = value, ii = index', DC.M]])}
-      <rect x="330" y="30" width="110" height="26" rx="3" fill="#1a1a2e" stroke="#2a2a3e" class="ivx-frh1"/>
+      <rect x="330" y="30" width="110" height="26" rx="3" fill="#1a1a2e" stroke="#2a2a3e"/>
       <text x="344" y="47" font-family="monospace" font-size="12" fill="${DC.S}">"red"</text>
-      <rect x="330" y="62" width="110" height="26" rx="3" fill="#1a1a2e" stroke="#2a2a3e" class="ivx-frh2"/>
+      <rect x="330" y="62" width="110" height="26" rx="3" fill="#1a1a2e" stroke="#2a2a3e"/>
       <text x="344" y="79" font-family="monospace" font-size="12" fill="${DC.S}">"green"</text>
-      <rect x="330" y="94" width="110" height="26" rx="3" fill="#1a1a2e" stroke="#2a2a3e" class="ivx-frh3"/>
+      <rect x="330" y="94" width="110" height="26" rx="3" fill="#1a1a2e" stroke="#2a2a3e"/>
       <text x="344" y="111" font-family="monospace" font-size="12" fill="${DC.S}">"blue"</text>
       ${termPanel(450, 20, 110, 220, 'OUT')}
       <text x="464" y="76"  font-family="monospace" font-size="13" fill="#ED8936" class="ivx-fr1">red</text>
@@ -396,14 +386,14 @@ const IVX_DEMOS = [
       ${codeLine(50, 166, [['fun', DC.F], [' value', DC.F], ['()', DC.D]])}
       ${codeLine(64, 188, [['give', DC.K], [' self', DC.C], ['.', DC.D], ['start', DC.V]])}
       ${termPanel(330, 20, 240, 260)}
-      <text x="344" y="72"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-clinst">make c Counter(10)</text>
-      <rect x="336" y="80" width="224" height="54" rx="4" fill="#1a1a2e" stroke="#3a3a5c" class="ivx-clinst"/>
-      <text x="348" y="100" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-clinst">start = 10</text>
-      <text x="348" y="120" font-family="monospace" font-size="10" fill="#4b5563" class="ivx-clinst">methods: bump, value</text>
-      <text x="344" y="160" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-clcall">c.bump()  c.bump()</text>
-      <text x="344" y="178" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-clcall">say c.value()</text>
-      <text x="344" y="224" font-family="monospace" font-size="28" fill="#ED8936" font-weight="bold" class="ivx-clout">12</text>
-      <text x="344" y="248" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-clout">10 + 1 + 1 = 12</text>
+      <text x="344" y="72"  font-family="monospace" font-size="11" fill="${DC.M}">make c Counter(10)</text>
+      <rect x="336" y="80" width="224" height="54" rx="4" fill="#1a1a2e" stroke="#3a3a5c"/>
+      <text x="348" y="100" font-family="monospace" font-size="11" fill="${DC.M}">start = 10</text>
+      <text x="348" y="120" font-family="monospace" font-size="10" fill="#4b5563">methods: bump, value</text>
+      <text x="344" y="160" font-family="monospace" font-size="11" fill="${DC.M}">c.bump()  c.bump()</text>
+      <text x="344" y="178" font-family="monospace" font-size="11" fill="${DC.M}">say c.value()</text>
+      <text x="344" y="224" font-family="monospace" font-size="28" fill="#ED8936" font-weight="bold">12</text>
+      <text x="344" y="248" font-family="monospace" font-size="10" fill="${DC.M}">10 + 1 + 1 = 12</text>
     `),
   },
   {
@@ -505,13 +495,13 @@ const IVX_DEMOS = [
       ${codeLine(64, 174, [['subject', DC.M], [' "Re: {subj}"', DC.S]])}
       ${codeLine(64, 196, [['body', DC.M], [' "On it!"', DC.S]])}
       ${termPanel(330, 20, 240, 260, 'INBOX')}
-      <text x="344" y="76"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-wtidle">⏳ waiting for email…</text>
-      <rect x="338" y="88"  width="224" height="42" rx="3" class="ivx-wtrow"/>
-      <text x="350" y="106" font-family="monospace" font-size="10" fill="${DC.G}" font-weight="bold" class="ivx-wtfire">From: boss@example.com</text>
-      <text x="350" y="122" font-family="monospace" font-size="10" fill="${DC.D}" class="ivx-wtfire">Subject: deploy today?</text>
-      <rect x="338" y="152" width="224" height="42" rx="3" fill="#1a2e1a" stroke="${DC.G}" stroke-opacity=".5" class="ivx-wtreply"/>
-      <text x="350" y="170" font-family="monospace" font-size="10" fill="${DC.G}" font-weight="bold" class="ivx-wtreply">Auto-reply sent ✓</text>
-      <text x="350" y="186" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-wtreply">Re: deploy today? → "On it!"</text>
+      <text x="344" y="76"  font-family="monospace" font-size="11" fill="${DC.M}">⏳ waiting for email…</text>
+      <rect x="338" y="88"  width="224" height="42" rx="3"/>
+      <text x="350" y="106" font-family="monospace" font-size="10" fill="${DC.G}" font-weight="bold">From: boss@example.com</text>
+      <text x="350" y="122" font-family="monospace" font-size="10" fill="${DC.D}">Subject: deploy today?</text>
+      <rect x="338" y="152" width="224" height="42" rx="3" fill="#1a2e1a" stroke="${DC.G}" stroke-opacity=".5"/>
+      <text x="350" y="170" font-family="monospace" font-size="10" fill="${DC.G}" font-weight="bold">Auto-reply sent ✓</text>
+      <text x="350" y="186" font-family="monospace" font-size="10" fill="${DC.M}">Re: deploy today? → "On it!"</text>
     `),
   },
   {
@@ -537,18 +527,18 @@ const IVX_DEMOS = [
       ${codeLine(50, 132, [['"Summarise computing history"', DC.S]])}
       ${codeLine(36, 158, [['say', DC.K], [' result', DC.V]])}
       ${termPanel(330, 20, 240, 270)}
-      <rect x="342" y="62" width="214" height="24" rx="4" fill="${DC.A}" fill-opacity=".12" stroke="${DC.A}" stroke-opacity=".4" class="ivx-aksend"/>
-      <text x="352" y="77" font-family="monospace" font-size="10" fill="${DC.A}" class="ivx-aksend">Summarise computing history</text>
+      <rect x="342" y="62" width="214" height="24" rx="4" fill="${DC.A}" fill-opacity=".12" stroke="${DC.A}" stroke-opacity=".4"/>
+      <text x="352" y="77" font-family="monospace" font-size="10" fill="${DC.A}">Summarise computing history</text>
       <circle cx="360" cy="108" r="5" fill="${DC.A}" class="ivx-akd1"/>
       <circle cx="378" cy="108" r="5" fill="${DC.A}" class="ivx-akd2"/>
       <circle cx="396" cy="108" r="5" fill="${DC.A}" class="ivx-akd3"/>
-      <rect x="342" y="68" width="214" height="118" rx="4" fill="#1a1a2e" stroke="#3a3a5c" class="ivx-akresp"/>
-      <text x="352" y="88"  font-family="monospace" font-size="10" fill="${DC.D}" class="ivx-akresp">Computing began with</text>
-      <text x="352" y="104" font-family="monospace" font-size="10" fill="${DC.D}" class="ivx-akresp">Babbage's Analytical</text>
-      <text x="352" y="120" font-family="monospace" font-size="10" fill="${DC.D}" class="ivx-akresp">Engine in the 1830s.</text>
-      <text x="352" y="136" font-family="monospace" font-size="10" fill="${DC.D}" class="ivx-akresp">ENIAC (1945) was the</text>
-      <text x="352" y="152" font-family="monospace" font-size="10" fill="${DC.D}" class="ivx-akresp">first electronic computer.</text>
-      <text x="352" y="168" font-family="monospace" font-size="10" fill="${DC.D}" class="ivx-akresp">Silicon chips followed…</text>
+      <rect x="342" y="68" width="214" height="118" rx="4" fill="#1a1a2e" stroke="#3a3a5c"/>
+      <text x="352" y="88"  font-family="monospace" font-size="10" fill="${DC.D}">Computing began with</text>
+      <text x="352" y="104" font-family="monospace" font-size="10" fill="${DC.D}">Babbage's Analytical</text>
+      <text x="352" y="120" font-family="monospace" font-size="10" fill="${DC.D}">Engine in the 1830s.</text>
+      <text x="352" y="136" font-family="monospace" font-size="10" fill="${DC.D}">ENIAC (1945) was the</text>
+      <text x="352" y="152" font-family="monospace" font-size="10" fill="${DC.D}">first electronic computer.</text>
+      <text x="352" y="168" font-family="monospace" font-size="10" fill="${DC.D}">Silicon chips followed…</text>
     `),
   },
   {
@@ -573,9 +563,9 @@ const IVX_DEMOS = [
         <text x="126" y="210" font-family="monospace" font-size="9"  fill="${DC.M}">Thanks for joining us.</text>
       </g>
       ${termPanel(330, 20, 240, 260, 'INBOX · alice@…')}
-      <rect x="338" y="68" width="224" height="50" rx="4" fill="#1a2e1a" stroke="${DC.G}" stroke-opacity=".6" class="ivx-eminbox"/>
-      <text x="350" y="88"  font-family="monospace" font-size="11" fill="${DC.G}" font-weight="bold" class="ivx-eminbox">Welcome! ✓</text>
-      <text x="350" y="106" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-eminbox">Thanks for joining us.</text>
+      <rect x="338" y="68" width="224" height="50" rx="4" fill="#1a2e1a" stroke="${DC.G}" stroke-opacity=".6"/>
+      <text x="350" y="88"  font-family="monospace" font-size="11" fill="${DC.G}" font-weight="bold">Welcome! ✓</text>
+      <text x="350" y="106" font-family="monospace" font-size="10" fill="${DC.M}">Thanks for joining us.</text>
     `),
   },
   {
@@ -605,22 +595,22 @@ const IVX_DEMOS = [
         <text x="16" y="50" font-family="monospace" font-size="9" fill="${DC.G}">Name</text>
         <text x="76" y="50" font-family="monospace" font-size="9" fill="${DC.G}">Sales</text>
         <text x="126" y="50" font-family="monospace" font-size="9" fill="${DC.G}">Region</text>
-        <rect x="8" y="60" width="228" height="20" rx="2" fill="#1a1a26" class="ivx-shread"/>
-        <text x="16" y="74" font-family="monospace" font-size="9" fill="${DC.D}" class="ivx-shread">Alice</text>
-        <text x="76" y="74" font-family="monospace" font-size="9" fill="${DC.N}" class="ivx-shread">1200</text>
-        <text x="126" y="74" font-family="monospace" font-size="9" fill="${DC.D}" class="ivx-shread">West</text>
-        <rect x="8" y="82" width="228" height="20" rx="2" fill="#1a1a26" class="ivx-shread"/>
-        <text x="16" y="96" font-family="monospace" font-size="9" fill="${DC.D}" class="ivx-shread">Bob</text>
-        <text x="76" y="96" font-family="monospace" font-size="9" fill="${DC.N}" class="ivx-shread">980</text>
-        <text x="126" y="96" font-family="monospace" font-size="9" fill="${DC.D}" class="ivx-shread">East</text>
-        <rect x="8" y="104" width="228" height="20" rx="2" fill="#1a1a26" class="ivx-shread"/>
-        <text x="16" y="118" font-family="monospace" font-size="9" fill="${DC.D}" class="ivx-shread">Carol</text>
-        <text x="76" y="118" font-family="monospace" font-size="9" fill="${DC.N}" class="ivx-shread">1450</text>
-        <text x="126" y="118" font-family="monospace" font-size="9" fill="${DC.D}" class="ivx-shread">West</text>
-        <rect x="8" y="126" width="228" height="20" rx="2" class="ivx-shappend"/>
-        <text x="16"  y="140" font-family="monospace" font-size="9" fill="${DC.G}" class="ivx-shapptext">Eve</text>
-        <text x="76"  y="140" font-family="monospace" font-size="9" fill="${DC.G}" class="ivx-shapptext">99</text>
-        <text x="126" y="140" font-family="monospace" font-size="9" fill="${DC.G}" class="ivx-shapptext">West ← new</text>
+        <rect x="8" y="60" width="228" height="20" rx="2" fill="#1a1a26"/>
+        <text x="16" y="74" font-family="monospace" font-size="9" fill="${DC.D}">Alice</text>
+        <text x="76" y="74" font-family="monospace" font-size="9" fill="${DC.N}">1200</text>
+        <text x="126" y="74" font-family="monospace" font-size="9" fill="${DC.D}">West</text>
+        <rect x="8" y="82" width="228" height="20" rx="2" fill="#1a1a26"/>
+        <text x="16" y="96" font-family="monospace" font-size="9" fill="${DC.D}">Bob</text>
+        <text x="76" y="96" font-family="monospace" font-size="9" fill="${DC.N}">980</text>
+        <text x="126" y="96" font-family="monospace" font-size="9" fill="${DC.D}">East</text>
+        <rect x="8" y="104" width="228" height="20" rx="2" fill="#1a1a26"/>
+        <text x="16" y="118" font-family="monospace" font-size="9" fill="${DC.D}">Carol</text>
+        <text x="76" y="118" font-family="monospace" font-size="9" fill="${DC.N}">1450</text>
+        <text x="126" y="118" font-family="monospace" font-size="9" fill="${DC.D}">West</text>
+        <rect x="8" y="126" width="228" height="20" rx="2"/>
+        <text x="16"  y="140" font-family="monospace" font-size="9" fill="${DC.G}">Eve</text>
+        <text x="76"  y="140" font-family="monospace" font-size="9" fill="${DC.G}">99</text>
+        <text x="126" y="140" font-family="monospace" font-size="9" fill="${DC.G}">West ← new</text>
       </g>
     `),
   },
