@@ -232,19 +232,30 @@ function insertNodeOnEdgeInSource(fromNodeId, toNodeId, nodeKind) {
     insertAfterOrig = fromOrigIdx;
     const fromRaw = originalLines[fromOrigIdx];
     const fp = parseLine(fromRaw);
-    indentSpaces = fp.indentSpaces;
     if (fp.outgoing === 'prev' || fp.outgoing === 'next') {
       inheritedOutgoing = fp.outgoing;
       originalLines[fromOrigIdx] = fromRaw.replace(/\s+(prev|next)\s*$/, '');
     }
+
+    // Derive indent from toNode's source line — it defines the scope the new
+    // node lives in (it's being inserted just before toNode in the flow).
+    // Fall back to fromNode's indent only when toNode has no real source line.
     if (toOrigIndex >= 0 && toOrigIndex < originalLines.length) {
       const toParsed = parseLine(originalLines[toOrigIndex]);
       if (toParsed.incoming === 'else') {
+        // Inserting before an else branch: match else indent, insert just above it
         indentSpaces = toParsed.indentSpaces;
         insertAfterOrig = toOrigIndex - 1;
         inheritedOutgoing = '';
+      } else {
+        // Normal case: new node lives in the same scope as toNode
+        indentSpaces = toParsed.indentSpaces;
       }
+    } else {
+      // toNode is implicit end — use fromNode's indent
+      indentSpaces = fp.indentSpaces;
     }
+
     spliceAt = insertAfterOrig + 1;
   }
 
