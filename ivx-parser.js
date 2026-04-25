@@ -288,7 +288,7 @@ function parseivx(source) {
         }
         const dc = ctx.decStack[ctx.decStack.length - 1];
         if (dc && !hasEdgesFrom(dc.decNode.id)) {
-            pushEdge(dc.decNode.id, node.id, (dc.kind === 'if' || dc.kind === 'loop') ? 'true' : undefined);
+            pushEdge(dc.decNode.id, node.id, (dc.kind === 'if' || dc.kind === 'loop') ? 'yes' : undefined);
             if (!isEnd(node)) {
                 dc.branchTails.push(node);
                 if (dc.kind === 'if' && dc.trueBranchHead === null) dc.trueBranchHead = node;
@@ -330,14 +330,14 @@ function parseivx(source) {
                 connectors.push(dc.autoConnector);
             }
 
-            if (!edges.some(e => e.from === dc.decNode.id && e.label === 'true')) {
+            if (!edges.some(e => e.from === dc.decNode.id && e.label === 'yes')) {
                 const trueDest = dc.trueBranchHead ?? dc.autoConnector ?? trigger ?? dc.decNode;
-                pushEdge(dc.decNode.id, trueDest.id, 'true');
+                pushEdge(dc.decNode.id, trueDest.id, 'yes');
             }
 
-            if (!edges.some(e => e.from === dc.decNode.id && e.label === 'false')) {
+            if (!edges.some(e => e.from === dc.decNode.id && e.label === 'no')) {
                 const falseDest = dc.autoConnector ?? trigger ?? dc.decNode;
-                pushEdge(dc.decNode.id, falseDest.id, 'false');
+                pushEdge(dc.decNode.id, falseDest.id, 'no');
             }
 
             if (dc.autoConnector) {
@@ -372,9 +372,9 @@ function parseivx(source) {
         if (dc.kind === 'loop') {
             dc.branchTails.forEach(t => pushEdge(t.id, dc.autoConnector.id));
           let exitNode = dc.decNode;
-            if (!edges.some(e => e.from === dc.decNode.id && e.label === 'false')) {
+            if (!edges.some(e => e.from === dc.decNode.id && e.label === 'no')) {
                 if (trigger) {
-                    pushEdge(dc.decNode.id, trigger.id, 'false');
+                    pushEdge(dc.decNode.id, trigger.id, 'no');
                     replaceBranchTail(dc.decNode, trigger);
                     setLastExecAtIndent(dc.indent, trigger);
               exitNode = trigger;
@@ -444,7 +444,7 @@ function parseivx(source) {
                 continue;
               }
 
-                const edgeLabel = dc.kind === 'fork' ? undefined : 'false';
+                const edgeLabel = dc.kind === 'fork' ? undefined : 'no';
                 let bn;
                 if (nodeKey === 'if') {
                     bn = addNode('Decision', lineNum, content, 'if-cond');

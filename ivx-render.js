@@ -1112,7 +1112,7 @@ function drawEdge(x1,y1,x2,y2,label,bow=0,fromId,toId) {
   let loop = 0;
   if (y2<y1 && Math.abs(nat+avoid)<currentXSTEP*0.5) { loop=loopBowSign*currentXSTEP*1.5; loopBowSign*=-1; }
   const cpX = midX+nat+avoid+loop;
-  const color = label==='true'?'#4ade80':label==='false'?'#f87171':'#aaa';
+  const color = label==='yes'?'#4ade80':label==='no'?'#f87171':'#aaa';
   const eA = fromId!=null ? {'data-edge-from':fromId,'data-edge-to':toId} : {};
   const d = `M ${x1} ${y1} Q ${cpX} ${midY} ${x2} ${y2}`;
   if (fromId!=null) el('path',{d,fill:'none',stroke:'transparent','stroke-width':12,style:'cursor:pointer;',...eA},svg);
@@ -1374,8 +1374,14 @@ function renderMinimap() {
   miniSvg.textContent='';
   if (!currentGraph) return;
   miniSvg.setAttribute('viewBox',`${graphBounds.x} ${graphBounds.y} ${graphBounds.width} ${graphBounds.height}`);
-  for (const pos of nodePositions.values())
-    if (pos.width) el('rect',{x:pos.x,y:pos.y,width:pos.width,height:pos.height,fill:'#555',stroke:'none'},miniSvg);
+  for (const [id, pos] of nodePositions) {
+    if (!pos.width) continue;
+    const node = currentGraph.nodes.find(n => n.id === id);
+    const kind = node?.kind;
+    const isFun = kind === 'Process' && /^fun(\s|$)/.test(node?.text || '');
+    const fill = NODE_FILL[kind] || (isFun ? '#92700a' : '#333');
+    el('rect',{x:pos.x,y:pos.y,width:pos.width,height:pos.height,fill,stroke:'none','fill-opacity':'0.8'},miniSvg);
+  }
   el('rect',{class:'vp',x:viewBox.x,y:viewBox.y,width:viewBox.width,height:viewBox.height},miniSvg);
 }
 miniSvg.addEventListener('click', e => {
