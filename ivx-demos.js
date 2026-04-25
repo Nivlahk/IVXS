@@ -670,13 +670,9 @@ const IVX_DEMOS = [
       <text x="404" y="244" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-frd">c, s, fib — all</text>
       <text x="404" y="258" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-frd">local aliases</text>
     `, 580, 300),
-  },
-];
+  },,
 
-// ── Demo index ────────────────────────────────────────────────────────────────
-const IVX_DEMO_MAP = Object.fromEntries(IVX_DEMOS.map(d => [d.id, d]));
-
-  // ── string ──────────────────────────────────────────────────────────────────
+// ── string ──────────────────────────────────────────────────────────────────
   {
     id: 'type-string', label: 'string', color: DC.S,
     tagline: 'Text in double quotes — supports {interpolation}',
@@ -843,6 +839,10 @@ const IVX_DEMO_MAP = Object.fromEntries(IVX_DEMOS.map(d => [d.id, d]));
     `, 580, 280),
   },
 ];
+
+// ── Demo index ────────────────────────────────────────────────────────────────
+const IVX_DEMO_MAP = Object.fromEntries(IVX_DEMOS.map(d => [d.id, d]));
+
 
 const IVX_DEMO_SECTIONS = [
   { label: 'Data',         ids: ['make', 'say', 'take'] },
