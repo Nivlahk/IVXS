@@ -620,23 +620,24 @@ function parseivx(source) {
                 continue;
             }
             else if (nodeKey === 'try') {
-                // 'try' is a block opener — the try node itself is just a marker.
-                // Any content on the same line (e.g. "try fetchData()") becomes
-                // the FIRST node of the try body, exactly as if it were written
-                // on the next indented line.
-                node = addNode('Process', lineNum, 'try', meta || 'try-block');
-                flushUntil(indent, node);
-                if (!tryWireAsBranch(node)) {
-                    wireSeq(getLastExec(), node);
-                }
-                setLastExec(node);
-                node._tryIndent = indent;
-                // If there's inline content, create it as the first try-body node
+                // 'try' is a pure block opener — NO marker node is created.
+                // The try block is identified entirely by meta tags on body nodes.
+                // Any inline content becomes the first body node immediately.
+                // We need a synthetic id to link body nodes and err handler together.
+                // Use a negative sentinel stored on a lightweight object, keyed by line.
+                const tryLineIdx = lineNum; // use preprocessed line number as key
+                flushUntil(indent, getLastExec());
+                // Store the try context so body nodes and err can reference it
+                if (!ctx._tryBlocks) ctx._tryBlocks = {};
+                ctx._tryBlocks[tryLineIdx] = { lineIdx: tryLineIdx, indent };
+                // If there's inline content, create it as the first body node
                 if (content) {
-                    const bodyNode = addNode('Process', lineNum, content, `try-body-of=${node.id}`);
-                    wireSeq(node, bodyNode);
+                    const bodyNode = addNode('Process', lineNum, content, `try-body-of=${tryLineIdx}`);
+                    if (!tryWireAsBranch(bodyNode)) wireSeq(getLastExec(), bodyNode);
                     setLastExec(bodyNode);
                 }
+                // Mark this indent level as a try-block scope for subsequent lines
+                // (the pre-pass _tryBodyOf already handles tagging body nodes)
             }
             else if (nodeKey === 'wait' && /^(email|sheets|time|http)\b/.test(content)) {
                 // Wait block — like fun, sits outside sequential flow
@@ -827,49 +828,43 @@ function parseivx(source) {
       if (imp) pushEdge(finalLast.id, imp.id);
     }
 
-    // Post-process: rewrite try-body-of and error-handler-of from line indices to node ids,
-    // then build try-body=[ids] on each try-block node.
-    // The line index stored in meta is the parsedLines index of the try/err header line.
-    // We need the node id of the try-block node on that line instead.
-    const lineToTryNodeId = new Map();
-    for (const n of nodes) {
-      if (n.meta === 'try-block' || n.meta?.startsWith('try-block ')) {
-        lineToTryNodeId.set(n.line, n.id);
-      }
-    }
+    // Post-process: rewrite try-body-of and error-handler-of from line indices to
+    // a shared synthetic key, then build virtual try-block records for the renderer.
+    // Since there is no try marker node, we use the try line index as a group key
+    // and create a lightweight virtual record (not added to nodes) for renderTryBrackets.
 
+    // First, collect all try-body-of=LINE and error-handler-of=LINE values and
+    // remap them consistently. The line index IS the canonical key — keep it as-is
+    // since there's no node id to remap to. The renderer uses the key directly.
+
+    // Build virtual try-block records: { key, bodyIds, errHandlerId }
+    const tryGroups = new Map(); // lineIdx → { bodyNodeIds: [], errNodeId: null }
     for (const n of nodes) {
       if (n.meta?.startsWith('try-body-of=')) {
-        const lineIdx = parseInt(n.meta.replace('try-body-of=', ''), 10);
-        // lineIdx is the parsedLine index; n.line is the preprocessed line number
-        // Find the try-block node by matching parsedLines[lineIdx].lineNum → node.line
-        const tryLineNum = parsedLines[lineIdx]?.lineNum;
-        if (tryLineNum != null) {
-          const tryNodeId = nodes.find(nd =>
-            nd.line === tryLineNum && (nd.meta === 'try-block' || nd.meta?.startsWith('try-block '))
-          )?.id;
-          if (tryNodeId != null) n.meta = `try-body-of=${tryNodeId}`;
-        }
+        const key = n.meta.replace('try-body-of=', '');
+        if (!tryGroups.has(key)) tryGroups.set(key, { bodyNodeIds: [], errNodeId: null });
+        tryGroups.get(key).bodyNodeIds.push(n.id);
       }
       if (n.meta?.startsWith('error-handler-of=')) {
-        const lineIdx = parseInt(n.meta.replace('error-handler-of=', ''), 10);
-        const tryLineNum = parsedLines[lineIdx]?.lineNum;
-        if (tryLineNum != null) {
-          const tryNodeId = nodes.find(nd =>
-            nd.line === tryLineNum && (nd.meta === 'try-block' || nd.meta?.startsWith('try-block '))
-          )?.id;
-          if (tryNodeId != null) n.meta = `error-handler-of=${tryNodeId}`;
-        }
+        const key = n.meta.replace('error-handler-of=', '');
+        if (!tryGroups.has(key)) tryGroups.set(key, { bodyNodeIds: [], errNodeId: null });
+        tryGroups.get(key).errNodeId = n.id;
       }
     }
 
-    for (const n of nodes) {
-      if (n.meta === 'try-block' || n.meta?.startsWith('try-block ')) {
-        const bodyIds = nodes
-          .filter(b => b.meta === `try-body-of=${n.id}`)
-          .map(b => b.id);
-        if (bodyIds.length) n.meta = `try-block try-body=[${bodyIds.join(',')}]`;
-      }
+    // Attach the tryGroups map to the result so renderTryBrackets can use it
+    // by adding synthetic virtual nodes with meta 'try-block' for each group
+    for (const [key, group] of tryGroups) {
+      if (!group.bodyNodeIds.length) continue;
+      // Virtual node — not rendered, just carries metadata for the bracket renderer
+      nodes.push({
+        id: -(parseInt(key, 10) + 1), // negative id so renderer skips it
+        kind: 'TryBlock',
+        text: 'try',
+        line: parseInt(key, 10),
+        meta: `try-block try-body=[${group.bodyNodeIds.join(',')}] err=${group.errNodeId ?? ''}`,
+        _virtual: true,
+      });
     }
 
     return { nodes, edges, startNodeId: startNode.id, segments: [], validationErrors };

@@ -660,7 +660,7 @@ function computeBranchInfo(graph, byId, childOf, parentOf) {
 }
 
 function computeLayering(graph, byId) {
-  const depth = new Map(graph.nodes.map(n => [n.id, (n.kind==='Start'||n.kind==='Function'||n.kind==='WaitBlock') ? 0 : Infinity]));
+  const depth = new Map(graph.nodes.filter(n => !n._virtual).map(n => [n.id, (n.kind==='Start'||n.kind==='Function'||n.kind==='WaitBlock') ? 0 : Infinity]));
 
   // Err handler nodes are side islands — give them depth 0 so they don't
   // push nodes below them in the sequential Y layout
@@ -1117,6 +1117,7 @@ function renderNodes(graph, positions, hidden) {
 
   for (const node of graph.nodes) {
     if (hidden.has(node.id)) continue;
+    if (node._virtual) continue;  // virtual try-block records — not rendered
     const pos = positions.get(node.id);
     if (!pos) continue;
     const { centerX:cx, centerY:cy } = pos;
@@ -1307,7 +1308,7 @@ function renderEdges(graph, positions, hidden, extra=[], blockBoxes=[]) {
 
 // FIX: try-error brackets computed before edges, not after
 function renderTryBrackets(graph, positions, hidden) {
-  for (const tryNode of graph.nodes.filter(n => n.meta?.includes('try-block'))) {
+  for (const tryNode of graph.nodes.filter(n => n.meta?.includes('try-block') && n._virtual)) {
     const m = tryNode.meta?.match(/try-body=\[([^\]]*)\]/);
     if (!m) continue;
     const ids = m[1].split(',').map(id => parseInt(id.trim(), 10)).filter(id => !isNaN(id) && !hidden.has(id));
@@ -1316,12 +1317,9 @@ function renderTryBrackets(graph, positions, hidden) {
     const lp = positions.get(ids[ids.length - 1]);
     if (!fp || !lp) continue;
 
-    // ── { bracket on left side of the try body nodes ──────────────────────────
-    // Use actual left edge (fp.x) and top/bottom (fp.y, lp.y+height) now that
-    // renderNodes has set width/height on all positions.
     const leftEdge = Math.min(...ids.map(id => positions.get(id)?.x ?? Infinity).filter(isFinite));
     const pad  = 8;
-    const bx   = leftEdge - pad - 12;  // bracket bar X
+    const bx   = leftEdge - pad - 12;
     const top  = (fp.y ?? fp.centerY) - pad;
     const bot  = ((lp.y ?? lp.centerY) + (lp.height || 40)) + pad;
     const armW = 10;
@@ -1332,7 +1330,6 @@ function renderTryBrackets(graph, positions, hidden) {
       style: 'pointer-events:none;'
     }, svg);
 
-    // "try" label centred vertically on the bracket
     const midBracketY = (top + bot) / 2;
     const tryLabel = el('text', {
       x: bx - 4, y: midBracketY + 4,
@@ -1342,12 +1339,12 @@ function renderTryBrackets(graph, positions, hidden) {
     }, svg);
     tryLabel.textContent = 'try';
 
-    // ── Dashed arc from bracket midpoint → err handler ────────────────────────
-    const errHandler = graph.nodes.find(n => n.meta?.includes(`error-handler-of=${tryNode.id}`));
-    if (errHandler && !hidden.has(errHandler.id)) {
-      const ep = positions.get(errHandler.id);
+    const errM = tryNode.meta?.match(/err=(-?\d+)/);
+    const errId = errM ? parseInt(errM[1], 10) : null;
+    if (errId != null && !hidden.has(errId)) {
+      const ep = positions.get(errId);
       if (ep) {
-        const ex = ep.centerX + (ep.width || 120) / 2;  // right edge of err node
+        const ex = ep.centerX + (ep.width || 120) / 2;
         const ey = ep.centerY;
         const cpX = bx - 40;
         el('path', {
@@ -1391,28 +1388,29 @@ function renderGraph(graph) {
   applyCollapseShift(blockBoxes, positions);
   nodePositions = positions;
 
-  // FIX: reposition error handlers and their body nodes to the LEFT of the main column,
-  // vertically centered on the try body. Must happen before renderNodes.
-  for (const tryNode of graph.nodes.filter(n => n.meta?.includes('try-block'))) {
-    const errHandler = graph.nodes.find(n => n.meta?.includes(`error-handler-of=${tryNode.id}`));
-    if (!errHandler) continue;
+  // Reposition err handler nodes to the LEFT of the main column
+  for (const tryNode of graph.nodes.filter(n => n.meta?.includes('try-block') && n._virtual)) {
     const m = tryNode.meta?.match(/try-body=\[([^\]]*)\]/);
     if (!m) continue;
     const bodyIds = m[1].split(',').map(id => parseInt(id.trim(), 10)).filter(id => !isNaN(id));
     const bodyYs  = bodyIds.map(id => positions.get(id)?.centerY).filter(v => v != null);
     if (!bodyYs.length) continue;
-    const midY = (Math.min(...bodyYs) + Math.max(...bodyYs)) / 2;
+    const midY   = (Math.min(...bodyYs) + Math.max(...bodyYs)) / 2;
+    const errM   = tryNode.meta?.match(/err=(-?\d+)/);
+    const errId  = errM ? parseInt(errM[1], 10) : null;
+    if (errId == null) continue;
+    const errHandler = graph.nodes.find(n => n.id === errId);
+    if (!errHandler) continue;
 
-    // Derive main column X from the try node's own position
-    const tryPos  = positions.get(tryNode.id);
-    const mainCX  = tryPos?.centerX ?? 500;
-    const errCX   = mainCX - currentXSTEP * 2.2;
+    // Derive main column X from first body node
+    const firstBodyPos = positions.get(bodyIds[0]);
+    const mainCX = firstBodyPos?.centerX ?? 500;
+    const errCX  = mainCX - currentXSTEP * 2.2;
 
-    // Reposition the err handler header node
     const ep = positions.get(errHandler.id);
     if (ep) { ep.centerX = ep.x = errCX; ep.centerY = ep.y = midY; }
 
-    // Reposition all err handler body nodes (walk forward via sequential edges)
+    // Walk forward from err handler and reposition body nodes
     const visited = new Set([errHandler.id]);
     const queue   = [errHandler.id];
     let errY      = midY + currentXSTEP * 1.2;
