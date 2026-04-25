@@ -670,7 +670,7 @@ const IVX_DEMOS = [
       <text x="404" y="244" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-frd">c, s, fib — all</text>
       <text x="404" y="258" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-frd">local aliases</text>
     `, 580, 300),
-  },,
+  },
 
 // ── string ──────────────────────────────────────────────────────────────────
   {
@@ -841,7 +841,7 @@ const IVX_DEMOS = [
 ];
 
 // ── Demo index ────────────────────────────────────────────────────────────────
-const IVX_DEMO_MAP = Object.fromEntries(IVX_DEMOS.map(d => [d.id, d]));
+const IVX_DEMO_MAP = Object.fromEntries(IVX_DEMOS.filter(d => d && d.id).map(d => [d.id, d]));
 
 
 const IVX_DEMO_SECTIONS = [
