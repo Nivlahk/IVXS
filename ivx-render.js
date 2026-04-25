@@ -1276,11 +1276,11 @@ function renderTryBrackets(graph, positions, hidden) {
     const fp = positions.get(ids[0]), lp = positions.get(ids[ids.length - 1]);
     if (!fp || !lp) continue;
 
-    const bx  = fp.centerX - currentXSTEP * 0.7;
-    const top = fp.y;          // use actual top of first node, not centerY
-    const bot = lp.y + (lp.height || 0);  // use actual bottom of last node
-    el('path', { d: `M ${bx+15} ${top} L ${bx} ${top} L ${bx} ${bot} L ${bx+15} ${bot}`, fill: 'none', stroke: '#f59e0b', 'stroke-width': 2, style: 'pointer-events:none;' }, svg);
-    createLabel('try', bx - 20, top, 60, null, svg, null, 11, 12, '#f59e0b');
+    const bx  = fp.x - 16;  // 16px left of the node's actual left edge
+    const top = fp.y;
+    const bot = lp.y + (lp.height || 0);
+    el('path', { d: `M ${bx+10} ${top} L ${bx} ${top} L ${bx} ${bot} L ${bx+10} ${bot}`, fill: 'none', stroke: '#f59e0b', 'stroke-width': 1.5, style: 'pointer-events:none;' }, svg);
+    createLabel('try', bx - 22, top + (bot - top) / 2 - 6, 40, null, svg, null, 10, 11, '#f59e0b');
   }
 }
 
@@ -1337,9 +1337,6 @@ function renderGraph(graph) {
 
   const funFooterOf = renderNodes(graph, positions, hidden);
 
-  // Draw try brackets AFTER renderNodes so node sizes and positions are final
-  renderTryBrackets(graph, positions, hidden);
-
   // Block backgrounds drawn AFTER renderNodes so real node sizes (width/height) are known.
   // Recompute minX/maxX/minY/maxY from actual rendered positions before drawing.
   for (const box of blockBoxes) {
@@ -1375,6 +1372,9 @@ function renderGraph(graph) {
   for (const r of bgEls) svg.insertBefore(r, svg.firstChild);
 
   renderEdges(graph, positions, hidden, [], blockBoxes);
+
+  // Try brackets drawn LAST so they're always on top of block backgrounds and edges
+  renderTryBrackets(graph, positions, hidden);
 
   // Stash blockBoxes so block label/color editing can find them
   if (currentGraph) currentGraph.__blockBoxes = blockBoxes;
