@@ -1403,22 +1403,22 @@ function renderGraph(graph) {
     if (!bodyYs.length) continue;
     const midY = (Math.min(...bodyYs) + Math.max(...bodyYs)) / 2;
 
-    // Left column X: 2 XSTEPs to the left of the main column
-    const errCX = centerX0 - currentXSTEP * 2.2;
+    // Derive main column X from the try node's own position
+    const tryPos  = positions.get(tryNode.id);
+    const mainCX  = tryPos?.centerX ?? 500;
+    const errCX   = mainCX - currentXSTEP * 2.2;
 
     // Reposition the err handler header node
     const ep = positions.get(errHandler.id);
     if (ep) { ep.centerX = ep.x = errCX; ep.centerY = ep.y = midY; }
 
-    // Reposition all err handler body nodes (nodes that flow sequentially from errHandler)
-    // Walk forward through the graph from errHandler via sequential edges
+    // Reposition all err handler body nodes (walk forward via sequential edges)
     const visited = new Set([errHandler.id]);
     const queue   = [errHandler.id];
-    let errY      = midY + currentXSTEP * 1.2; // stack body nodes below header
+    let errY      = midY + currentXSTEP * 1.2;
     while (queue.length) {
       const cur = queue.shift();
-      const outEdges = graph.edges.filter(e => e.from === cur);
-      for (const e of outEdges) {
+      for (const e of graph.edges.filter(e2 => e2.from === cur)) {
         if (visited.has(e.to)) continue;
         visited.add(e.to);
         queue.push(e.to);
