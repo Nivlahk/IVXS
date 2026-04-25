@@ -132,7 +132,7 @@ function parseivx(source) {
           pl._tryBodyOf = k;
           break;
         }
-        if (parsedLines[k].indent <= pl.indent) break;
+        if (parsedLines[k].indent < pl.indent) break; // strictly less: stop only at lower indent
       }
     }
 
@@ -821,11 +821,46 @@ function parseivx(source) {
       if (imp) pushEdge(finalLast.id, imp.id);
     }
 
-    // Post-process: build try-body=[ids] on each try-block node
+    // Post-process: rewrite try-body-of and error-handler-of from line indices to node ids,
+    // then build try-body=[ids] on each try-block node.
+    // The line index stored in meta is the parsedLines index of the try/err header line.
+    // We need the node id of the try-block node on that line instead.
+    const lineToTryNodeId = new Map();
     for (const n of nodes) {
-      if (n.meta === 'try-block') {
+      if (n.meta === 'try-block' || n.meta?.startsWith('try-block ')) {
+        lineToTryNodeId.set(n.line, n.id);
+      }
+    }
+
+    for (const n of nodes) {
+      if (n.meta?.startsWith('try-body-of=')) {
+        const lineIdx = parseInt(n.meta.replace('try-body-of=', ''), 10);
+        // lineIdx is the parsedLine index; n.line is the preprocessed line number
+        // Find the try-block node by matching parsedLines[lineIdx].lineNum → node.line
+        const tryLineNum = parsedLines[lineIdx]?.lineNum;
+        if (tryLineNum != null) {
+          const tryNodeId = nodes.find(nd =>
+            nd.line === tryLineNum && (nd.meta === 'try-block' || nd.meta?.startsWith('try-block '))
+          )?.id;
+          if (tryNodeId != null) n.meta = `try-body-of=${tryNodeId}`;
+        }
+      }
+      if (n.meta?.startsWith('error-handler-of=')) {
+        const lineIdx = parseInt(n.meta.replace('error-handler-of=', ''), 10);
+        const tryLineNum = parsedLines[lineIdx]?.lineNum;
+        if (tryLineNum != null) {
+          const tryNodeId = nodes.find(nd =>
+            nd.line === tryLineNum && (nd.meta === 'try-block' || nd.meta?.startsWith('try-block '))
+          )?.id;
+          if (tryNodeId != null) n.meta = `error-handler-of=${tryNodeId}`;
+        }
+      }
+    }
+
+    for (const n of nodes) {
+      if (n.meta === 'try-block' || n.meta?.startsWith('try-block ')) {
         const bodyIds = nodes
-          .filter(b => b.meta === `try-body-of=${n.id}` || b.meta?.startsWith(`try-body-of=${n.id}`))
+          .filter(b => b.meta === `try-body-of=${n.id}`)
           .map(b => b.id);
         if (bodyIds.length) n.meta = `try-block try-body=[${bodyIds.join(',')}]`;
       }
