@@ -965,7 +965,7 @@ function renderNodes(graph, positions, hidden) {
 
     // Connector dots
     if (node.kind==='Connector' || node.kind==='NextConnector') {
-      const r=6, fill=node.kind==='Connector'?'#bbb':'#00bfff';
+      const r=8, fill=node.kind==='Connector'?'#bbb':'#00bfff';
       const c = el('circle',{cx,cy,r,fill,stroke:'#ccc','stroke-width':1.5},svg);
       title(c, extractComment(node.meta)); c.dataset.nodeId=node.id; c.style.cursor='text';
       Object.assign(pos,{x:cx-r,y:cy-r,width:r*2,height:r*2,edgeTop:cy-r,edgeBottom:cy+r});
@@ -1380,7 +1380,16 @@ function renderMinimap() {
     const kind = node?.kind;
     const isFun = kind === 'Process' && /^fun(\s|$)/.test(node?.text || '');
     const fill = NODE_FILL[kind] || (isFun ? '#92700a' : '#333');
-    el('rect',{x:pos.x,y:pos.y,width:pos.width,height:pos.height,fill,stroke:'none','fill-opacity':'0.8'},miniSvg);
+    if (kind === 'Connector' || kind === 'NextConnector') {
+      // Draw as a large circle — nearly node-sized — so it reads clearly in the minimap
+      const cx = pos.x + pos.width / 2;
+      const cy = pos.y + pos.height / 2;
+      const r = Math.max(pos.width, pos.height) * 1.8;
+      const circleFill = kind === 'Connector' ? '#bbb' : '#00bfff';
+      el('circle',{cx,cy,r,fill:circleFill,stroke:'none','fill-opacity':'0.9'},miniSvg);
+    } else {
+      el('rect',{x:pos.x,y:pos.y,width:pos.width,height:pos.height,fill,stroke:'none','fill-opacity':'0.8'},miniSvg);
+    }
   }
   el('rect',{class:'vp',x:viewBox.x,y:viewBox.y,width:viewBox.width,height:viewBox.height},miniSvg);
 }
