@@ -66,29 +66,26 @@ const IVX_DEMOS = [
     svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-mk1{0%,100%{opacity:0}8%,92%{opacity:1}}
-        @keyframes ivx-mk2{0%,20%,100%{opacity:0}30%,92%{opacity:1}}
-        @keyframes ivx-mk3{0%,42%,100%{opacity:0}52%,92%{opacity:1}}
-        @keyframes ivx-mk4{0%,64%,100%{opacity:0}72%,92%{opacity:1}}
-        .ivx-mk1{animation:ivx-mk1 7s ease infinite}
-        .ivx-mk2{animation:ivx-mk2 7s ease infinite}
-        .ivx-mk3{animation:ivx-mk3 7s ease infinite}
-        .ivx-mk4{animation:ivx-mk4 7s ease infinite}
+        @keyframes ivx-mk2{0%,30%,100%{opacity:0}42%,92%{opacity:1}}
+        @keyframes ivx-mk3{0%,55%,100%{opacity:0}65%,92%{opacity:1}}
+        .ivx-mk1{animation:ivx-mk1 8s ease infinite}
+        .ivx-mk2{animation:ivx-mk2 8s ease infinite}
+        .ivx-mk3{animation:ivx-mk3 8s ease infinite}
       </style>
-      ${codePanel(330, 260)}
+      ${codePanel(330, 240)}
       ${codeLine(36, 82,  [['make ', DC.K], ['name ', DC.V], ['"Alice"', DC.S]])}
-      ${codeLine(36, 108, [['make ', DC.K], ['score ', DC.V], ['42', DC.N]], 'ivx-mk1')}
-      ${codeLine(36, 134, [['make ', DC.K], ['score ', DC.V], ['+ 8', DC.K], ['  note score → 50', DC.M]], 'ivx-mk2')}
-      ${codeLine(36, 160, [['make ', DC.K], ['active ', DC.V], ['yes', DC.B]], 'ivx-mk3')}
-      ${codeLine(36, 186, [['make ', DC.K], ['self', DC.C], ['.', DC.D], ['name ', DC.V], ['"Bob"', DC.S]], 'ivx-mk4')}
-      ${termPanel(370, 20, 190, 260)}
-      <text x="384" y="70"  font-family="monospace" font-size="11" fill="${DC.M}">name =</text>
-      <text x="384" y="86"  font-family="monospace" font-size="13" fill="${DC.S}">"Alice"</text>
-      <text x="384" y="114" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-mk1">score =</text>
-      <text x="384" y="130" font-family="monospace" font-size="13" fill="${DC.N}" class="ivx-mk1">42</text>
-      <text x="384" y="158" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-mk2">score + 8 =</text>
-      <text x="384" y="174" font-family="monospace" font-size="13" fill="${DC.N}" class="ivx-mk2">50</text>
-      <text x="384" y="202" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-mk3">active =</text>
-      <text x="384" y="218" font-family="monospace" font-size="13" fill="${DC.B}" class="ivx-mk3">yes</text>
+      ${codeLine(36, 108, [['make ', DC.K], ['score ', DC.V], ['42', DC.N]])}
+      ${codeLine(36, 134, [['make ', DC.K], ['score ', DC.V], ['+ 8', DC.K], ['  note → 50', DC.M]])}
+      ${codeLine(36, 160, [['make ', DC.K], ['active ', DC.V], ['yes', DC.B]])}
+      ${termPanel(370, 20, 190, 240)}
+      <text x="384" y="60"  font-family="monospace" font-size="11" fill="${DC.M}">name =</text>
+      <text x="384" y="76"  font-family="monospace" font-size="13" fill="${DC.S}">"Alice"</text>
+      <text x="384" y="104" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-mk1">score =</text>
+      <text x="384" y="120" font-family="monospace" font-size="13" fill="${DC.N}" class="ivx-mk1">42</text>
+      <text x="384" y="148" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-mk2">score + 8 =</text>
+      <text x="384" y="164" font-family="monospace" font-size="13" fill="${DC.N}" class="ivx-mk2">50</text>
+      <text x="384" y="192" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-mk3">active =</text>
+      <text x="384" y="208" font-family="monospace" font-size="13" fill="${DC.B}" class="ivx-mk3">yes</text>
     `),
   },
   {
@@ -175,9 +172,9 @@ const IVX_DEMOS = [
       <rect x="28" y="58" width="314" height="74" rx="4" fill="${DC.F}" fill-opacity=".05" stroke="${DC.F}" stroke-opacity=".2"/>
       ${codeLine(36, 78,  [['fun', DC.F], [' double', DC.F], ['(n)', DC.D]])}
       ${codeLine(50, 104, [['give', DC.K], [' n ', DC.V], ['* 2', DC.K]])}
-      ${codeLine(36, 148, [['say', DC.K], [' double', DC.F], ['(6)', DC.D]], 'ivx-gvcall')}
-      ${codeLine(36, 174, [['say', DC.K], [' double', DC.F], ['(21)', DC.D]], 'ivx-gvcall')}
-      ${codeLine(36, 200, [['say', DC.K], [' double', DC.F], ['(', DC.D], ['double', DC.F], ['(3))', DC.D]], 'ivx-gvcall')}
+      ${codeLine(36, 148, [['say', DC.K], [' double', DC.F], ['(6)', DC.D]])}
+      ${codeLine(36, 174, [['say', DC.K], [' double', DC.F], ['(21)', DC.D]])}
+      ${codeLine(36, 200, [['say', DC.K], [' double', DC.F], ['(', DC.D], ['double', DC.F], ['(3))', DC.D]])}
       ${termPanel(370, 20, 190, 260)}
       <text x="384" y="90"  font-family="monospace" font-size="26" fill="#ED8936" font-weight="bold" class="ivx-gvr1">12</text>
       <text x="384" y="134" font-family="monospace" font-size="26" fill="#ED8936" font-weight="bold" class="ivx-gvr1">42</text>
@@ -369,8 +366,8 @@ const IVX_DEMOS = [
       ${codeLine(36, 78,  [['fun', DC.F], [' greet', DC.F], ['(name, greeting', DC.D], ['? ', DC.K], ['"Hi"', DC.S], [')', DC.D]])}
       ${codeLine(50, 104, [['give', DC.K], [' "{greeting}, {name}!"', DC.S]])}
       ${codeLine(50, 128, [['note greeting defaults to "Hi"', DC.M]])}
-      ${codeLine(36, 172, [['say', DC.K], [' greet', DC.F], ['("Alice")', DC.D]], 'ivx-fncall')}
-      ${codeLine(36, 198, [['say', DC.K], [' greet', DC.F], ['("Bob", "Hey")', DC.D]], 'ivx-fncall')}
+      ${codeLine(36, 172, [['say', DC.K], [' greet', DC.F], ['("Alice")', DC.D]])}
+      ${codeLine(36, 198, [['say', DC.K], [' greet', DC.F], ['("Bob", "Hey")', DC.D]])}
       ${termPanel(370, 20, 190, 260)}
       <text x="384" y="110" font-family="monospace" font-size="17" fill="#ED8936" font-weight="bold" class="ivx-fnr1">Hi, Alice!</text>
       <text x="384" y="170" font-family="monospace" font-size="17" fill="#ED8936" font-weight="bold" class="ivx-fnr2">Hey, Bob!</text>
@@ -652,24 +649,37 @@ const IVX_DEMOS = [
   },
   {
     id: 'from', label: 'from … use', color: DC.G,
-    tagline: 'Import named functions from a URL',
-    insert: 'from  use ',
+    tagline: 'Import and alias functions from a URL',
+    insert: 'from \n  use  as \n  use  as ',
     svgFn: () => mkSvg(`
       <style>
-        @keyframes ivx-frimport{0%,10%,100%{opacity:0}20%,92%{opacity:1}}
-        @keyframes ivx-fruse{0%,35%,100%{opacity:0}45%,92%{opacity:1}}
-        .ivx-frimport{animation:ivx-frimport 7s ease infinite}
-        .ivx-fruse{animation:ivx-fruse 7s ease infinite}
+        @keyframes ivx-fra{0%,8%,100%{opacity:0}18%,92%{opacity:1}}
+        @keyframes ivx-frb{0%,30%,100%{opacity:0}40%,92%{opacity:1}}
+        @keyframes ivx-frc{0%,52%,100%{opacity:0}62%,92%{opacity:1}}
+        @keyframes ivx-frd{0%,70%,100%{opacity:0}80%,92%{opacity:1}}
+        .ivx-fra{animation:ivx-fra 9s ease infinite}
+        .ivx-frb{animation:ivx-frb 9s ease infinite}
+        .ivx-frc{animation:ivx-frc 9s ease infinite}
+        .ivx-frd{animation:ivx-frd 9s ease infinite}
       </style>
-      ${codePanel(380, 200)}
-      ${codeLine(36, 82,  [['from', DC.G], [' https://ivxs.tech/std/math ', '#56b6c2'], ['use', DC.G], [' fibonacci', DC.F]])}
-      ${codeLine(36, 108, [['say', DC.K], [' fibonacci', DC.F], ['(10)', DC.D]], 'ivx-frimport')}
-      ${codeLine(36, 134, [['say', DC.K], [' fibonacci', DC.F], ['(7)', DC.D]], 'ivx-frimport')}
-      ${termPanel(400, 20, 160, 200)}
-      <text x="414" y="90"  font-family="monospace" font-size="16" fill="#ED8936" class="ivx-fruse">55</text>
-      <text x="414" y="120" font-family="monospace" font-size="16" fill="#ED8936" class="ivx-fruse">13</text>
-      <text x="414" y="156" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-fruse">fib(10), fib(7)</text>
-    `, 580, 220),
+      ${codePanel(370, 260)}
+      ${codeLine(36, 78,  [['from', DC.G], [' https://ivxs.tech/std/math', '#56b6c2']])}
+      ${codeLine(50, 102, [['use', DC.G], [' cosine ', DC.F], ['as', DC.K], [' c', DC.F]])}
+      ${codeLine(50, 126, [['use', DC.G], [' sine ', DC.F], ['as', DC.K], [' s', DC.F]])}
+      ${codeLine(50, 150, [['use', DC.G], [' fibonacci ', DC.F], ['as', DC.K], [' fib', DC.F]])}
+      ${codeLine(36, 186, [['say', DC.K], [' c', DC.F], ['(0)', DC.D]])}
+      ${codeLine(36, 210, [['say', DC.K], [' s', DC.F], ['(0)', DC.D]])}
+      ${codeLine(36, 234, [['say', DC.K], [' fib', DC.F], ['(10)', DC.D]])}
+      ${termPanel(390, 20, 170, 260)}
+      <text x="404" y="100" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-fra">1.0</text>
+      <text x="404" y="118" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-fra">cosine(0)</text>
+      <text x="404" y="148" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-frb">0.0</text>
+      <text x="404" y="166" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-frb">sine(0)</text>
+      <text x="404" y="196" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-frc">55</text>
+      <text x="404" y="214" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-frc">fibonacci(10)</text>
+      <text x="404" y="244" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-frd">c, s, fib — all</text>
+      <text x="404" y="258" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-frd">local aliases</text>
+    `, 580, 300),
   },
 ];
 
