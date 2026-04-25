@@ -620,17 +620,23 @@ function parseivx(source) {
                 continue;
             }
             else if (nodeKey === 'try') {
-                // try is a Process node in the main flow — wire it normally.
-                // The try-body nodes that follow are also in the main flow.
-                // When we hit 'err', we'll detach that branch and restore lastExec.
-                node = addNode('Process', lineNum, content || 'try', meta || 'try-block');
+                // 'try' is a block opener — the try node itself is just a marker.
+                // Any content on the same line (e.g. "try fetchData()") becomes
+                // the FIRST node of the try body, exactly as if it were written
+                // on the next indented line.
+                node = addNode('Process', lineNum, 'try', meta || 'try-block');
                 flushUntil(indent, node);
                 if (!tryWireAsBranch(node)) {
                     wireSeq(getLastExec(), node);
                 }
                 setLastExec(node);
-                // Record the indent so we can find the matching err later
                 node._tryIndent = indent;
+                // If there's inline content, create it as the first try-body node
+                if (content) {
+                    const bodyNode = addNode('Process', lineNum, content, `try-body-of=${node.id}`);
+                    wireSeq(node, bodyNode);
+                    setLastExec(bodyNode);
+                }
             }
             else if (nodeKey === 'wait' && /^(email|sheets|time|http)\b/.test(content)) {
                 // Wait block — like fun, sits outside sequential flow
