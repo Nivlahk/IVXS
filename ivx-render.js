@@ -1612,7 +1612,7 @@ function renderMinimap() {
       // Draw as a large circle — nearly node-sized — so it reads clearly in the minimap
       const cx = pos.x + pos.width / 2;
       const cy = pos.y + pos.height / 2;
-      const r = Math.max(pos.width, pos.height) * 3;
+      const r = Math.max(pos.width, pos.height) * 1.5;
       const circleFill = kind === 'Connector' ? '#bbb' : '#00bfff';
       el('circle',{cx,cy,r,fill:circleFill,stroke:'none','fill-opacity':'0.9'},miniSvg);
     } else {
