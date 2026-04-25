@@ -661,11 +661,19 @@ function computeBranchInfo(graph, byId, childOf, parentOf) {
 
 function computeLayering(graph, byId) {
   const depth = new Map(graph.nodes.map(n => [n.id, (n.kind==='Start'||n.kind==='Function'||n.kind==='WaitBlock') ? 0 : Infinity]));
-  // Err handler nodes are laid out as side islands (like fun bodies) — exclude from sequential depth
-  for (const n of graph.nodes) {
-    if (n.meta?.includes('error-handler-of')) depth.set(n.id, 0);
-  }
-  const fwdEdges = graph.edges.filter(e => { const a=byId.get(e.from),b=byId.get(e.to); return a&&b&&fwd(a,b); });
+
+  // Err handler nodes are side islands — give them depth 0 so they don't
+  // push nodes below them in the sequential Y layout
+  const errHandlerIds = new Set(
+    graph.nodes.filter(n => n.meta?.includes('error-handler-of')).map(n => n.id)
+  );
+  for (const id of errHandlerIds) depth.set(id, 0);
+
+  const fwdEdges = graph.edges.filter(e => {
+    const a = byId.get(e.from), b = byId.get(e.to);
+    return a && b && fwd(a, b);
+  });
+
   for (let pass = 0; pass < 50; pass++) {
     let changed = false;
     for (const e of fwdEdges) {
@@ -679,7 +687,7 @@ function computeLayering(graph, byId) {
     .sort((a,b) => a.line!==b.line ? a.line-b.line : a.segmentIndex!==b.segmentIndex ? a.segmentIndex-b.segmentIndex : a.id-b.id)
     .forEach(n => {
       if (n.kind==='Function' || n.kind==='WaitBlock') depth.set(n.id, 0);
-      else if (n.meta?.includes('error-handler-of')) { /* already set to 0 above */ }
+      else if (errHandlerIds.has(n.id)) { /* already 0 */ }
       else if (!isFinite(depth.get(n.id))) depth.set(n.id, fallback++);
     });
   return depth;

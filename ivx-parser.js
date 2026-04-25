@@ -417,6 +417,14 @@ function parseivx(source) {
         while (ctxStack.length > 0 && indent <= ctx.baseIndent) {
             closeFunCtx();
         }
+        // Restore lastExec when dedenting out of an err block
+        if (ctx._errRestoreStack) {
+            while (ctx._errRestoreStack.length > 0 &&
+                   indent <= ctx._errRestoreStack[ctx._errRestoreStack.length - 1].indent) {
+                const { savedExec } = ctx._errRestoreStack.pop();
+                setLastExec(savedExec);
+            }
+        }
         if (incoming === 'else') {
             let dcIdx = ctx.decStack.length - 1;
             if (nodeKey !== 'if') {
@@ -611,6 +619,19 @@ function parseivx(source) {
                 ctx = makeCtx(indent, node, savedBeforeFun);
                 continue;
             }
+            else if (nodeKey === 'try') {
+                // try is a Process node in the main flow — wire it normally.
+                // The try-body nodes that follow are also in the main flow.
+                // When we hit 'err', we'll detach that branch and restore lastExec.
+                node = addNode('Process', lineNum, content || 'try', meta || 'try-block');
+                flushUntil(indent, node);
+                if (!tryWireAsBranch(node)) {
+                    wireSeq(getLastExec(), node);
+                }
+                setLastExec(node);
+                // Record the indent so we can find the matching err later
+                node._tryIndent = indent;
+            }
             else if (nodeKey === 'wait' && /^(email|sheets|time|http)\b/.test(content)) {
                 // Wait block — like fun, sits outside sequential flow
                 // Build a display label: "wait email by addr" etc.
@@ -659,6 +680,27 @@ function parseivx(source) {
             continue;
         }
         const hasNonIncomingKeyword = nodeKey || outgoing;
+        if (_errHandler) {
+            // err line — create the node but wire it OUTSIDE the main sequential flow.
+            // The err handler is a side island: it has no incoming/outgoing sequential edges.
+            // We save lastExec (= last try-body node), create the err node as a detached
+            // Process, then restore lastExec so what follows continues from the right place.
+            const savedExec = getLastExec();
+            const errNode = addNode('Process', lineNum, content, meta);
+            // No wireSeq — no sequential edges to/from the err handler
+            // The err body nodes (_tryBodyOf check doesn't apply to them, they follow
+            // this line at deeper indent and will be wired sequentially FROM errNode
+            // inside the err branch, but that's fine — they're purely visual)
+            setLastExec(errNode);
+            // After this line's body is processed, restore lastExec to savedExec
+            // so the node after the entire err block continues from the try-body tail.
+            // We do this by pushing a sentinel: track the err indent, and when we
+            // dedent back out, restore savedExec.
+            // Simple approach: store savedExec on a stack keyed by the err indent.
+            if (!ctx._errRestoreStack) ctx._errRestoreStack = [];
+            ctx._errRestoreStack.push({ indent, savedExec });
+            continue;
+        }
         if (content || hasNonIncomingKeyword) {
             // Detect list/dict literals on make lines (make is not a nodeKey)
             let fallMeta = meta;
