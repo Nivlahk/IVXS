@@ -672,22 +672,23 @@ const IVX_DEMOS = [
     `, 580, 300),
   },
 
-// ── string ──────────────────────────────────────────────────────────────────
+  // ── type-string ─────────────────────────────────────────────────────────────
   {
-    id: 'type-string', label: 'string', color: DC.S,
-    tagline: 'Text in double quotes — supports \u007binterpolation\u007d',
+    id: 'type-string', label: 'string', color: '#ce9178',
+    tagline: 'Text in double quotes — supports interpolation with {var}',
     insert: '"" ',
-    svgFn: () => mkSvg(`
+    svgFn: () => {
+      const body = `
       ${codePanel(310, 280)}
       ${codeLine(36, 78,  [['make ', DC.K], ['a ', DC.V], ['"Hello"', DC.S]])}
       ${codeLine(36, 100, [['make ', DC.K], ['b ', DC.V], ['"World"', DC.S]])}
-      ${codeLine(36, 122, [['make ', DC.K], ['c ', DC.V], ['"\u007ba\u007d, \u007bb\u007d!"', DC.S]])}
+      ${codeLine(36, 122, [['make ', DC.K], ['c ', DC.V], ['"\\u007ba\\u007d, \\u007bb\\u007d!"', DC.S]])}
       ${codeLine(36, 152, [['say ', DC.K], ['size', DC.F], ['(a)', DC.D]])}
       ${codeLine(36, 174, [['say ', DC.K], ['upper', DC.F], ['(a)', DC.D]])}
       ${codeLine(36, 196, [['say ', DC.K], ['a ', DC.V], ['+ " " + ', DC.K], ['b', DC.V]])}
       ${codeLine(36, 218, [['say ', DC.K], ['a', DC.V], ['[0]', DC.M]])}
-      ${codeLine(36, 248, [['note Ops: + size() upper() lower()', DC.M]])}
-      ${codeLine(36, 262, [['note split() trim() replace() sub()', DC.M]])}
+      ${codeLine(36, 248, [['note + size() upper() lower()', DC.M]])}
+      ${codeLine(36, 262, [['note split() trim() replace()', DC.M]])}
       ${termPanel(330, 20, 230, 280)}
       <text x="344" y="78"  font-family="monospace" font-size="11" fill="${DC.M}">c =</text>
       <text x="344" y="94"  font-family="monospace" font-size="13" fill="${DC.S}">"Hello, World!"</text>
@@ -696,41 +697,47 @@ const IVX_DEMOS = [
       <text x="344" y="166" font-family="monospace" font-size="13" fill="${DC.S}">"HELLO"</text>
       <text x="344" y="194" font-family="monospace" font-size="13" fill="${DC.S}">"Hello World"</text>
       <text x="344" y="222" font-family="monospace" font-size="13" fill="${DC.S}">"H"</text>
-    `, 580, 300),
+      `;
+      return mkSvg(body, 580, 300);
+    },
   },
 
-  // ── integer ─────────────────────────────────────────────────────────────────
+  // ── type-integer ────────────────────────────────────────────────────────────
   {
-    id: 'type-integer', label: 'integer', color: DC.N,
+    id: 'type-integer', label: 'integer', color: '#b5cea8',
     tagline: 'Whole numbers — + - * // % ^ and comparisons',
     insert: '0',
-    svgFn: () => mkSvg(`
+    svgFn: () => {
+      const body = `
       ${codePanel(310, 260)}
       ${codeLine(36, 78,  [['make ', DC.K], ['a ', DC.V], ['17', DC.N]])}
       ${codeLine(36, 100, [['make ', DC.K], ['b ', DC.V], ['5', DC.N]])}
-      ${codeLine(36, 130, [['say ', DC.K], ['a ', DC.V], ['+ ', DC.K], ['b', DC.V]])}
-      ${codeLine(36, 152, [['say ', DC.K], ['a ', DC.V], ['// ', DC.K], ['b', DC.V]])}
-      ${codeLine(36, 174, [['say ', DC.K], ['a ', DC.V], ['% ', DC.K], ['b', DC.V]])}
+      ${codeLine(36, 130, [['say ', DC.K], ['a ', DC.V], ['+ b', DC.K]])}
+      ${codeLine(36, 152, [['say ', DC.K], ['a ', DC.V], ['// b', DC.K]])}
+      ${codeLine(36, 174, [['say ', DC.K], ['a ', DC.V], ['% b', DC.K]])}
       ${codeLine(36, 196, [['say ', DC.K], ['a ', DC.V], ['^ 2', DC.K]])}
       ${codeLine(36, 226, [['note // is floor division', DC.M]])}
-      ${codeLine(36, 240, [['note ^ is exponent, not XOR', DC.M]])}
+      ${codeLine(36, 240, [['note ^ is exponent', DC.M]])}
       ${termPanel(330, 20, 230, 260)}
       <text x="344" y="100" font-family="monospace" font-size="13" fill="${DC.N}">22</text>
-      <text x="344" y="122" font-family="monospace" font-size="11" fill="${DC.M}">a + b</text>
+      <text x="344" y="120" font-family="monospace" font-size="11" fill="${DC.M}">a + b</text>
       <text x="344" y="148" font-family="monospace" font-size="13" fill="${DC.N}">3</text>
-      <text x="344" y="170" font-family="monospace" font-size="11" fill="${DC.M}">a // b  (floor)</text>
+      <text x="344" y="168" font-family="monospace" font-size="11" fill="${DC.M}">floor div</text>
       <text x="344" y="196" font-family="monospace" font-size="13" fill="${DC.N}">2</text>
-      <text x="344" y="218" font-family="monospace" font-size="11" fill="${DC.M}">a % b  (remainder)</text>
+      <text x="344" y="216" font-family="monospace" font-size="11" fill="${DC.M}">remainder</text>
       <text x="344" y="244" font-family="monospace" font-size="13" fill="${DC.N}">289</text>
-    `, 580, 280),
+      `;
+      return mkSvg(body, 580, 280);
+    },
   },
 
-  // ── float ───────────────────────────────────────────────────────────────────
+  // ── type-float ──────────────────────────────────────────────────────────────
   {
     id: 'type-float', label: 'float', color: '#14b8a6',
-    tagline: 'Decimal numbers — use flt() to convert',
+    tagline: 'Decimal numbers — use flt() to convert, / always gives float',
     insert: '0.0',
-    svgFn: () => mkSvg(`
+    svgFn: () => {
+      const body = `
       ${codePanel(310, 240)}
       ${codeLine(36, 78,  [['make ', DC.K], ['x ', DC.V], ['3.14', DC.N]])}
       ${codeLine(36, 100, [['make ', DC.K], ['y ', DC.V], ['flt', DC.F], ['(2)', DC.D]])}
@@ -745,16 +752,18 @@ const IVX_DEMOS = [
       <text x="344" y="128" font-family="monospace" font-size="13" fill="#14b8a6">3.1</text>
       <text x="344" y="156" font-family="monospace" font-size="13" fill="${DC.N}">3</text>
       <text x="344" y="184" font-family="monospace" font-size="13" fill="#14b8a6">3.5</text>
-      <text x="344" y="206" font-family="monospace" font-size="11" fill="${DC.M}">/ gives float</text>
-    `, 580, 260),
+      `;
+      return mkSvg(body, 580, 260);
+    },
   },
 
-  // ── boolean ─────────────────────────────────────────────────────────────────
+  // ── type-boolean ────────────────────────────────────────────────────────────
   {
-    id: 'type-boolean', label: 'boolean', color: DC.B,
+    id: 'type-boolean', label: 'boolean', color: '#4a7fff',
     tagline: 'yes or no — combine with and, or, not',
     insert: 'yes',
-    svgFn: () => mkSvg(`
+    svgFn: () => {
+      const body = `
       ${codePanel(310, 260)}
       ${codeLine(36, 78,  [['make ', DC.K], ['a ', DC.V], ['yes', DC.B]])}
       ${codeLine(36, 100, [['make ', DC.K], ['b ', DC.V], ['no', DC.B]])}
@@ -769,76 +778,87 @@ const IVX_DEMOS = [
       <text x="344" y="156" font-family="monospace" font-size="13" fill="${DC.B}">no</text>
       <text x="344" y="184" font-family="monospace" font-size="13" fill="${DC.B}">yes</text>
       <text x="344" y="212" font-family="monospace" font-size="13" fill="${DC.B}">yes</text>
-    `, 580, 280),
+      `;
+      return mkSvg(body, 580, 280);
+    },
   },
 
-  // ── none ────────────────────────────────────────────────────────────────────
+  // ── type-none ───────────────────────────────────────────────────────────────
   {
     id: 'type-none', label: 'none', color: '#ef4444',
     tagline: 'The absence of a value — test with = none',
     insert: 'none',
-    svgFn: () => mkSvg(`
-      ${codePanel(310, 240)}
+    svgFn: () => {
+      const body = `
+      ${codePanel(310, 220)}
       ${codeLine(36, 78,  [['make ', DC.K], ['x ', DC.V], ['none', DC.M]])}
       ${codeLine(36, 108, [['if ', DC.K], ['x ', DC.V], ['= none', DC.K]])}
       ${codeLine(50, 130, [['say ', DC.K], ['"nothing here"', DC.S]])}
       ${codeLine(36, 158, [['make ', DC.K], ['x ', DC.V], ['42', DC.N]])}
       ${codeLine(36, 180, [['if ', DC.K], ['x ', DC.V], ['!= none', DC.K]])}
-      ${codeLine(50, 202, [['say ', DC.K], ['"got \u007bx\u007d"', DC.S]])}
-      ${codeLine(36, 228, [['note functions give none by default', DC.M]])}
-      ${termPanel(330, 20, 230, 240)}
-      <text x="344" y="100" font-family="monospace" font-size="13" fill="#ef4444">none</text>
-      <text x="344" y="128" font-family="monospace" font-size="13" fill="${DC.S}">"nothing here"</text>
-      <text x="344" y="170" font-family="monospace" font-size="13" fill="${DC.N}">42</text>
-      <text x="344" y="198" font-family="monospace" font-size="13" fill="${DC.S}">"got 42"</text>
-    `, 580, 260),
+      ${codeLine(50, 202, [['say ', DC.K], ['"got a value"', DC.S]])}
+      ${termPanel(330, 20, 230, 220)}
+      <text x="344" y="96"  font-family="monospace" font-size="13" fill="#ef4444">none</text>
+      <text x="344" y="124" font-family="monospace" font-size="13" fill="${DC.S}">"nothing here"</text>
+      <text x="344" y="168" font-family="monospace" font-size="13" fill="${DC.N}">42</text>
+      <text x="344" y="196" font-family="monospace" font-size="13" fill="${DC.S}">"got a value"</text>
+      `;
+      return mkSvg(body, 580, 240);
+    },
   },
 
-  // ── list ────────────────────────────────────────────────────────────────────
+  // ── type-list ───────────────────────────────────────────────────────────────
   {
     id: 'type-list', label: 'list', color: '#9ca3af',
     tagline: 'Ordered collection — index with [n], iterate with for',
     insert: '[]',
-    svgFn: () => mkSvg(`
-      ${codePanel(310, 280)}
+    svgFn: () => {
+      const body = `
+      ${codePanel(310, 260)}
       ${codeLine(36, 78,  [['make ', DC.K], ['nums ', DC.V], ['[10, 20, 30]', DC.M]])}
       ${codeLine(36, 100, [['say ', DC.K], ['nums', DC.V], ['[0]', DC.M]])}
       ${codeLine(36, 122, [['say ', DC.K], ['size', DC.F], ['(nums)', DC.D]])}
       ${codeLine(36, 144, [['push', DC.F], ['(nums, 40)', DC.D]])}
       ${codeLine(36, 166, [['say ', DC.K], ['nums', DC.V]])}
       ${codeLine(36, 188, [['say ', DC.K], ['nums', DC.V], ['[1:3]', DC.M]])}
-      ${codeLine(36, 218, [['note [1:3] is a slice', DC.M]])}
-      ${codeLine(36, 232, [['note push pop head drop reverse', DC.M]])}
-      ${termPanel(330, 20, 230, 280)}
+      ${codeLine(36, 218, [['note push pop head drop reverse', DC.M]])}
+      ${termPanel(330, 20, 230, 260)}
       <text x="344" y="100" font-family="monospace" font-size="13" fill="#9ca3af">10</text>
       <text x="344" y="128" font-family="monospace" font-size="13" fill="${DC.N}">3</text>
-      <text x="344" y="168" font-family="monospace" font-size="13" fill="#9ca3af">[10, 20, 30, 40]</text>
+      <text x="344" y="168" font-family="monospace" font-size="12" fill="#9ca3af">[10, 20, 30, 40]</text>
       <text x="344" y="196" font-family="monospace" font-size="13" fill="#9ca3af">[20, 30]</text>
-    `, 580, 300),
+      `;
+      return mkSvg(body, 580, 280);
+    },
   },
 
-  // ── dict ────────────────────────────────────────────────────────────────────
+  // ── type-dict ───────────────────────────────────────────────────────────────
   {
     id: 'type-dict', label: 'dict', color: '#7a4d2e',
-    tagline: 'Key-value pairs — access with ["key"] or .key',
+    tagline: 'Key-value pairs — access with ["key"], check with in',
     insert: '{}',
-    svgFn: () => mkSvg(`
-      ${codePanel(310, 260)}
-      ${codeLine(36, 78,  [['make ', DC.K], ['p ', DC.V], ['{"name": "Alice", "age": 30}', DC.M]])}
+    svgFn: () => {
+      const pairs = '{"name": "Alice", "age": 30}';
+      const body = `
+      ${codePanel(310, 240)}
+      ${codeLine(36, 78,  [['make ', DC.K], ['p ', DC.V], [pairs, DC.M]])}
       ${codeLine(36, 100, [['say ', DC.K], ['p', DC.V], ['["name"]', DC.M]])}
       ${codeLine(36, 122, [['make ', DC.K], ['p', DC.V], ['["age"] ', DC.K], ['31', DC.N]])}
       ${codeLine(36, 144, [['say ', DC.K], ['"age" ', DC.S], ['in ', DC.K], ['p', DC.V]])}
       ${codeLine(36, 166, [['say ', DC.K], ['keys', DC.F], ['(p)', DC.D]])}
       ${codeLine(36, 188, [['say ', DC.K], ['size', DC.F], ['(p)', DC.D]])}
       ${codeLine(36, 214, [['note keys() values() size() in', DC.M]])}
-      ${termPanel(330, 20, 230, 260)}
+      ${termPanel(330, 20, 230, 240)}
       <text x="344" y="100" font-family="monospace" font-size="13" fill="${DC.S}">"Alice"</text>
       <text x="344" y="144" font-family="monospace" font-size="13" fill="${DC.B}">yes</text>
-      <text x="344" y="172" font-family="monospace" font-size="13" fill="#9ca3af">["name", "age"]</text>
+      <text x="344" y="172" font-family="monospace" font-size="12" fill="#9ca3af">["name", "age"]</text>
       <text x="344" y="200" font-family="monospace" font-size="13" fill="${DC.N}">2</text>
-    `, 580, 280),
+      `;
+      return mkSvg(body, 580, 260);
+    },
   },
 ];
+
 
 // ── Demo index ────────────────────────────────────────────────────────────────
 const IVX_DEMO_MAP = Object.fromEntries(IVX_DEMOS.filter(d => d && d.id).map(d => [d.id, d]));
