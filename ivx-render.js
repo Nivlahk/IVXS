@@ -151,6 +151,17 @@ function insertNodeOnEdgeInSource(fromNodeId, toNodeId, nodeKind) {
   const toNode   = currentGraph.nodes.find(n => n.id === toNodeId);
   if (!fromNode || !toNode) return;
 
+  // Block insertion on internal graph edges that have no meaningful
+  // source representation and shouldn't be user-editable:
+  //   - loop-head connector → loop-cond Decision (same line, internal)
+  //   - if-join connector → anything (internal merge point)
+  //   - any connector whose meta marks it as an auto-generated join
+  const isInternalConnector = (n) =>
+    n.kind === 'Connector' && n.meta &&
+    (n.meta.includes('loop-head') || n.meta.includes('if-join') || n.meta.includes('from-join'));
+
+  if (isInternalConnector(fromNode) || isInternalConnector(toNode)) return;
+
   const isImplicit = (n) => n.meta && (n.meta.includes('implicit start') || n.meta.includes('implicit end'));
 
   const originalSrc = srcEl.value;
@@ -248,8 +259,14 @@ function insertNodeOnEdgeInSource(fromNodeId, toNodeId, nodeKind) {
         insertAfterOrig = toOrigIndex - 1;
         inheritedOutgoing = '';
       } else {
-        // Normal case: new node lives in the same scope as toNode
+        // New node lives in same scope as toNode.
         indentSpaces = toParsed.indentSpaces;
+        // If toNode isn't immediately after fromNode there's a block body
+        // between them (e.g. the body of an if or loop). Insert just before
+        // toNode rather than just after fromNode.
+        if (toOrigIndex > fromOrigIdx + 1) {
+          insertAfterOrig = toOrigIndex - 1;
+        }
       }
     } else {
       // toNode is implicit end — use fromNode's indent
@@ -1298,7 +1315,16 @@ svg.addEventListener('mousedown', e => {
   if (edgePath) {
     const from=parseInt(edgePath.getAttribute('data-edge-from')||'-1',10);
     const to  =parseInt(edgePath.getAttribute('data-edge-to')  ||'-1',10);
-    if (from>-1&&to>-1) { showEdgeMenu(e,from,to); e.preventDefault(); return; }
+    if (from>-1&&to>-1) {
+      // Suppress menu for internal graph edges (loop-head, if-join, from-join)
+      const fNode = currentGraph?.nodes.find(n=>n.id===from);
+      const tNode = currentGraph?.nodes.find(n=>n.id===to);
+      const isInternal = (n) => n?.kind==='Connector' && n?.meta &&
+        (n.meta.includes('loop-head') || n.meta.includes('if-join') || n.meta.includes('from-join'));
+      if (!isInternal(fNode) && !isInternal(tNode)) {
+        showEdgeMenu(e,from,to); e.preventDefault(); return;
+      }
+    }
   }
 
   // Check for block header drag
