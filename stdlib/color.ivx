@@ -1,0 +1,70 @@
+note ── IVX Standard Library: color ─────────────────────────────────────────
+note https://ivxs.tech/std/color
+
+fun hexToRgb(hex)
+  make h replace(hex, "#", "")
+  if size(h) = 3
+    make h "{h[0]}{h[0]}{h[1]}{h[1]}{h[2]}{h[2]}"
+  make r int("0x{h[0:2]}")
+  make g int("0x{h[2:4]}")
+  make b int("0x{h[4:6]}")
+  give {"r": r, "g": g, "b": b}
+
+fun rgbToHex(r, g, b)
+  make hr str(int(r), 16)
+  make hg str(int(g), 16)
+  make hb str(int(b), 16)
+  make hr "{padLeft(hr, 2, '0')}"
+  make hg "{padLeft(hg, 2, '0')}"
+  make hb "{padLeft(hb, 2, '0')}"
+  give "#{hr}{hg}{hb}"
+
+fun lighten(hex, amount? 0.1)
+  make rgb hexToRgb(hex)
+  make r int(min(255, rgb["r"] + 255 * amount))
+  make g int(min(255, rgb["g"] + 255 * amount))
+  make b int(min(255, rgb["b"] + 255 * amount))
+  give rgbToHex(r, g, b)
+
+fun darken(hex, amount? 0.1)
+  make rgb hexToRgb(hex)
+  make r int(max(0, rgb["r"] - 255 * amount))
+  make g int(max(0, rgb["g"] - 255 * amount))
+  make b int(max(0, rgb["b"] - 255 * amount))
+  give rgbToHex(r, g, b)
+
+fun luminance(hex)
+  make rgb hexToRgb(hex)
+  give (0.299 * rgb["r"] + 0.587 * rgb["g"] + 0.114 * rgb["b"]) / 255
+
+fun isDark(hex)
+  give luminance(hex) < 0.5
+
+fun contrastColor(hex)
+  if isDark(hex) then give "#ffffff"
+  give "#000000"
+
+fun mix(hex1, hex2, weight? 0.5)
+  make a hexToRgb(hex1)
+  make b hexToRgb(hex2)
+  make r int(a["r"] * weight + b["r"] * (1 - weight))
+  make g int(a["g"] * weight + b["g"] * (1 - weight))
+  make bv int(a["b"] * weight + b["b"] * (1 - weight))
+  give rgbToHex(r, g, bv)
+
+fun toRgbString(hex)
+  make rgb hexToRgb(hex)
+  give "rgb({rgb["r"]}, {rgb["g"]}, {rgb["b"]})"
+
+fun padLeft(s, n, ch)
+  loop size(s) < n
+    make s "{ch}{s}"
+  give s
+
+fun min(a, b)
+  if a < b then give a
+  give b
+
+fun max(a, b)
+  if a > b then give a
+  give b

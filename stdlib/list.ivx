@@ -1,0 +1,145 @@
+note ── IVX Standard Library: list ─────────────────────────────────────────
+note https://ivxs.tech/std/list
+
+fun chunk(list, n)
+  make result []
+  make i 0
+  loop i < size(list)
+    push(result, list[i:i + n])
+    make i i + n
+  give result
+
+fun flatten(list)
+  make result []
+  for item in list
+    if type(item) = "list"
+      for x in item
+        push(result, x)
+    else
+      push(result, item)
+  give result
+
+fun zip(a, b)
+  make result []
+  make n min(size(a), size(b))
+  loop i? < n
+    push(result, [a[i], b[i]])
+    make i + 1
+  give result
+
+fun unzip(pairs)
+  make as []
+  make bs []
+  for pair in pairs
+    push(as, pair[0])
+    push(bs, pair[1])
+  give [as, bs]
+
+fun groupBy(list, key)
+  make result {}
+  for item in list
+    make k item[key]
+    if k in result
+      push(result[k], item)
+    else
+      make result[k] [item]
+  give result
+
+fun countBy(list, key)
+  make result {}
+  for item in list
+    make k item[key]
+    if k in result
+      make result[k] result[k] + 1
+    else
+      make result[k] 1
+  give result
+
+fun shuffle(list)
+  make arr list[:]
+  make n size(arr)
+  loop i? < n
+    make j randint(0, n - 1)
+    make temp arr[i]
+    make arr[i] arr[j]
+    make arr[j] temp
+    make i + 1
+  give arr
+
+fun sample(list, n)
+  give head(shuffle(list), n)
+
+fun sum(list)
+  give reduce(list, fun(a, b) then give a + b, 0)
+
+fun product(list)
+  give reduce(list, fun(a, b) then give a * b, 1)
+
+fun min(list)
+  make m list[0]
+  for x in list
+    if x < m then make m x
+  give m
+
+fun max(list)
+  make m list[0]
+  for x in list
+    if x > m then make m x
+  give m
+
+fun range(start, stop, step? 1)
+  make result []
+  make i start
+  loop i < stop
+    push(result, i)
+    make i i + step
+  give result
+
+fun flatten2(list)
+  note Deep flatten — recursively flattens nested lists
+  make result []
+  for item in list
+    if type(item) = "list"
+      make flat flatten2(item)
+      for x in flat
+        push(result, x)
+    else
+      push(result, item)
+  give result
+
+fun intersection(a, b)
+  give filter(a, fun(x) then give x in b)
+
+fun difference(a, b)
+  give filter(a, fun(x) then give not (x in b))
+
+fun union(a, b)
+  make result a[:]
+  for x in b
+    if not (x in result) then push(result, x)
+  give result
+
+fun tally(list)
+  note Returns dict of value → count
+  make result {}
+  for x in list
+    if x in result
+      make result[x] result[x] + 1
+    else
+      make result[x] 1
+  give result
+
+fun rotate(list, n)
+  make sz size(list)
+  if sz = 0 then give list
+  make n n % sz
+  give list[n:] + list[0:n]
+
+fun last(list)
+  give list[size(list) - 1]
+
+fun second(list)
+  give list[1]
+
+fun nth(list, n)
+  give list[n]

@@ -52,7 +52,7 @@ const INCOMING_KEYWORDS = ['then', 'else']; // 'then' is accepted but has no eff
 // in NODE_KEYWORDS, otherwise parseLine sets nodeKey='note' and the main loop's
 // else-branch silently creates a spurious Process node for every standalone
 // 'note ...' line, and KIND_TO_KEY has no entry for it so round-trips break.
-const NODE_KEYWORDS = ['if', 'fork', 'loop', 'dot', 'take', 'say', 'give', 'fun', 'end', 'from', 'wait', 'try'];
+const NODE_KEYWORDS = ['if', 'fork', 'loop', 'dot', 'take', 'say', 'text', 'give', 'fun', 'end', 'from', 'wait', 'try'];
 const OUTGOING_KEYWORDS = ['prev', 'next'];
 const NODE_KEYS = new Set(NODE_KEYWORDS);
 const IN_KEYS = new Set(INCOMING_KEYWORDS);
@@ -132,7 +132,7 @@ function parseivx(source) {
           pl._tryBodyOf = k;
           break;
         }
-        if (parsedLines[k].indent < pl.indent) break; // strictly less: stop only at lower indent
+        if (parsedLines[k].indent <= pl.indent) break;
       }
     }
 
@@ -417,14 +417,6 @@ function parseivx(source) {
         while (ctxStack.length > 0 && indent <= ctx.baseIndent) {
             closeFunCtx();
         }
-        // Restore lastExec when dedenting out of an err block
-        if (ctx._errRestoreStack) {
-            while (ctx._errRestoreStack.length > 0 &&
-                   indent <= ctx._errRestoreStack[ctx._errRestoreStack.length - 1].indent) {
-                const { savedExec } = ctx._errRestoreStack.pop();
-                setLastExec(savedExec);
-            }
-        }
         if (incoming === 'else') {
             let dcIdx = ctx.decStack.length - 1;
             if (nodeKey !== 'if') {
@@ -584,7 +576,7 @@ function parseivx(source) {
                 }
                 setLastExec(node);
             }
-            else if (nodeKey === 'say') {
+            else if (nodeKey === 'text') {
                 node = addNode('Output', lineNum, content);
                 flushUntil(indent, node);
                 if (!tryWireAsBranch(node)) {
@@ -618,26 +610,6 @@ function parseivx(source) {
                 ctxStack.push(ctx);
                 ctx = makeCtx(indent, node, savedBeforeFun);
                 continue;
-            }
-            else if (nodeKey === 'try') {
-                // 'try' is a pure block opener — NO marker node is created.
-                // The try block is identified entirely by meta tags on body nodes.
-                // Any inline content becomes the first body node immediately.
-                // We need a synthetic id to link body nodes and err handler together.
-                // Use a negative sentinel stored on a lightweight object, keyed by line.
-                const tryLineIdx = lineNum; // use preprocessed line number as key
-                flushUntil(indent, getLastExec());
-                // Store the try context so body nodes and err can reference it
-                if (!ctx._tryBlocks) ctx._tryBlocks = {};
-                ctx._tryBlocks[tryLineIdx] = { lineIdx: tryLineIdx, indent };
-                // If there's inline content, create it as the first body node
-                if (content) {
-                    const bodyNode = addNode('Process', lineNum, content, `try-body-of=${tryLineIdx}`);
-                    if (!tryWireAsBranch(bodyNode)) wireSeq(getLastExec(), bodyNode);
-                    setLastExec(bodyNode);
-                }
-                // Mark this indent level as a try-block scope for subsequent lines
-                // (the pre-pass _tryBodyOf already handles tagging body nodes)
             }
             else if (nodeKey === 'wait' && /^(email|sheets|time|http)\b/.test(content)) {
                 // Wait block — like fun, sits outside sequential flow
@@ -687,27 +659,6 @@ function parseivx(source) {
             continue;
         }
         const hasNonIncomingKeyword = nodeKey || outgoing;
-        if (_errHandler) {
-            // err line — create the node but wire it OUTSIDE the main sequential flow.
-            // The err handler is a side island: it has no incoming/outgoing sequential edges.
-            // We save lastExec (= last try-body node), create the err node as a detached
-            // Process, then restore lastExec so what follows continues from the right place.
-            const savedExec = getLastExec();
-            const errNode = addNode('Process', lineNum, content, meta);
-            // No wireSeq — no sequential edges to/from the err handler
-            // The err body nodes (_tryBodyOf check doesn't apply to them, they follow
-            // this line at deeper indent and will be wired sequentially FROM errNode
-            // inside the err branch, but that's fine — they're purely visual)
-            setLastExec(errNode);
-            // After this line's body is processed, restore lastExec to savedExec
-            // so the node after the entire err block continues from the try-body tail.
-            // We do this by pushing a sentinel: track the err indent, and when we
-            // dedent back out, restore savedExec.
-            // Simple approach: store savedExec on a stack keyed by the err indent.
-            if (!ctx._errRestoreStack) ctx._errRestoreStack = [];
-            ctx._errRestoreStack.push({ indent, savedExec });
-            continue;
-        }
         if (content || hasNonIncomingKeyword) {
             // Detect list/dict literals on make lines (make is not a nodeKey)
             let fallMeta = meta;
@@ -828,43 +779,14 @@ function parseivx(source) {
       if (imp) pushEdge(finalLast.id, imp.id);
     }
 
-    // Post-process: rewrite try-body-of and error-handler-of from line indices to
-    // a shared synthetic key, then build virtual try-block records for the renderer.
-    // Since there is no try marker node, we use the try line index as a group key
-    // and create a lightweight virtual record (not added to nodes) for renderTryBrackets.
-
-    // First, collect all try-body-of=LINE and error-handler-of=LINE values and
-    // remap them consistently. The line index IS the canonical key — keep it as-is
-    // since there's no node id to remap to. The renderer uses the key directly.
-
-    // Build virtual try-block records: { key, bodyIds, errHandlerId }
-    const tryGroups = new Map(); // lineIdx → { bodyNodeIds: [], errNodeId: null }
+    // Post-process: build try-body=[ids] on each try-block node
     for (const n of nodes) {
-      if (n.meta?.startsWith('try-body-of=')) {
-        const key = n.meta.replace('try-body-of=', '');
-        if (!tryGroups.has(key)) tryGroups.set(key, { bodyNodeIds: [], errNodeId: null });
-        tryGroups.get(key).bodyNodeIds.push(n.id);
+      if (n.meta === 'try-block') {
+        const bodyIds = nodes
+          .filter(b => b.meta === `try-body-of=${n.id}` || b.meta?.startsWith(`try-body-of=${n.id}`))
+          .map(b => b.id);
+        if (bodyIds.length) n.meta = `try-block try-body=[${bodyIds.join(',')}]`;
       }
-      if (n.meta?.startsWith('error-handler-of=')) {
-        const key = n.meta.replace('error-handler-of=', '');
-        if (!tryGroups.has(key)) tryGroups.set(key, { bodyNodeIds: [], errNodeId: null });
-        tryGroups.get(key).errNodeId = n.id;
-      }
-    }
-
-    // Attach the tryGroups map to the result so renderTryBrackets can use it
-    // by adding synthetic virtual nodes with meta 'try-block' for each group
-    for (const [key, group] of tryGroups) {
-      if (!group.bodyNodeIds.length) continue;
-      // Virtual node — not rendered, just carries metadata for the bracket renderer
-      nodes.push({
-        id: -(parseInt(key, 10) + 1), // negative id so renderer skips it
-        kind: 'TryBlock',
-        text: 'try',
-        line: parseInt(key, 10),
-        meta: `try-block try-body=[${group.bodyNodeIds.join(',')}] err=${group.errNodeId ?? ''}`,
-        _virtual: true,
-      });
     }
 
     return { nodes, edges, startNodeId: startNode.id, segments: [], validationErrors };

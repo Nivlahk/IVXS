@@ -1,0 +1,104 @@
+note ── IVX Standard Library: validate ─────────────────────────────────────
+note https://ivxs.tech/std/validate
+
+fun isEmail(s)
+  give match(s, "^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
+
+fun isURL(s)
+  give match(s, "^https?://[^\s/$.?#].[^\s]*$")
+
+fun isPhone(s)
+  make clean replace(replace(replace(s, "-", ""), " ", ""), "(", "")
+  make clean replace(replace(clean, ")", ""), "+", "")
+  give match(clean, "^\d{7,15}$")
+
+fun isInteger(s)
+  give match(str(s), "^-?\d+$")
+
+fun isFloat(s)
+  give match(str(s), "^-?\d+(\.\d+)?$")
+
+fun isDate(s)
+  if not match(s, "^\d{4}-\d{2}-\d{2}$") then give no
+  make m int(s[5:7])
+  make d int(s[8:10])
+  give m >= 1 and m <= 12 and d >= 1 and d <= 31
+
+fun isAlpha(s)
+  give match(s, "^[a-zA-Z]+$")
+
+fun isAlphanumeric(s)
+  give match(s, "^[a-zA-Z0-9]+$")
+
+fun isNumeric(s)
+  give match(s, "^-?\d+(\.\d+)?$")
+
+fun isEmpty(s)
+  give size(trim(str(s))) = 0
+
+fun isInRange(n, lo, hi)
+  give n >= lo and n <= hi
+
+fun isOneOf(value, options)
+  give value in options
+
+fun hasMinLength(s, n)
+  give size(s) >= n
+
+fun hasMaxLength(s, n)
+  give size(s) <= n
+
+fun isStrongPassword(s)
+  if size(s) < 8 then give no
+  if not match(s, "[A-Z]") then give no
+  if not match(s, "[a-z]") then give no
+  if not match(s, "[0-9]") then give no
+  if not match(s, "[^a-zA-Z0-9]") then give no
+  give yes
+
+fun isIPv4(s)
+  make parts split(s, ".")
+  if size(parts) != 4 then give no
+  for p in parts
+    if not isInteger(p) then give no
+    make n int(p)
+    if n < 0 or n > 255 then give no
+  give yes
+
+fun isHexColor(s)
+  give match(s, "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+
+fun isCreditCard(s)
+  make clean replace(s, " ", "")
+  if not match(clean, "^\d{13,19}$") then give no
+  note Luhn check
+  make sum 0
+  make n size(clean)
+  make alt no
+  loop i? < n
+    make i n - 1 - i?
+    make digit int(clean[i])
+    if alt
+      make digit digit * 2
+      if digit > 9 then make digit digit - 9
+    make sum sum + digit
+    make alt not alt
+    make i + 1
+  give sum % 10 = 0
+
+fun validate(value, rules)
+  note rules is a list of {rule, args?, message?}
+  make errors []
+  for r in rules
+    make passed yes
+    if r["rule"] = "required" then make passed not isEmpty(value)
+    else if r["rule"] = "email" then make passed isEmail(value)
+    else if r["rule"] = "url" then make passed isURL(value)
+    else if r["rule"] = "minLength" then make passed hasMinLength(value, r["args"][0])
+    else if r["rule"] = "maxLength" then make passed hasMaxLength(value, r["args"][0])
+    else if r["rule"] = "isDate" then make passed isDate(value)
+    else if r["rule"] = "isNumber" then make passed isNumeric(value)
+    if not passed
+      make msg r["message"] if "message" in r else "Validation failed: {r["rule"]}"
+      push(errors, msg)
+  give errors

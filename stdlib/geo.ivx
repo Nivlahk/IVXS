@@ -1,0 +1,54 @@
+note ── IVX Standard Library: geo ───────────────────────────────────────────
+note https://ivxs.tech/std/geo
+note Coordinates as {lat, lng} dicts, distances in km
+
+fun haversine(lat1, lng1, lat2, lng2)
+  note Great-circle distance between two points on Earth
+  make R 6371
+  make dLat (lat2 - lat1) * 3.14159265358979 / 180
+  make dLng (lng2 - lng1) * 3.14159265358979 / 180
+  make a sin(dLat / 2) ^ 2 + cos(lat1 * 3.14159265358979 / 180) * cos(lat2 * 3.14159265358979 / 180) * sin(dLng / 2) ^ 2
+  make c 2 * asin(sqrt(a))
+  give R * c
+
+fun distanceKm(a, b)
+  give haversine(a["lat"], a["lng"], b["lat"], b["lng"])
+
+fun distanceMiles(a, b)
+  give distanceKm(a, b) * 0.621371
+
+fun midpoint(a, b)
+  give {"lat": (a["lat"] + b["lat"]) / 2, "lng": (a["lng"] + b["lng"]) / 2}
+
+fun bbox(points)
+  note Returns {north, south, east, west} bounding box
+  make lats map(points, fun(p) then give p["lat"])
+  make lngs map(points, fun(p) then give p["lng"])
+  give {
+    "north": reduce(lats, fun(a, b) then give a if a > b else b, lats[0]),
+    "south": reduce(lats, fun(a, b) then give a if a < b else b, lats[0]),
+    "east":  reduce(lngs, fun(a, b) then give a if a > b else b, lngs[0]),
+    "west":  reduce(lngs, fun(a, b) then give a if a < b else b, lngs[0])
+  }
+
+fun isInBbox(point, box)
+  give point["lat"] >= box["south"] and point["lat"] <= box["north"] and
+       point["lng"] >= box["west"]  and point["lng"] <= box["east"]
+
+fun nearest(point, points)
+  make best none
+  make bestDist 999999
+  for p in points
+    make d distanceKm(point, p)
+    if d < bestDist
+      make bestDist d
+      make best p
+  give best
+
+fun sortByDistance(origin, points)
+  give sort(points, fun(a, b) then give distanceKm(origin, a) > distanceKm(origin, b))
+
+fun toDecimalDegrees(deg, min, sec, dir)
+  make dd deg + min / 60 + sec / 3600
+  if dir = "S" or dir = "W" then give -dd
+  give dd

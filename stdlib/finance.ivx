@@ -1,0 +1,90 @@
+note ── IVX Standard Library: finance ───────────────────────────────────────
+note https://ivxs.tech/std/finance
+
+fun compoundInterest(principal, rate, years, n? 1)
+  note n = compounding periods per year (1=annual, 12=monthly, 365=daily)
+  give principal * (1 + rate / n) ^ (n * years)
+
+fun simpleInterest(principal, rate, years)
+  give principal * rate * years
+
+fun presentValue(futureValue, rate, years)
+  give futureValue / (1 + rate) ^ years
+
+fun futureValue(presentValue, rate, years)
+  give presentValue * (1 + rate) ^ years
+
+fun monthlyPayment(principal, annualRate, months)
+  make r annualRate / 12
+  if r = 0 then give principal / months
+  give principal * r * (1 + r) ^ months / ((1 + r) ^ months - 1)
+
+fun amortize(principal, annualRate, months)
+  make payment monthlyPayment(principal, annualRate, months)
+  make balance principal
+  make schedule []
+  loop i? < months
+    make interest balance * annualRate / 12
+    make principalPart payment - interest
+    make balance balance - principalPart
+    push(schedule, {
+      "month": i + 1,
+      "payment": round(payment, 2),
+      "interest": round(interest, 2),
+      "principal": round(principalPart, 2),
+      "balance": round(max(0, balance), 2)
+    })
+    make i + 1
+  give schedule
+
+fun roi(gain, cost)
+  give (gain - cost) / cost * 100
+
+fun cagr(startValue, endValue, years)
+  give (endValue / startValue) ^ (1 / years) - 1
+
+fun npv(rate, cashflows)
+  make result 0
+  loop i? < size(cashflows)
+    make result result + cashflows[i] / (1 + rate) ^ i
+    make i + 1
+  give result
+
+fun irr(cashflows, guess? 0.1)
+  note Newton-Raphson approximation
+  make rate guess
+  loop i? < 100
+    make n npv(rate, cashflows)
+    make dn 0
+    loop j? < size(cashflows)
+      if j > 0 then make dn dn - j * cashflows[j] / (1 + rate) ^ (j + 1)
+      make j + 1
+    if abs(dn) < 0.0001 then end
+    make rate rate - n / dn
+    make i + 1
+  give rate
+
+fun taxBracket(income, brackets)
+  note brackets: list of [upTo, rate] sorted ascending
+  make tax 0
+  make prev 0
+  for bracket in brackets
+    make limit bracket[0]
+    make rate bracket[1]
+    if income <= limit
+      make tax tax + (income - prev) * rate
+      give {"tax": round(tax, 2), "effective": round(tax / income * 100, 2)}
+    make tax tax + (limit - prev) * rate
+    make prev limit
+  give {"tax": round(tax, 2), "effective": round(tax / income * 100, 2)}
+
+fun formatCurrency(amount, symbol? "$", decimals? 2)
+  give "{symbol}{str(round(flt(amount), decimals))}"
+
+fun max(a, b)
+  if a > b then give a
+  give b
+
+fun abs(n)
+  if n < 0 then give -n
+  give n

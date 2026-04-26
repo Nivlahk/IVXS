@@ -1,0 +1,121 @@
+note ── IVX Standard Library: math ─────────────────────────────────────────
+note https://ivxs.tech/std/math
+note
+note Usage:
+note   from "https://ivxs.tech/std/math"
+note     use fibonacci as fib
+note     use clamp
+note     use lerp
+
+fun fibonacci(n)
+  if n <= 1 then give n
+  make a 0
+  make b 1
+  loop i? < n - 1
+    make temp b
+    make b a + b
+    make a temp
+    make i + 1
+  give b
+
+fun factorial(n)
+  if n <= 1 then give 1
+  give n * factorial(n - 1)
+
+fun clamp(value, lo, hi)
+  if value < lo then give lo
+  if value > hi then give hi
+  give value
+
+fun lerp(a, b, t)
+  give a + (b - a) * t
+
+fun map(value, inMin, inMax, outMin, outMax)
+  give outMin + (value - inMin) / (inMax - inMin) * (outMax - outMin)
+
+fun sign(n)
+  if n > 0 then give 1
+  if n < 0 then give -1
+  give 0
+
+fun isPrime(n)
+  if n < 2 then give no
+  if n = 2 then give yes
+  if n % 2 = 0 then give no
+  loop i? * i? <= n
+    make i + 1
+    if i < 3 then make i 3
+    if n % i = 0 then give no
+    make i + 2
+  give yes
+
+fun primes(limit)
+  make result []
+  loop n? < limit
+    make n + 2
+    if isPrime(n) then push(result, n)
+  give result
+
+fun digits(n)
+  give size(str(int(abs(n))))
+
+fun sumDigits(n)
+  make s str(int(abs(n)))
+  make total 0
+  for ch in chars(s)
+    make total total + int(ch)
+  give total
+
+fun isPerfect(n)
+  make sum 0
+  loop i? < n
+    make i + 1
+    if n % i = 0 then make sum sum + i
+  give sum = n
+
+fun hypotenuse(a, b)
+  give sqrt(a ^ 2 + b ^ 2)
+
+fun degreesToRadians(deg)
+  give deg * 3.14159265358979 / 180
+
+fun radiansToDegrees(rad)
+  give rad * 180 / 3.14159265358979
+
+fun average(list)
+  give reduce(list, fun(a, b) then give a + b, 0) / size(list)
+
+fun variance(list)
+  make avg average(list)
+  make diffs map(list, fun(x) then give (x - avg) ^ 2)
+  give reduce(diffs, fun(a, b) then give a + b, 0) / size(list)
+
+fun stddev(list)
+  give sqrt(variance(list))
+
+fun median(list)
+  make s sort(list)
+  make n size(s)
+  if n % 2 = 0
+    give (s[n // 2 - 1] + s[n // 2]) / 2
+  give s[n // 2]
+
+fun mode(list)
+  make freq {}
+  for x in list
+    if x in freq
+      make freq[x] freq[x] + 1
+    else
+      make freq[x] 1
+  make best none
+  make bestCount 0
+  for k in keys(freq)
+    if freq[k] > bestCount
+      make bestCount freq[k]
+      make best k
+  give best
+
+fun percentile(list, p)
+  make s sort(list)
+  make idx int((p / 100) * (size(s) - 1))
+  give s[clamp(idx, 0, size(s) - 1)]

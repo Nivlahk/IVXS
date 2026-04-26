@@ -6,8 +6,7 @@
   <title>IVXS Tech</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="ivx-demos.css">
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg">
 
 <link rel="icon" type="image/png" sizes="192x192" href="./favicon.png">
 
@@ -71,21 +70,14 @@
     <span class="logo">IVXS Tech</span>
     <div class="hsep"></div>
     <div id="drive-hdr-controls">
-      <button id="drive-connect-btn" class="drive-btn drive-btn-primary drive-btn-hdr">Sign in to Google</button>
-      <div id="drive-hdr-signed-in" style="display:none">
-        <button id="drive-new-btn" class="drive-btn drive-btn-hdr">＋ New</button>
-        <button id="drive-save-btn" class="drive-btn drive-btn-hdr">↑ Save</button>
-        <div id="drive-file-dropdown-wrap">
-          <button id="drive-files-btn" class="drive-btn drive-btn-hdr">Files ▾</button>
-          <div id="drive-file-list" style="display:none"></div>
-        </div>
-        <button id="drive-signout-btn" class="drive-btn drive-btn-hdr drive-btn-muted">Sign out</button>
-      </div>
+      <button id="desk-new-btn"    class="drive-btn drive-btn-hdr">＋ New</button>
+      <button id="desk-open-btn"   class="drive-btn drive-btn-hdr">📂 Open</button>
+      <button id="desk-save-btn"   class="drive-btn drive-btn-hdr">↑ Save</button>
+      <button id="desk-saveas-btn" class="drive-btn drive-btn-hdr drive-btn-muted">Save As…</button>
     </div>
     <div class="hsep"></div>
     <span id="drive-filename" class="drive-filename"></span>
     <div id="err"></div>
-    <a href="privacy.html" style="margin-left:auto;margin-right:8px;font-size:11px;color:#6b7280;text-decoration:none;white-space:nowrap">Privacy Policy</a>
     <button id="bug-btn" class="drive-btn drive-btn-hdr" style="margin-right:8px">🐛 Report Bug</button>
   </header>
 
@@ -234,7 +226,7 @@
 <script src="ivx-editor.js"></script>
 <script src="ivx-lens.js"></script>
 <script src="ivx-script.js"></script>
-<script src="ivx-drive.js"></script>
+<script src="ivx-desktop-fs.js"></script>
 <script src="ivx-terminal.js"></script>
 <script src="ivx-ui.js"></script>
 <script src="ivx-demos.js"></script>

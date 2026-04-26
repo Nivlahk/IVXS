@@ -113,10 +113,10 @@ const IVX_DEMOS = [
     `),
   },
   {
-    id: 'say', label: 'say', color: '#ED8936',
+    id: 'text', label: 'text', color: '#ED8936',
     tagline: 'Print a value to the terminal',
-    node: () => nodeShape('parallelogram', 'say x', '#ED8936'),
-    insert: 'say ',
+    node: () => nodeShape('parallelogram', 'text x', '#ED8936'),
+    insert: 'text ',
     svgFn: () => mkSvg(`
       <style>
         @keyframes ivx-sy1{0%,10%,100%{opacity:0}20%,92%{opacity:1}}
@@ -132,10 +132,10 @@ const IVX_DEMOS = [
       </style>
       ${codePanel(330, 260)}
       ${codeLine(36, 82,  [['make', DC.K], [' x ', DC.V], ['7', DC.N]])}
-      ${codeLine(36, 108, [['say', '#ED8936'], [' "Hello!"', DC.S]])}
-      ${codeLine(36, 134, [['say', '#ED8936'], [' x', DC.V]])}
-      ${codeLine(36, 160, [['say', '#ED8936'], [' "x is ', DC.S], ['\u007bx\u007d', DC.V], ['"', DC.S]])}
-      ${codeLine(36, 186, [['say', '#ED8936'], [' x ', DC.V], ['* 2', DC.K]])}
+      ${codeLine(36, 108, [['text', '#ED8936'], [' "Hello!"', DC.S]])}
+      ${codeLine(36, 134, [['text', '#ED8936'], [' x', DC.V]])}
+      ${codeLine(36, 160, [['text', '#ED8936'], [' "x is ', DC.S], ['\u007bx\u007d', DC.V], ['"', DC.S]])}
+      ${codeLine(36, 186, [['text', '#ED8936'], [' x ', DC.V], ['* 2', DC.K]])}
       ${termPanel(370, 20, 190, 260)}
       <text x="384" y="74"  font-family="monospace" font-size="13" fill="#ED8936" class="ivx-sy1">Hello!</text>
       <text x="384" y="100" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-sy2">7</text>
@@ -143,6 +143,27 @@ const IVX_DEMOS = [
       <text x="384" y="152" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-sy4">14</text>
       <rect x="384" y="158" width="2" height="13" fill="#ED8936" class="ivx-sycur ivx-sy4"/>
     `),
+  },
+  {
+    id: 'say', label: 'say', color: '#a78bfa',
+    tagline: 'Speak text aloud via the browser\'s built-in voice synthesis',
+    node: () => nodeShape('ellipse', 'say "hello"', '#5b3fa8'),
+    insert: 'say ',
+    svgFn: () => {
+      const body = `
+      ${codePanel(310, 200)}
+      ${codeLine(36, 82,  [['say ', DC.K], ['"Hello, world!"', DC.S]])}
+      ${codeLine(36, 108, [['say ', DC.K], ['name', DC.V]])}
+      ${codeLine(36, 134, [['say ', DC.K], ['"You scored \u007bscore\u007d"', DC.S]])}
+      ${codeLine(36, 170, [['note speaks via browser TTS', DC.M]])}
+      ${termPanel(330, 20, 220, 200)}
+      <text x="344" y="82"  font-family="monospace" font-size="18">🔊</text>
+      <text x="370" y="84"  font-family="monospace" font-size="12" fill="${DC.S}">"Hello, world!"</text>
+      <text x="344" y="112" font-family="monospace" font-size="18">🔊</text>
+      <text x="370" y="114" font-family="monospace" font-size="12" fill="${DC.V}">Alice</text>
+      `;
+      return mkSvg(body, 580, 220);
+    },
   },
   {
     id: 'take', label: 'take', color: DC.G,
@@ -167,7 +188,7 @@ const IVX_DEMOS = [
       ${codePanel(330, 200)}
       ${codeLine(36, 82,  [['take', DC.G], [' name', DC.V]])}
       ${codeLine(36, 108, [['take', DC.G], [' int', DC.B], ['(', DC.D], ['age', DC.V], [')', DC.D]])}
-      ${codeLine(36, 134, [['say', DC.K], [' "Hi ', DC.S], ['\u007bname\u007d', DC.V], [', you are ', DC.S], ['\u007bage\u007d', DC.V], ['"', DC.S]])}
+      ${codeLine(36, 134, [['text', DC.K], [' "Hi ', DC.S], ['\u007bname\u007d', DC.V], [', you are ', DC.S], ['\u007bage\u007d', DC.V], ['"', DC.S]])}
       ${termPanel(370, 20, 190, 260)}
       <text x="384" y="72"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-tkp1">name ›</text>
       <rect x="422" y="59" width="120" height="18" rx="3" fill="#1e1e2e" stroke="${DC.G}" stroke-width="0.8" class="ivx-tkp1"/>
@@ -199,9 +220,9 @@ const IVX_DEMOS = [
       <rect x="28" y="58" width="314" height="74" rx="4" fill="${DC.F}" fill-opacity=".05" stroke="${DC.F}" stroke-opacity=".2"/>
       ${codeLine(36, 78,  [['fun', DC.F], [' double', DC.F], ['(n)', DC.D]])}
       ${codeLine(50, 104, [['give', DC.K], [' n ', DC.V], ['* 2', DC.K]])}
-      ${codeLine(36, 148, [['say', DC.K], [' double', DC.F], ['(6)', DC.D]])}
-      ${codeLine(36, 174, [['say', DC.K], [' double', DC.F], ['(21)', DC.D]])}
-      ${codeLine(36, 200, [['say', DC.K], [' double', DC.F], ['(', DC.D], ['double', DC.F], ['(3))', DC.D]])}
+      ${codeLine(36, 148, [['text', DC.K], [' double', DC.F], ['(6)', DC.D]])}
+      ${codeLine(36, 174, [['text', DC.K], [' double', DC.F], ['(21)', DC.D]])}
+      ${codeLine(36, 200, [['text', DC.K], [' double', DC.F], ['(', DC.D], ['double', DC.F], ['(3))', DC.D]])}
       ${termPanel(370, 20, 190, 260)}
       <text x="384" y="90"  font-family="monospace" font-size="26" fill="#ED8936" font-weight="bold" class="ivx-gvr1">12</text>
       <text x="384" y="134" font-family="monospace" font-size="26" fill="#ED8936" font-weight="bold" class="ivx-gvr1">42</text>
@@ -231,13 +252,13 @@ const IVX_DEMOS = [
       ${codePanel(330, 260)}
       ${codeLine(36, 82,  [['make', DC.K], [' score ', DC.V], ['85', DC.N]])}
       ${codeLine(36, 108, [['if', '#89b4fa'], [' score ', DC.V], ['>= 90', '#89b4fa']])}
-      ${codeLine(50, 132, [['say', DC.K], [' "A grade"', DC.S]])}
+      ${codeLine(50, 132, [['text', DC.K], [' "A grade"', DC.S]])}
       <rect x="28" y="142" width="314" height="22" rx="2"/>
       ${codeLine(36, 158, [['else if', '#89b4fa'], [' score ', DC.V], ['>= 80', '#89b4fa']])}
-      ${codeLine(50, 182, [['say', DC.K], [' "B grade"', DC.S]])}
+      ${codeLine(50, 182, [['text', DC.K], [' "B grade"', DC.S]])}
       <rect x="28" y="192" width="314" height="22" rx="2"/>
       ${codeLine(36, 208, [['else', '#89b4fa']])}
-      ${codeLine(50, 232, [['say', DC.K], [' "C grade"', DC.S]])}
+      ${codeLine(50, 232, [['text', DC.K], [' "C grade"', DC.S]])}
       ${termPanel(370, 20, 190, 260)}
       <text x="384" y="70"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ifa">score = 85</text>
       <text x="384" y="88"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ifa">85 ≥ 90? no</text>
@@ -265,10 +286,10 @@ const IVX_DEMOS = [
       ${codePanel(330, 220)}
       ${codeLine(36, 82,  [['make', DC.K], [' temp ', DC.V], ['15', DC.N]])}
       ${codeLine(36, 108, [['if', '#89b4fa'], [' temp ', DC.V], ['> 20', '#89b4fa']])}
-      ${codeLine(50, 132, [['say', DC.K], [' "warm"', DC.S]])}
+      ${codeLine(50, 132, [['text', DC.K], [' "warm"', DC.S]])}
       <rect x="28" y="142" width="314" height="22" rx="2"/>
       ${codeLine(36, 158, [['else', '#89b4fa']])}
-      ${codeLine(50, 182, [['say', DC.K], [' "cold"', DC.S]])}
+      ${codeLine(50, 182, [['text', DC.K], [' "cold"', DC.S]])}
       ${termPanel(370, 20, 190, 220)}
       <text x="384" y="70"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ela">temp = 15</text>
       <text x="384" y="88"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ela">15 &gt; 20? no</text>
@@ -298,7 +319,7 @@ const IVX_DEMOS = [
       </style>
       ${codePanel(330, 200)}
       ${codeLine(36, 82,  [['loop', DC.K], [' count? ', DC.V], ['< 5', '#89b4fa']])}
-      ${codeLine(50, 108, [['say', DC.K], [' count', DC.V]])}
+      ${codeLine(50, 108, [['text', DC.K], [' count', DC.V]])}
       ${codeLine(50, 134, [['make', DC.K], [' count ', DC.V], ['+ 1', DC.K]])}
       ${codeLine(36, 170, [['note count? starts at 0', DC.M]])}
       ${termPanel(370, 20, 190, 260)}
@@ -334,7 +355,7 @@ const IVX_DEMOS = [
       ${codePanel(310, 220)}
       ${codeLine(36, 82,  [['make', DC.K], [' colors ', DC.V], ['["red","green","blue"]', DC.M]])}
       ${codeLine(36, 108, [['for', DC.K], [' color ', DC.V], ['in', DC.K], [' colors', DC.V]])}
-      ${codeLine(50, 134, [['say', DC.K], [' color', DC.V]])}
+      ${codeLine(50, 134, [['text', DC.K], [' color', DC.V]])}
       ${codeLine(36, 175, [['note i = value, ii = index', DC.M]])}
       <rect x="330" y="30" width="110" height="26" rx="3" fill="#1a1a2e" stroke="#2a2a3e"/>
       <text x="344" y="47" font-family="monospace" font-size="12" fill="${DC.S}">"red"</text>
@@ -367,7 +388,7 @@ const IVX_DEMOS = [
       ${codeLine(36, 108, [['for', DC.K], [' num ', DC.V], ['in', DC.K], [' nums', DC.V]])}
       ${codeLine(50, 132, [['if', '#89b4fa'], [' num ', DC.V], ['= 9', '#89b4fa']])}
       ${codeLine(64, 156, [['end', '#f87171'], [' say', DC.K], [' "found \u007bnum\u007d!"', DC.S]])}
-      ${codeLine(50, 180, [['say', DC.K], [' num', DC.V]])}
+      ${codeLine(50, 180, [['text', DC.K], [' num', DC.V]])}
       ${termPanel(370, 20, 190, 260)}
       <text x="384" y="76"  font-family="monospace" font-size="13" fill="#ED8936" class="ivx-enstep">3</text>
       <text x="384" y="100" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-enstep">7</text>
@@ -399,8 +420,8 @@ const IVX_DEMOS = [
       ${codeLine(36, 78,  [['fun', DC.F], [' greet', DC.F], ['(name, greeting', DC.D], ['? ', DC.K], ['"Hi"', DC.S], [')', DC.D]])}
       ${codeLine(50, 104, [['give', DC.K], [' "\u007bgreeting\u007d, \u007bname\u007d!"', DC.S]])}
       ${codeLine(50, 128, [['note greeting defaults to "Hi"', DC.M]])}
-      ${codeLine(36, 172, [['say', DC.K], [' greet', DC.F], ['("Alice")', DC.D]])}
-      ${codeLine(36, 198, [['say', DC.K], [' greet', DC.F], ['("Bob", "Hey")', DC.D]])}
+      ${codeLine(36, 172, [['text', DC.K], [' greet', DC.F], ['("Alice")', DC.D]])}
+      ${codeLine(36, 198, [['text', DC.K], [' greet', DC.F], ['("Bob", "Hey")', DC.D]])}
       ${termPanel(370, 20, 190, 260)}
       <text x="384" y="110" font-family="monospace" font-size="17" fill="#ED8936" font-weight="bold" class="ivx-fnr1">Hi, Alice!</text>
       <text x="384" y="170" font-family="monospace" font-size="17" fill="#ED8936" font-weight="bold" class="ivx-fnr2">Hey, Bob!</text>
@@ -462,11 +483,11 @@ const IVX_DEMOS = [
       <rect x="28" y="58" width="6" height="76" rx="3" fill="#f59e0b" fill-opacity=".5"/>
       ${codeLine(36, 78,  [['try', '#f59e0b']])}
       ${codeLine(50, 104, [['make', DC.K], [' data ', DC.V], ['https://api.x.com', '#56b6c2']])}
-      ${codeLine(50, 128, [['say', DC.K], [' data', DC.V]])}
+      ${codeLine(50, 128, [['text', DC.K], [' data', DC.V]])}
       <rect x="28" y="140" width="6" height="64" rx="3" fill="#f87171" fill-opacity=".5"/>
       ${codeLine(36, 160, [['err', '#f87171'], [' msg', DC.V]])}
-      ${codeLine(50, 184, [['say', DC.K], [' "Failed: ', DC.S], ['\u007bmsg\u007d', DC.V], ['"', DC.S]])}
-      ${codeLine(36, 224, [['say', DC.K], [' "done"', DC.S]])}
+      ${codeLine(50, 184, [['text', DC.K], [' "Failed: ', DC.S], ['\u007bmsg\u007d', DC.V], ['"', DC.S]])}
+      ${codeLine(36, 224, [['text', DC.K], [' "done"', DC.S]])}
       ${termPanel(370, 20, 190, 260)}
       <text x="384" y="72"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-tryok">✓ fetch ok</text>
       <text x="384" y="90"  font-family="monospace" font-size="11" fill="#ED8936" class="ivx-tryok">{ status: 200 }</text>
@@ -493,12 +514,12 @@ const IVX_DEMOS = [
       </style>
       ${codePanel(280, 260)}
       ${codeLine(36, 82,  [['if', '#89b4fa'], [' x ', DC.V], ['> 10', '#89b4fa']])}
-      ${codeLine(50, 106, [['say', DC.K], [' "big"', DC.S]])}
+      ${codeLine(50, 106, [['text', DC.K], [' "big"', DC.S]])}
       ${codeLine(36, 130, [['else', '#89b4fa']])}
-      ${codeLine(50, 154, [['say', DC.K], [' "small"', DC.S]])}
+      ${codeLine(50, 154, [['text', DC.K], [' "small"', DC.S]])}
       <line x1="28" y1="166" x2="264" y2="166" stroke="#2a2a3e"/>
       ${codeLine(36, 186, [['dot', '#9ca3af']])}
-      ${codeLine(36, 210, [['say', DC.K], [' "either way, done"', DC.S]])}
+      ${codeLine(36, 210, [['text', DC.K], [' "either way, done"', DC.S]])}
       <g transform="translate(296,20)">
         <rect width="264" height="260" rx="6" fill="#0d0d12" stroke="#2a2a40"/>
         <text x="14" y="23" font-family="monospace" font-size="9" fill="#4b5563" letter-spacing="1">FLOWCHART</text>
@@ -573,7 +594,7 @@ const IVX_DEMOS = [
       ${codeLine(36, 82,  [['key', DC.K], [' "my-gemini-key"', DC.S]])}
       ${codeLine(36, 108, [['make', DC.K], [' result ', DC.V], ['ask', DC.A], [' gemini', DC.D]])}
       ${codeLine(50, 132, [['"Summarise computing history"', DC.S]])}
-      ${codeLine(36, 158, [['say', DC.K], [' result', DC.V]])}
+      ${codeLine(36, 158, [['text', DC.K], [' result', DC.V]])}
       ${termPanel(330, 20, 240, 270)}
       <rect x="342" y="62" width="214" height="24" rx="4" fill="${DC.A}" fill-opacity=".12" stroke="${DC.A}" stroke-opacity=".4"/>
       <text x="352" y="77" font-family="monospace" font-size="10" fill="${DC.A}">Summarise computing history</text>
@@ -635,7 +656,7 @@ const IVX_DEMOS = [
       ${codeLine(36, 82,  [['make', DC.K], [' s ', DC.V], ['sheets', DC.G], [' "Sales"', DC.S]])}
       ${codeLine(36, 106, [['make', DC.K], [' data ', DC.V], ['s', DC.V], ['.read', DC.F], ['("A1:C5")', DC.D]])}
       ${codeLine(36, 130, [['for', DC.K], [' row ', DC.V], ['in', DC.K], [' data', DC.V]])}
-      ${codeLine(50, 154, [['say', DC.K], [' row', DC.V], ['[0]', DC.M]])}
+      ${codeLine(50, 154, [['text', DC.K], [' row', DC.V], ['[0]', DC.M]])}
       ${codeLine(36, 178, [['s', DC.V], ['.append', DC.F], ['(["Eve", 99, "West"])', DC.D]])}
       <g transform="translate(316,20)">
         <rect width="244" height="260" rx="6" fill="#0d0d12" stroke="#2a2a40"/>
@@ -709,9 +730,9 @@ const IVX_DEMOS = [
       ${codeLine(50, 102, [['use', DC.G], [' cosine ', DC.F], ['as', DC.K], [' c', DC.F]])}
       ${codeLine(50, 126, [['use', DC.G], [' sine ', DC.F], ['as', DC.K], [' s', DC.F]])}
       ${codeLine(50, 150, [['use', DC.G], [' fibonacci ', DC.F], ['as', DC.K], [' fib', DC.F]])}
-      ${codeLine(36, 186, [['say', DC.K], [' c', DC.F], ['(0)', DC.D]])}
-      ${codeLine(36, 210, [['say', DC.K], [' s', DC.F], ['(0)', DC.D]])}
-      ${codeLine(36, 234, [['say', DC.K], [' fib', DC.F], ['(10)', DC.D]])}
+      ${codeLine(36, 186, [['text', DC.K], [' c', DC.F], ['(0)', DC.D]])}
+      ${codeLine(36, 210, [['text', DC.K], [' s', DC.F], ['(0)', DC.D]])}
+      ${codeLine(36, 234, [['text', DC.K], [' fib', DC.F], ['(10)', DC.D]])}
       ${termPanel(390, 20, 170, 260)}
       <text x="404" y="100" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-fra">1.0</text>
       <text x="404" y="118" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-fra">cosine(0)</text>
@@ -736,10 +757,10 @@ const IVX_DEMOS = [
       ${codeLine(36, 78,  [['make ', DC.K], ['a ', DC.V], ['"Hello"', DC.S]])}
       ${codeLine(36, 100, [['make ', DC.K], ['b ', DC.V], ['"World"', DC.S]])}
       ${codeLine(36, 122, [['make ', DC.K], ['c ', DC.V], ['"\\u007ba\\u007d, \\u007bb\\u007d!"', DC.S]])}
-      ${codeLine(36, 152, [['say ', DC.K], ['size', DC.F], ['(a)', DC.D]])}
-      ${codeLine(36, 174, [['say ', DC.K], ['upper', DC.F], ['(a)', DC.D]])}
-      ${codeLine(36, 196, [['say ', DC.K], ['a ', DC.V], ['+ " " + ', DC.K], ['b', DC.V]])}
-      ${codeLine(36, 218, [['say ', DC.K], ['a', DC.V], ['[0]', DC.M]])}
+      ${codeLine(36, 152, [['text ', DC.K], ['size', DC.F], ['(a)', DC.D]])}
+      ${codeLine(36, 174, [['text ', DC.K], ['upper', DC.F], ['(a)', DC.D]])}
+      ${codeLine(36, 196, [['text ', DC.K], ['a ', DC.V], ['+ " " + ', DC.K], ['b', DC.V]])}
+      ${codeLine(36, 218, [['text ', DC.K], ['a', DC.V], ['[0]', DC.M]])}
       ${codeLine(36, 248, [['note + size() upper() lower()', DC.M]])}
       ${codeLine(36, 262, [['note split() trim() replace()', DC.M]])}
       ${termPanel(330, 20, 230, 280)}
@@ -766,10 +787,10 @@ const IVX_DEMOS = [
       ${codePanel(310, 260)}
       ${codeLine(36, 78,  [['make ', DC.K], ['a ', DC.V], ['17', DC.N]])}
       ${codeLine(36, 100, [['make ', DC.K], ['b ', DC.V], ['5', DC.N]])}
-      ${codeLine(36, 130, [['say ', DC.K], ['a ', DC.V], ['+ b', DC.K]])}
-      ${codeLine(36, 152, [['say ', DC.K], ['a ', DC.V], ['// b', DC.K]])}
-      ${codeLine(36, 174, [['say ', DC.K], ['a ', DC.V], ['% b', DC.K]])}
-      ${codeLine(36, 196, [['say ', DC.K], ['a ', DC.V], ['^ 2', DC.K]])}
+      ${codeLine(36, 130, [['text ', DC.K], ['a ', DC.V], ['+ b', DC.K]])}
+      ${codeLine(36, 152, [['text ', DC.K], ['a ', DC.V], ['// b', DC.K]])}
+      ${codeLine(36, 174, [['text ', DC.K], ['a ', DC.V], ['% b', DC.K]])}
+      ${codeLine(36, 196, [['text ', DC.K], ['a ', DC.V], ['^ 2', DC.K]])}
       ${codeLine(36, 226, [['note // is floor division', DC.M]])}
       ${codeLine(36, 240, [['note ^ is exponent', DC.M]])}
       ${termPanel(330, 20, 230, 260)}
@@ -796,10 +817,10 @@ const IVX_DEMOS = [
       ${codePanel(310, 240)}
       ${codeLine(36, 78,  [['make ', DC.K], ['x ', DC.V], ['3.14', DC.N]])}
       ${codeLine(36, 100, [['make ', DC.K], ['y ', DC.V], ['flt', DC.F], ['(2)', DC.D]])}
-      ${codeLine(36, 130, [['say ', DC.K], ['x ', DC.V], ['* 2', DC.K]])}
-      ${codeLine(36, 152, [['say ', DC.K], ['round', DC.F], ['(x, 1)', DC.D]])}
-      ${codeLine(36, 174, [['say ', DC.K], ['int', DC.F], ['(x)', DC.D]])}
-      ${codeLine(36, 196, [['say ', DC.K], ['7 / 2', DC.K]])}
+      ${codeLine(36, 130, [['text ', DC.K], ['x ', DC.V], ['* 2', DC.K]])}
+      ${codeLine(36, 152, [['text ', DC.K], ['round', DC.F], ['(x, 1)', DC.D]])}
+      ${codeLine(36, 174, [['text ', DC.K], ['int', DC.F], ['(x)', DC.D]])}
+      ${codeLine(36, 196, [['text ', DC.K], ['7 / 2', DC.K]])}
       ${codeLine(36, 222, [['note / always gives float', DC.M]])}
       ${codeLine(36, 236, [['note // always gives integer', DC.M]])}
       ${termPanel(330, 20, 230, 240)}
@@ -823,11 +844,11 @@ const IVX_DEMOS = [
       ${codePanel(310, 260)}
       ${codeLine(36, 78,  [['make ', DC.K], ['a ', DC.V], ['yes', DC.B]])}
       ${codeLine(36, 100, [['make ', DC.K], ['b ', DC.V], ['no', DC.B]])}
-      ${codeLine(36, 130, [['say ', DC.K], ['a ', DC.V], ['and ', DC.K], ['b', DC.V]])}
-      ${codeLine(36, 152, [['say ', DC.K], ['a ', DC.V], ['or ', DC.K], ['b', DC.V]])}
-      ${codeLine(36, 174, [['say ', DC.K], ['not ', DC.K], ['a', DC.V]])}
-      ${codeLine(36, 196, [['say ', DC.K], ['10 > 5', DC.K]])}
-      ${codeLine(36, 218, [['say ', DC.K], ['"x" ', DC.S], ['in ', DC.K], ['"text"', DC.S]])}
+      ${codeLine(36, 130, [['text ', DC.K], ['a ', DC.V], ['and ', DC.K], ['b', DC.V]])}
+      ${codeLine(36, 152, [['text ', DC.K], ['a ', DC.V], ['or ', DC.K], ['b', DC.V]])}
+      ${codeLine(36, 174, [['text ', DC.K], ['not ', DC.K], ['a', DC.V]])}
+      ${codeLine(36, 196, [['text ', DC.K], ['10 > 5', DC.K]])}
+      ${codeLine(36, 218, [['text ', DC.K], ['"x" ', DC.S], ['in ', DC.K], ['"text"', DC.S]])}
       ${termPanel(330, 20, 230, 260)}
       <text x="344" y="100" font-family="monospace" font-size="13" fill="${DC.B}">no</text>
       <text x="344" y="128" font-family="monospace" font-size="13" fill="${DC.B}">yes</text>
@@ -850,10 +871,10 @@ const IVX_DEMOS = [
       ${codePanel(310, 220)}
       ${codeLine(36, 78,  [['make ', DC.K], ['x ', DC.V], ['none', DC.M]])}
       ${codeLine(36, 108, [['if ', DC.K], ['x ', DC.V], ['= none', DC.K]])}
-      ${codeLine(50, 130, [['say ', DC.K], ['"nothing here"', DC.S]])}
+      ${codeLine(50, 130, [['text ', DC.K], ['"nothing here"', DC.S]])}
       ${codeLine(36, 158, [['make ', DC.K], ['x ', DC.V], ['42', DC.N]])}
       ${codeLine(36, 180, [['if ', DC.K], ['x ', DC.V], ['!= none', DC.K]])}
-      ${codeLine(50, 202, [['say ', DC.K], ['"got a value"', DC.S]])}
+      ${codeLine(50, 202, [['text ', DC.K], ['"got a value"', DC.S]])}
       ${termPanel(330, 20, 230, 220)}
       <text x="344" y="96"  font-family="monospace" font-size="13" fill="#ef4444">none</text>
       <text x="344" y="124" font-family="monospace" font-size="13" fill="${DC.S}">"nothing here"</text>
@@ -874,11 +895,11 @@ const IVX_DEMOS = [
       const body = `
       ${codePanel(310, 260)}
       ${codeLine(36, 78,  [['make ', DC.K], ['nums ', DC.V], ['[10, 20, 30]', DC.M]])}
-      ${codeLine(36, 100, [['say ', DC.K], ['nums', DC.V], ['[0]', DC.M]])}
-      ${codeLine(36, 122, [['say ', DC.K], ['size', DC.F], ['(nums)', DC.D]])}
+      ${codeLine(36, 100, [['text ', DC.K], ['nums', DC.V], ['[0]', DC.M]])}
+      ${codeLine(36, 122, [['text ', DC.K], ['size', DC.F], ['(nums)', DC.D]])}
       ${codeLine(36, 144, [['push', DC.F], ['(nums, 40)', DC.D]])}
-      ${codeLine(36, 166, [['say ', DC.K], ['nums', DC.V]])}
-      ${codeLine(36, 188, [['say ', DC.K], ['nums', DC.V], ['[1:3]', DC.M]])}
+      ${codeLine(36, 166, [['text ', DC.K], ['nums', DC.V]])}
+      ${codeLine(36, 188, [['text ', DC.K], ['nums', DC.V], ['[1:3]', DC.M]])}
       ${codeLine(36, 218, [['note push pop head drop reverse', DC.M]])}
       ${termPanel(330, 20, 230, 260)}
       <text x="344" y="100" font-family="monospace" font-size="13" fill="#9ca3af">10</text>
@@ -901,11 +922,11 @@ const IVX_DEMOS = [
       const body = `
       ${codePanel(310, 240)}
       ${codeLine(36, 78,  [['make ', DC.K], ['p ', DC.V], [pairs, DC.M]])}
-      ${codeLine(36, 100, [['say ', DC.K], ['p', DC.V], ['["name"]', DC.M]])}
+      ${codeLine(36, 100, [['text ', DC.K], ['p', DC.V], ['["name"]', DC.M]])}
       ${codeLine(36, 122, [['make ', DC.K], ['p', DC.V], ['["age"] ', DC.K], ['31', DC.N]])}
-      ${codeLine(36, 144, [['say ', DC.K], ['"age" ', DC.S], ['in ', DC.K], ['p', DC.V]])}
-      ${codeLine(36, 166, [['say ', DC.K], ['keys', DC.F], ['(p)', DC.D]])}
-      ${codeLine(36, 188, [['say ', DC.K], ['size', DC.F], ['(p)', DC.D]])}
+      ${codeLine(36, 144, [['text ', DC.K], ['"age" ', DC.S], ['in ', DC.K], ['p', DC.V]])}
+      ${codeLine(36, 166, [['text ', DC.K], ['keys', DC.F], ['(p)', DC.D]])}
+      ${codeLine(36, 188, [['text ', DC.K], ['size', DC.F], ['(p)', DC.D]])}
       ${codeLine(36, 214, [['note keys() values() size() in', DC.M]])}
       ${termPanel(330, 20, 230, 240)}
       <text x="344" y="100" font-family="monospace" font-size="13" fill="${DC.S}">"Alice"</text>
@@ -1240,7 +1261,7 @@ const IVX_DEMOS = [
 const IVX_DEMO_MAP = Object.fromEntries(IVX_DEMOS.filter(d => d && d.id).map(d => [d.id, d]));
 
 const IVX_DEMO_SECTIONS = [
-  { label: 'Data',         ids: ['make', 'say', 'take'] },
+  { label: 'Data',         ids: ['make', 'text', 'say', 'take'] },
   { label: 'Control Flow', ids: ['if', 'else', 'loop', 'for', 'end', 'dot', 'try'] },
   { label: 'Functions',    ids: ['give', 'fun', 'class'] },
   { label: 'Network & AI', ids: ['ask', 'wait', 'email', 'sheets', 'key', 'from'] },

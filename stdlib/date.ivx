@@ -1,0 +1,118 @@
+note ── IVX Standard Library: date ─────────────────────────────────────────
+note https://ivxs.tech/std/date
+note All dates as ISO strings "YYYY-MM-DD" unless otherwise noted
+
+fun today()
+  give str(now())[0:10]
+
+fun year(dateStr)
+  give int(dateStr[0:4])
+
+fun month(dateStr)
+  give int(dateStr[5:7])
+
+fun day(dateStr)
+  give int(dateStr[8:10])
+
+fun addDays(dateStr, n)
+  make d datediff("1970-01-01", dateStr, "days") + n
+  note Reconstruct date from epoch days
+  make y 1970
+  make rem d
+  loop rem >= 365
+    make diy 366
+    if y % 4 != 0 or (y % 100 = 0 and y % 400 != 0)
+      make diy 365
+    if rem >= diy
+      make rem rem - diy
+      make y + 1
+    else
+      end
+  make months [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  if y % 4 = 0 and (y % 100 != 0 or y % 400 = 0)
+    make months[1] 29
+  make mo 0
+  loop mo < 12 and rem >= months[mo]
+    make rem rem - months[mo]
+    make mo + 1
+  make mo mo + 1
+  make rem rem + 1
+  give "{y}-{padLeft(str(mo), 2, '0')}-{padLeft(str(rem), 2, '0')}"
+
+fun isLeapYear(y)
+  give y % 4 = 0 and (y % 100 != 0 or y % 400 = 0)
+
+fun daysInMonth(y, m)
+  make dims [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  if isLeapYear(y) then make dims[1] 29
+  give dims[m - 1]
+
+fun startOfMonth(dateStr)
+  give "{dateStr[0:7]}-01"
+
+fun endOfMonth(dateStr)
+  make y year(dateStr)
+  make m month(dateStr)
+  give "{dateStr[0:7]}-{padLeft(str(daysInMonth(y, m)), 2, '0')}"
+
+fun weekday(dateStr)
+  note Returns 0=Monday … 6=Sunday
+  make d datediff("1970-01-01", dateStr, "days")
+  give (d + 3) % 7
+
+fun weekdayName(dateStr)
+  make names ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+  give names[weekday(dateStr)]
+
+fun isWeekend(dateStr)
+  make wd weekday(dateStr)
+  give wd = 5 or wd = 6
+
+fun formatDate(dateStr, format? "long")
+  make months ["January","February","March","April","May","June",
+               "July","August","September","October","November","December"]
+  make y year(dateStr)
+  make m month(dateStr)
+  make d day(dateStr)
+  if format = "long"
+    give "{months[m - 1]} {d}, {y}"
+  if format = "short"
+    give "{m}/{d}/{y}"
+  if format = "iso"
+    give dateStr
+  give dateStr
+
+fun age(birthdateStr)
+  make t today()
+  make y datediff(birthdateStr, t, "days") // 365
+  give y
+
+fun isBefore(a, b)
+  give a < b
+
+fun isAfter(a, b)
+  give a > b
+
+fun clampDate(dateStr, lo, hi)
+  if dateStr < lo then give lo
+  if dateStr > hi then give hi
+  give dateStr
+
+fun nextWeekday(dateStr)
+  make d dateStr
+  loop isWeekend(d)
+    make d addDays(d, 1)
+  give d
+
+fun businessDaysUntil(from, to)
+  make count 0
+  make d from
+  loop d < to
+    if not isWeekend(d) then make count + 1
+    make d addDays(d, 1)
+  give count
+
+fun padLeft(s, n, ch)
+  loop size(s) < n
+    make s "{ch}{s}"
+  give s

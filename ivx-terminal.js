@@ -23,8 +23,115 @@ function termAppend(text, cls) {
 }
 
 function termInfo(text)   { termAppend(text, 'info');   }
-function termOutput(text) { termAppend(text, 'output'); }
 function termError(text)  { termAppend(text, 'error');  }
+
+// ── Smart output — detects lists/dicts and renders as tables ─────────────────
+function termOutput(value) {
+  const shape = detectShape(value);
+  if (shape === 'list-of-dicts') { termRenderTable(value); return; }
+  if (shape === 'list-of-lists') { termRenderMatrix(value); return; }
+  if (shape === 'dict')          { termRenderDict(value);   return; }
+  if (shape === 'long-list')     { termRenderList(value);   return; }
+  termAppend(ivxReprTerm(value), 'output');
+}
+
+function ivxReprTerm(v) {
+  // Same as ivxRepr but for plain terminal lines
+  return typeof ivxRepr === 'function' ? ivxRepr(v) : String(v);
+}
+
+function detectShape(v) {
+  if (Array.isArray(v)) {
+    if (v.length === 0) return 'plain';
+    if (v.length > 6 && v.every(x => !Array.isArray(x) && typeof x !== 'object')) return 'long-list';
+    if (v.every(x => x && typeof x === 'object' && !Array.isArray(x))) return 'list-of-dicts';
+    if (v.every(x => Array.isArray(x))) return 'list-of-lists';
+  }
+  if (v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Map)) return 'dict';
+  if (v instanceof Map && v.size > 0) return 'dict';
+  return 'plain';
+}
+
+function termTable(el) {
+  // Wrap a table element in a styled container and append to terminal
+  const wrap = document.createElement('div');
+  wrap.className = 'term-msg term-table-wrap';
+  wrap.appendChild(el);
+  termMsgs.appendChild(wrap);
+  termMsgs.scrollTop = termMsgs.scrollHeight;
+}
+
+function makeTable(headers, rows, kind) {
+  // kind: 'list' | 'dict'
+  const isList = kind === 'list';
+  const badgeBg     = isList ? '#1e3a5f'              : '#7c2d12';
+  const badgeColor  = isList ? '#93c5fd'              : '#fcd34d';
+  const borderColor = isList ? '#4b5563'              : '#92400e';
+  const headerBg    = isList ? 'rgba(255,255,255,0.07)': '#7c2d12';
+  const headerColor = isList ? '#93c5fd'              : '#fcd34d';
+
+  const table = document.createElement('table');
+  table.style.cssText = `border-collapse:collapse;font-family:monospace;font-size:12px;color:#e5e7eb;background:#0a0a0f;border:1.5px solid ${borderColor};border-radius:4px;overflow:hidden;min-width:120px;max-width:100%;`;
+
+  if (headers.length) {
+    const thead = document.createElement('thead');
+    const tr = document.createElement('tr');
+    headers.forEach(h => {
+      const th = document.createElement('th');
+      th.textContent = String(h);
+      th.style.cssText = `background:${headerBg};color:${headerColor};font-weight:600;padding:4px 10px;border-bottom:1px solid ${borderColor};border-right:1px solid ${borderColor};text-align:left;white-space:nowrap;font-size:11px;`;
+      th.style.borderRight = '';
+      tr.appendChild(th);
+    });
+    // Remove right border from last header
+    if (tr.lastChild) tr.lastChild.style.borderRight = 'none';
+    thead.appendChild(tr);
+    table.appendChild(thead);
+  }
+
+  const tbody = document.createElement('tbody');
+  rows.forEach((row, ri) => {
+    const tr = document.createElement('tr');
+    tr.style.background = ri % 2 === 0 ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.15)';
+    row.forEach((cell, ci) => {
+      const td = document.createElement('td');
+      td.textContent = cell == null ? '' : String(cell);
+      td.style.cssText = `padding:4px 10px;border-right:1px solid ${borderColor};white-space:nowrap;`;
+      if (ci === row.length - 1) td.style.borderRight = 'none';
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  return table;
+}
+
+function termRenderTable(data) {
+  // List of dicts — headers from keys of first item
+  const keys = [...new Set(data.flatMap(d => d instanceof Map ? [...d.keys()] : Object.keys(d)))];
+  const rows = data.map(d => keys.map(k => d instanceof Map ? d.get(k) : d[k]));
+  termTable(makeTable(keys, rows, 'list'));
+}
+
+function termRenderMatrix(data) {
+  // 2D list — no headers, just rows
+  const numCols = Math.max(...data.map(r => r.length), 1);
+  const rows = data.map(r => Array.from({ length: numCols }, (_, i) => r[i] ?? ''));
+  termTable(makeTable([], rows, 'list'));
+}
+
+function termRenderDict(data) {
+  // Single dict — two columns: key | value
+  const entries = data instanceof Map ? [...data.entries()] : Object.entries(data);
+  const rows = entries.map(([k, v]) => [k, v]);
+  termTable(makeTable(['key', 'value'], rows, 'dict'));
+}
+
+function termRenderList(data) {
+  // Long plain list — single column
+  const rows = data.map(v => [v]);
+  termTable(makeTable([], rows, 'list'));
+}
 
 // Show an error with line number — clicking jumps to that line in the editor
 function termErrorLine(message, lineNum) {

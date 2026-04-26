@@ -1531,7 +1531,7 @@ function inferImmutables(ast) {
     if (node.type === 'Fun')  { scanBlock(node.body); return; }
     if (node.type === 'Class') { scanBlock(node.body); return; }
     if (node.type === 'Try')  { scanBlock(node.body); scanBlock(node.errBody); return; }
-    if (node.type === 'Say' || node.type === 'Give') { scanExpr(node.expr); return; }
+    if (node.type === 'Text' || node.type === 'Give') { scanExpr(node.expr); return; }
     if (node.type === 'ExprStatement') { scanExpr(node.expr); return; }
   }
 
@@ -1607,7 +1607,7 @@ class Interpreter {
   // ── Execute a single statement ────────────────────────────────────────────
   async execStmt(node, env) {
     // Fire onStep so the renderer can highlight the active node
-    if (this.onStep && node.line != null) await this.onStep(node.line);
+    if (this.onStep && node.line != null) this.onStep(node.line);
     switch (node.type) {
 
       case 'Assign': {
@@ -1657,9 +1657,24 @@ class Interpreter {
         break;
       }
 
-      case 'Say': {
+      case 'Text': {
         const value = await this.evalExpr(node.expr, env);
         await this.onOutput(value);
+        break;
+      }
+
+      case 'Speak': {
+        const value = await this.evalExpr(node.expr, env);
+        const text = typeof value === 'string' ? value : ivxRepr(value);
+        if (typeof window !== 'undefined' && window.speechSynthesis) {
+          const utt = new SpeechSynthesisUtterance(text);
+          await new Promise(resolve => {
+            utt.onend = resolve;
+            utt.onerror = resolve;
+            window.speechSynthesis.speak(utt);
+          });
+        }
+        await this.onOutput('🔊 ' + text);
         break;
       }
 
@@ -1784,7 +1799,7 @@ class Interpreter {
         let iters = 0;
         while (true) {
           // Re-fire onStep so the Decision node highlights on every iteration
-          if (this.onStep && node.line != null) await this.onStep(node.line);
+          if (this.onStep && node.line != null) this.onStep(node.line);
           const cond = await this.evalExpr(node.condition, env);
           if (!isTruthy(cond)) break;
           if (++iters > this.maxIterations) {
@@ -1812,7 +1827,7 @@ class Interpreter {
         let iters = 0;
         for (const [primary, secondary] of entries) {
           // Re-fire onStep so the Decision node highlights on every iteration
-          if (this.onStep && node.line != null) await this.onStep(node.line);
+          if (this.onStep && node.line != null) this.onStep(node.line);
           if (++iters > this.maxIterations) {
             throw new RuntimeError('For loop exceeded maximum iterations', node.line);
           }

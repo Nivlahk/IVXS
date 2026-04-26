@@ -68,9 +68,7 @@ const KEYWORDS = new Set([
   // OOP
   'extends', 'super',
   // Data
-  'make', 'del', 'take', 'say', 'save', 'local', 'download',
-  // Aliasing
-  'as',
+  'make', 'del', 'take', 'say', 'text', 'save', 'local',
   // Navigation / graph
   'dot', 'fork', 'prev', 'next', 'from',
   // Logic / literals
@@ -80,7 +78,7 @@ const KEYWORDS = new Set([
   // Other
   'wait', 'note', 'try', 'err',
   // Network / AI
-  'ask', 'post', 'use', 'key', 'fetch',
+  'ask', 'post', 'use', 'key',
   // Google services
   'sheets', 'email', 'to', 'subject', 'body',
   // Wait block triggers and by keyword
@@ -479,11 +477,11 @@ class Parser {
     this._statementParsers = {
       make: () => this.parseMake(),
       del:  () => this.parseDel(),
+      text: () => this.parseText(),
       say:  () => this.parseSay(),
       take: () => this.parseTake(),
       save: () => this.parseSave(),
       local: () => this.parseLocal(),
-      download: () => this.parseDownload(),
       give: () => this.parseGive(),
       wait: () => this.parseWait(),
       ask:  () => this.parseExprStatement(), // ask is an expression
@@ -646,11 +644,19 @@ class Parser {
   }
 
   // ── give <expr> ────────────────────────────────────────────────────────────
+  parseText() {
+    const tok = this.advance(); // eat 'text'
+    const expr = this.parseExpr();
+    this.eatNewline();
+    return Node('Text', { expr, line: tok.line, col: tok.col });
+  }
+
+  // ── say <expr> — speak text aloud via browser speech synthesis ───────────
   parseSay() {
     const tok = this.advance(); // eat 'say'
     const expr = this.parseExpr();
     this.eatNewline();
-    return Node('Say', { expr, line: tok.line, col: tok.col });
+    return Node('Speak', { expr, line: tok.line, col: tok.col });
   }
 
   // ── take <name> ────────────────────────────────────────────────────────────
@@ -821,22 +827,17 @@ class Parser {
 
   _parseSavePayload(target, line, col) {
     if (this.check(T.NEWLINE) || this.check(T.EOF) || this.check(T.DEDENT)) {
-      this.error("Expected value or filename after 'save'/'download'", this.peek());
+      this.error("Expected value or filename after 'save'", this.peek());
       return null;
     }
-    const first = this.parseExpr();
-    if (!first) { this.error("Expected value or filename", this.peek()); return null; }
 
-    // save x as report.csv  /  download x as report.csv
-    if (this.checkKw('as')) {
-      this.advance();
-      const filenameExpr = this._parseSaveFilenameExpr();
-      if (!filenameExpr) { this.error("Expected filename after 'as'", this.peek()); return null; }
-      this.eatNewline();
-      return Node('Save', { valueExpr: first, filenameExpr, target, line, col });
+    const first = this.parseExpr();
+    if (!first) {
+      this.error("Expected value or filename after 'save'", this.peek());
+      return null;
     }
 
-    // save user.txt — identifier followed immediately by a dot extension (legacy)
+    // save user.txt — identifier followed immediately by a dot extension
     if (first.type === 'Identifier' && this.checkOp('.')) {
       const filenameExpr = this._parseBareFilename(first.name, first.line, first.col);
       if (!filenameExpr) return null;
@@ -844,44 +845,46 @@ class Parser {
       return Node('Save', { valueExpr: null, filenameExpr, target, line, col });
     }
 
-    // save "report.txt" — lone string is the filename
+    // save "report.txt" — string literal with no second argument → save response to that file
     if (first.type === 'StringLit' &&
         !this.check(T.NEWLINE) && !this.check(T.EOF) && !this.check(T.DEDENT)) {
+      // save "title" value  — string is the filename, next expr is the value
       const valueExpr = this._parseSaveFilenameExpr();
       this.eatNewline();
       return Node('Save', { valueExpr, filenameExpr: first, target, line, col });
     }
     if (first.type === 'StringLit') {
+      // lone string → filename, no explicit value (use response)
       this.eatNewline();
       return Node('Save', { valueExpr: null, filenameExpr: first, target, line, col });
     }
 
-    // save x — auto-filename
+    // save x — bare identifier with nothing after it → x is the VALUE,
+    // auto-generate filename as the variable name
     if (first.type === 'Identifier' &&
         (this.check(T.NEWLINE) || this.check(T.EOF) || this.check(T.DEDENT))) {
+      // Auto-filename: use the variable name; _executeSave will pick extension by type
       const autoFilename = Node('StringLit', { value: first.name, line: first.line, col: first.col });
       this.eatNewline();
       return Node('Save', { valueExpr: first, filenameExpr: autoFilename, autoName: true, target, line, col });
     }
 
-    // save x report.txt (legacy positional)
+    // save x report.txt  or  save <expr> <filename>
     let valueExpr = first;
     const filenameExpr = this._parseSaveFilenameExpr();
-    if (!filenameExpr) { this.error("Expected filename after value in 'save'", this.peek()); return null; }
+    if (!filenameExpr) {
+      this.error("Expected filename after value in 'save'", this.peek());
+      return null;
+    }
+
     this.eatNewline();
     return Node('Save', { valueExpr, filenameExpr, target, line, col });
   }
 
-  // ── save x as report.csv — save to Google Drive ──────────────────────────
+  // ── save <filename> | save <value> <filename> ────────────────────────────
   parseSave() {
     const tok = this.advance(); // eat 'save'
     return this._parseSavePayload('drive', tok.line, tok.col);
-  }
-
-  // ── download x as report.csv — save to local machine ────────────────────
-  parseDownload() {
-    const tok = this.advance(); // eat 'download'
-    return this._parseSavePayload('local', tok.line, tok.col);
   }
 
   _parseBareFilename(initial, line, col) {
@@ -913,11 +916,11 @@ class Parser {
     return this.parseExpr();
   }
 
-  // ── local save — legacy syntax, prefer: download x as filename ───────────
+  // ── local save <filename> | local save <value> <filename> ────────────────
   parseLocal() {
     const tok = this.advance(); // eat 'local'
     if (!this.checkKw('save')) {
-      this.error("Expected 'save' after 'local' (prefer: download x as filename)", this.peek());
+      this.error("Expected 'save' after 'local'", this.peek());
       this.eatNewline();
       return null;
     }
@@ -1227,77 +1230,49 @@ class Parser {
     return Node('End', { stmt, line: tok.line, col: tok.col });
   }
 
-  // ── from <url> [\n  use name [as alias] ...] ──────────────────────────────
-  // Inline:  from https://ivxs.tech/std/math use cosine as c, sine as s
-  // Block:   from https://ivxs.tech/std/math
-  //            use cosine as c
-  //            use sine   as s
+  // ── from <module> [by <package>] ──────────────────────────────────────────
+  // Examples:
+  //   from Database by pandas
+  //   from "https://api.example.com"
   parseFrom() {
     const tok = this.advance(); // eat 'from'
 
+    // ── URL import: from https://... use name1, name2 ──────────────────────
+    // The URL lexer emits it as a STRING token
     if (this.check(T.STRING)) {
       const urlTok = this.advance();
       const url = urlTok.value;
-      const imports = []; // [{ name, alias }]
-
-      const parseOneUse = () => {
-        if (!this.checkKw('use')) return false;
-        this.advance();
-        if (!this.check(T.IDENTIFIER)) { this.error("Expected name after 'use'", this.peek()); return false; }
-        const name = this.advance().value;
-        let alias = name;
-        if (this.checkKw('as')) {
-          this.advance();
-          if (this.check(T.IDENTIFIER)) alias = this.advance().value;
-        }
-        imports.push({ name, alias });
-        return true;
-      };
-
-      // Inline: from URL use a [as x], b [as y]
+      const names = [];
       if (this.checkKw('use')) {
-        this.advance();
+        this.advance(); // eat 'use'
         while (!this.check(T.NEWLINE) && !this.check(T.EOF)) {
-          if (!this.check(T.IDENTIFIER)) break;
-          const name = this.advance().value;
-          let alias = name;
-          if (this.checkKw('as')) { this.advance(); if (this.check(T.IDENTIFIER)) alias = this.advance().value; }
-          imports.push({ name, alias });
+          if (this.check(T.IDENTIFIER)) names.push(this.advance().value);
           this.eat(T.COMMA);
         }
-        this.eatNewline();
-        return Node('Import', { url, imports, line: tok.line, col: tok.col });
       }
-
-      // Block: from URL\n  use a as x\n  use b as y
+      // also accept 'key' for backward compat during transition
+      
       this.eatNewline();
-      if (this.check(T.INDENT)) {
-        this.advance();
-        this.skipNewlines();
-        while (!this.check(T.DEDENT) && !this.check(T.EOF)) {
-          if (!parseOneUse()) { if (!this.check(T.NEWLINE) && !this.check(T.DEDENT) && !this.check(T.EOF)) this.advance(); }
-          this.skipNewlines();
-        }
-        this.eat(T.DEDENT);
-      }
-      return Node('Import', { url, imports, line: tok.line, col: tok.col });
+      return Node('Import', { url, names, line: tok.line, col: tok.col });
     }
 
-    // Legacy: from Module by package
+    // ── Legacy from Module by package ──────────────────────────────────────
     const pathParts = [];
     let via = null;
     while (!this.check(T.NEWLINE) && !this.check(T.EOF)) {
       if (this.checkKw('by')) {
-        this.advance();
+        this.advance(); // eat 'by'
         const viaParts = [];
-        while (!this.check(T.NEWLINE) && !this.check(T.EOF)) viaParts.push(this.advance().value ?? '');
+        while (!this.check(T.NEWLINE) && !this.check(T.EOF)) {
+          viaParts.push(this.advance().value ?? '');
+        }
         via = viaParts.join(' ');
         break;
       }
       pathParts.push(this.advance().value ?? '');
     }
     this.eatNewline();
-    return Node('Import', { path: pathParts.join(' '), via, imports: [], line: tok.line, col: tok.col });
+    return Node('Import', { path: pathParts.join(' '), via, line: tok.line, col: tok.col });
   }
 
   // ── Expression statement (function call or bare expression) ────────────────
@@ -1456,21 +1431,11 @@ class Parser {
         const lp = this.advance();
         const args = [];
         while (!this.check(T.RPAREN) && !this.check(T.EOF)) {
-          const arg = this._parseFunctionArg();
+          const arg = this.parseExpr();
           if (arg) args.push(arg);
           if (!this.eat(T.COMMA)) break;
         }
         this.expect(T.RPAREN, undefined, "Expected ')' after arguments");
-        // Special-case where() with dot-access predicate: where(table.col op value)
-        // Rewrite at parse time into positional form: where(table, "col", "op", value)
-        const callName = expr.type === 'Identifier' ? expr.name : null;
-        if (callName === 'where' && args.length === 1) {
-          const rewritten = this._rewriteWhereArg(args[0], lp.line);
-          if (rewritten) {
-            expr = Node('Call', { name: 'where', args: rewritten, line: expr.line, col: expr.col });
-            continue;
-          }
-        }
         expr = expr.type === 'Identifier'
           ? Node('Call', { name: expr.name, args, line: expr.line, col: expr.col })
           : Node('Invoke', { callee: expr, args, line: lp.line, col: lp.col });
@@ -1648,13 +1613,6 @@ class Parser {
       return this.parsePostfix(Node('SheetsOpen', { name, line: tok.line, col: tok.col }));
     }
 
-    // fetch <url-expr> — explicit HTTP GET
-    if (tok.type === T.KEYWORD && tok.value === 'fetch') {
-      this.advance();
-      const url = this.parseExpr();
-      return this.parsePostfix(Node('Fetch', { url, line: tok.line, col: tok.col }));
-    }
-
     // Nothing matched
     this.error(`Unexpected token '${tok.value ?? tok.type}'`, tok);
     return null;
@@ -1665,7 +1623,7 @@ class Parser {
     this.advance(); // eat '('
     const args = [];
     while (!this.check(T.RPAREN) && !this.check(T.EOF)) {
-      const arg = this._parseFunctionArg();
+      const arg = this.parseExpr();
       if (arg) args.push(arg);
       if (!this.eat(T.COMMA)) break;
     }
@@ -1676,80 +1634,6 @@ class Parser {
       line: nameTok.line,
       col:  nameTok.col
     });
-  }
-
-  // ── Parse a function call argument ────────────────────────────────────────
-  // Like parseExpr but also handles unquoted Excel-style cell ranges:
-  //   s.read(A1:B50)  →  s.read("A1:B50")
-  //   s.read(A1)      →  s.read("A1")
-  _parseFunctionArg() {
-    // Check for Excel cell reference: IDENTIFIER NUMBER [COLON IDENTIFIER NUMBER]
-    const a = this.peek();
-    const b = this.peek(1);
-    if (a.type === T.IDENTIFIER && b.type === T.NUMBER &&
-        Number.isInteger(b.value) && b.value >= 0 &&
-        /^[A-Za-z]+$/.test(a.value)) {
-      // Peek further to see if it's a range (A1:B50) or single cell (A1)
-      const c = this.peek(2);
-      const d = this.peek(3);
-      const e = this.peek(4);
-      if (c.type === T.COLON &&
-          d.type === T.IDENTIFIER && /^[A-Za-z]+$/.test(d.value) &&
-          e.type === T.NUMBER && Number.isInteger(e.value) && e.value >= 0) {
-        // Range: A1:B50
-        this.advance(); this.advance(); this.advance(); this.advance(); this.advance();
-        return Node('StringLit', {
-          value: `${a.value}${b.value}:${d.value}${e.value}`,
-          line: a.line, col: a.col,
-        });
-      }
-      // Check it's followed by comma, close-paren, or end — i.e. it's a standalone cell ref
-      if (c.type === T.COMMA || c.type === T.RPAREN ||
-          c.type === T.NEWLINE || c.type === T.EOF) {
-        this.advance(); this.advance();
-        return Node('StringLit', {
-          value: `${a.value}${b.value}`,
-          line: a.line, col: a.col,
-        });
-      }
-    }
-    return this.parseExpr();
-  }
-
-  // ── Rewrite where(table.col op value) → [table, "col", "op", value] args ──
-  // Called when where() receives exactly one argument that looks like
-  // a MemberAccess (table.col) or BinOp with MemberAccess on the left.
-  _rewriteWhereArg(arg, line) {
-    if (!arg) return null;
-
-    // where(table.col = "value")  — BinOp with left=MemberAccess
-    if (arg.type === 'BinOp') {
-      const { op, left, right } = arg;
-      if (left.type === 'MemberAccess') {
-        const table = left.object;
-        const col   = left.field;
-        return [
-          table,
-          Node('StringLit', { value: col, line }),
-          Node('StringLit', { value: op,  line }),
-          right,
-        ];
-      }
-    }
-
-    // where(table.col)  — MemberAccess alone (truthy filter)
-    if (arg.type === 'MemberAccess') {
-      const table = arg.object;
-      const col   = arg.field;
-      return [
-        table,
-        Node('StringLit', { value: col,  line }),
-        Node('StringLit', { value: '!=', line }),
-        Node('BoolLit',   { value: null, line }),  // != none → filter non-null
-      ];
-    }
-
-    return null; // not rewritable — let it fall through to normal call
   }
 
   // ── List literal ───────────────────────────────────────────────────────────

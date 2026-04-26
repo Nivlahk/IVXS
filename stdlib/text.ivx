@@ -1,0 +1,127 @@
+note ── IVX Standard Library: text ─────────────────────────────────────────
+note https://ivxs.tech/std/text
+
+fun capitalize(s)
+  if size(s) = 0 then give s
+  give upper(s[0]) + lower(s[1:])
+
+fun titleCase(s)
+  make words split(s, " ")
+  make result []
+  for w in words
+    push(result, capitalize(w))
+  give join(result, " ")
+
+fun camelToSnake(s)
+  make step1 sub(s, "([A-Z]+)([A-Z][a-z])", "$1_$2")
+  make step2 sub(step1, "([a-z])([A-Z])", "$1_$2")
+  give lower(step2)
+
+fun snakeToCamel(s)
+  make parts split(s, "_")
+  make first parts[0]
+  make rest drop(parts, 1)
+  make result first
+  for p in rest
+    make result "{result}{capitalize(p)}"
+  give result
+
+fun slug(s)
+  make step1 lower(s)
+  make step2 sub(step1, "[^a-z0-9\s-]", "")
+  make step3 sub(step2, "\s+", "-")
+  give sub(step3, "-+", "-")
+
+fun truncate(s, n, suffix? "...")
+  if size(s) <= n then give s
+  give s[0:n - size(suffix)] + suffix
+
+fun padLeft(s, n, ch? " ")
+  loop size(s) < n
+    make s "{ch}{s}"
+  give s
+
+fun padRight(s, n, ch? " ")
+  loop size(s) < n
+    make s "{s}{ch}"
+  give s
+
+fun repeat(s, n)
+  make result ""
+  loop i? < n
+    make result "{result}{s}"
+    make i + 1
+  give result
+
+fun countOccurrences(s, sub)
+  make count 0
+  make i 0
+  loop i <= size(s) - size(sub)
+    if s[i:i + size(sub)] = sub
+      make count + 1
+      make i i + size(sub)
+    else
+      make i + 1
+  give count
+
+fun wordCount(s)
+  make words split(trim(s), " ")
+  make result []
+  for w in words
+    if size(trim(w)) > 0 then push(result, w)
+  give size(result)
+
+fun isPalindrome(s)
+  make clean lower(replace(s, " ", ""))
+  give clean = join(reverse(chars(clean)), "")
+
+fun levenshtein(a, b)
+  make m size(a)
+  make n size(b)
+  make dp []
+  loop i? <= m
+    make row []
+    loop j? <= n
+      if i = 0
+        push(row, j)
+      else if j = 0
+        push(row, i)
+      else if a[i - 1] = b[j - 1]
+        push(row, dp[i - 1][j - 1])
+      else
+        push(row, 1 + min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]))
+      make j + 1
+    push(dp, row)
+    make i + 1
+  give dp[m][n]
+
+fun startsWith(s, prefix)
+  give s[0:size(prefix)] = prefix
+
+fun endsWith(s, suffix)
+  give s[size(s) - size(suffix):] = suffix
+
+fun wrap(s, width)
+  make words split(s, " ")
+  make lines []
+  make current ""
+  for word in words
+    if size(current) + size(word) + 1 > width and size(current) > 0
+      push(lines, current)
+      make current word
+    else if size(current) = 0
+      make current word
+    else
+      make current "{current} {word}"
+  if size(current) > 0 then push(lines, current)
+  give join(lines, "\n")
+
+fun initials(name)
+  make parts split(trim(name), " ")
+  make result ""
+  for p in parts
+    if size(p) > 0 then make result "{result}{upper(p[0])}."
+  give result
+
+fun formatNumber(n, decimals? 2)
+  give str(round(flt(n), decimals))

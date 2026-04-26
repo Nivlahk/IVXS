@@ -1,0 +1,81 @@
+note ── IVX Standard Library: random ───────────────────────────────────────
+note https://ivxs.tech/std/random
+
+fun coinFlip()
+  give randint(0, 1) = 1
+
+fun dice(sides? 6)
+  give randint(1, sides)
+
+fun rollDice(count, sides? 6)
+  make result []
+  loop i? < count
+    push(result, randint(1, sides))
+    make i + 1
+  give result
+
+fun pickOne(list)
+  give list[randint(0, size(list) - 1)]
+
+fun pickMany(list, n)
+  make shuffled []
+  make indices []
+  loop i? < size(list)
+    push(indices, i)
+    make i + 1
+  loop i? < size(list)
+    make j randint(i, size(list) - 1)
+    make temp indices[i]
+    make indices[i] indices[j]
+    make indices[j] temp
+    make i + 1
+  loop i? < n
+    push(shuffled, list[indices[i]])
+    make i + 1
+  give shuffled
+
+fun randomString(length? 8, chars? "abcdefghijklmnopqrstuvwxyz0123456789")
+  make result ""
+  loop i? < length
+    make result "{result}{chars[randint(0, size(chars) - 1)]}"
+    make i + 1
+  give result
+
+fun randomPassword(length? 12)
+  make chars "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
+  give randomString(length, chars)
+
+fun uuid()
+  note Generates a random UUID v4-style string
+  fun hex(n)
+    give randomString(n, "0123456789abcdef")
+  give "{hex(8)}-{hex(4)}-4{hex(3)}-{hex(4)}-{hex(12)}"
+
+fun weightedPick(items, weights)
+  make total reduce(weights, fun(a, b) then give a + b, 0)
+  make r random() * total
+  make sum 0
+  loop i? < size(items)
+    make sum sum + weights[i]
+    if r <= sum then give items[i]
+    make i + 1
+  give items[size(items) - 1]
+
+fun normalRandom(mean? 0, stddev? 1)
+  note Box-Muller transform
+  make u1 random()
+  make u2 random()
+  make z sqrt(-2 * log(u1)) * cos(2 * 3.14159265358979 * u2)
+  give mean + stddev * z
+
+fun randomColor()
+  give "#{randomString(6, "0123456789abcdef")}"
+
+fun randomBool(probability? 0.5)
+  give random() < probability
+
+fun randomInt(lo, hi)
+  give randint(lo, hi)
+
+fun randomFloat(lo? 0.0, hi? 1.0)
+  give lo + random() * (hi - lo)
