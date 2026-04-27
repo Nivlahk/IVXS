@@ -761,6 +761,11 @@ class SEEREmitter {
     this.instr(`20 ${target}`, comment);
   }
 
+  jz(rcond, target, comment) {
+    // Jump if zero (condition FALSE) — opcode 0x22
+    this.instr(`22 ${this._r(rcond)} ${target}`, comment);
+  }
+
   jne(r1, r2, target, targetNid, comment) {
     this.instr(`23 ${this._r(r1)} ${this._r(r2)} ${target}`, comment);
   }
@@ -803,8 +808,9 @@ class SEEREmitter {
   }
 
   ecall(svc, comment) {
-    // SYS ecall: 0E svc 0 0 0 0 0 (byte 1 = service id)
-    this.instr(`0E ${svc} 0 0 0 0 0`, comment);
+    // SYS ecall: opcode 0x0E only — assembler schema expects 0 operands
+    // Service ID is already loaded into R0 before this call
+    this.instr(`0E`, comment ?? `ecall svc=${svc}`);
   }
 
   wfe(comment) {
@@ -844,6 +850,7 @@ class RegAlloc {
   }
 
   alloc(name) {
+    name = name.replace(/\?$/, '');
     if (this.vars.has(name)) return this.vars.get(name);
     if (this.nextReg <= this.maxVarReg) {
       const entry = { reg: `R${this.nextReg++}`, spill: null };
@@ -864,6 +871,7 @@ class RegAlloc {
 
   // Load variable into dst register. Returns dst.
   load(name, dst, em) {
+    name = name.replace(/\?$/, '');
     const v = this.alloc(name);
     if (v.reg) {
       // In a register — move to dst if different
@@ -877,6 +885,7 @@ class RegAlloc {
 
   // Store src register into variable.
   store(name, src, em) {
+    name = name.replace(/\?$/, '');
     const v = this.alloc(name);
     if (v.reg) {
       // Move src into the variable's home register
@@ -935,49 +944,102 @@ function exprText(node) {
 
 // Load an expression into a register, returning the register name.
 // The first instruction emitted will carry any pending nid.
+// Scratch registers: R2=left, R3=right (never variable registers, never bleed out)
 function loadExpr(node, em, dst) {
-  dst = dst ?? 'r0';
+  dst = dst ?? 'R0';
   if (!node) { em.li(dst, 0, 'null'); return dst; }
   switch (node.type) {
-    case 'NumberLit':  em.li(dst, node.value, `${node.value}`); return dst;
-    case 'BoolLit':    em.li(dst, node.value?1:0, node.value===null?'none':node.value?'yes':'no'); return dst;
+    case 'NumberLit':
+      em.li(dst, node.value, `#${node.value}`);
+      return dst;
+
+    case 'BoolLit':
+      em.li(dst, node.value ? 1 : 0, node.value === null ? 'none' : node.value ? 'yes' : 'no');
+      return dst;
+
     case 'StringLit': {
-      const s = JSON.stringify(node.value);
-      const d = s.length > 48 ? s.slice(0,45)+'…"' : s;
-      em.li_str(dst, d, 'string');
+      // Encode up to 6 ASCII bytes of the string into a li.s48 immediate
+      const s = node.value ?? '';
+      let imm = 0n;
+      for (let i = 0; i < Math.min(s.length, 6); i++)
+        imm |= BigInt(s.charCodeAt(i)) << BigInt(i * 8);
+      const immStr = imm === 0n ? '0' : String(imm);
+      em.instr(`17 ${dst} ${immStr}`, `"${s.length > 12 ? s.slice(0,12)+'…' : s}"`);
       return dst;
     }
-    case 'Identifier':
-    case 'LazyDecl':
-      em.regAlloc.load(node.name, dst, em);
+
+    case 'TemplateLit':
+    case 'InterpolatedString': {
+      // String interpolation — load first part, ecall concat for each part
+      // For now encode the template as a string literal (runtime resolves vars)
+      const text = exprText(node);
+      const s = text.replace(/[{}]/g, '').slice(0, 12);
+      em.li_str(dst, s, `interp: ${text.slice(0,20)}`);
       return dst;
+    }
+
+    case 'Identifier': {
+      em.regAlloc.load(node.name.replace(/\?$/, ''), dst, em);
+      return dst;
+    }
+
+    case 'LazyDecl': {
+      const cleanName = node.name.replace(/\?$/, '');
+      // If somehow not pre-initialized (e.g. lazy var outside a loop), init now
+      if (!em.regAlloc.vars.has(cleanName)) {
+        em.regAlloc.alloc(cleanName);
+        em.li('R1', 0, `init ${cleanName} = 0`);
+        em.regAlloc.store(cleanName, 'R1', em);
+      }
+      em.regAlloc.load(cleanName, dst, em);
+      return dst;
+    }
+
     case 'Ask':
       compileAsk(node, em);
-      if (dst !== 'R0' && dst !== 'r0') em.addi(dst, 'R0', 0, 'move result');
+      if (dst !== 'R0') em.addi(dst, 'R0', 0, 'move result');
       return dst;
+
     case 'BinOp': {
-      // Evaluate left into R5, right into R6, then apply op into dst
-      loadExpr(node.left,  em, 'R5');
-      loadExpr(node.right, em, 'R6');
-      // Map IVX op to SEER P6 opcode (row 5_, universal op nibble)
+      // Use R2/R3 as dedicated BinOp scratch — never alias variable registers
+      // R5/R6 were leaking into value computations; R2/R3 are reserved for this
+      loadExpr(node.left,  em, 'R2');
+      loadExpr(node.right, em, 'R3');
       const opMap = {
-        '+':  '5C', '-':  '5D', '*':  '5E', '/':  '5F',
-        '=':  '50', '!=': '51', '<':  '5B', '>':  '5B',
-        '<=': '5B', '>=': '57', 'and':'52', 'or': '54', 'xor':'56',
+        '+':   '5C', '-':   '5D', '*':  '5E', '/':  '5F',
+        '=':   '50', '!=':  '51',
+        '<':   '5B', '>':   '5B',
+        '<=':  '5B', '>=':  '57',
+        'and': '52', 'or':  '54', 'xor': '56',
+        'mod': '60', '%':   '60',
       };
       const op = opMap[node.op] ?? '5C';
-      // For comparison ops that need swapped operands (>)
-      const [l, r] = (node.op === '>') ? ['R6','R5'] : ['R5','R6'];
-      em.instr(`${op} ${dst} ${l} ${r} 0`, `${exprText(node.left)} ${node.op} ${exprText(node.right)}`);
+      // > needs operands swapped (slt R0, R3, R2 = R3 < R2 = left > right)
+      const [l, r] = node.op === '>' ? ['R3','R2'] : ['R2','R3'];
+      em.instr(`${op} ${dst} ${l} ${r} 0`,
+        `${exprText(node.left)} ${node.op} ${exprText(node.right)}`);
       return dst;
     }
+
     case 'UnaryOp': {
-      loadExpr(node.operand, em, 'R5');
-      em.instr(`51 ${dst} R5 R255 0`, `not ${exprText(node.operand)}`);
+      loadExpr(node.operand, em, 'R2');
+      em.instr(`51 ${dst} R2 R255 0`, `not ${exprText(node.operand)}`);
       return dst;
     }
+
+    case 'MemberAccess': {
+      em.regAlloc.load(exprText(node), dst, em);
+      return dst;
+    }
+
+    case 'FuncCall': {
+      em.comment(`call ${exprText(node)}`);
+      em.li(dst, 0, 'placeholder — call result');
+      return dst;
+    }
+
     default:
-      em.comment(`complex expr: ${exprText(node)}`);
+      em.comment(`expr: ${exprText(node)}`);
       em.li(dst, 0, 'placeholder');
       return dst;
   }
@@ -998,21 +1060,23 @@ function compileStmt(node, em) {
       const target = node.target?.type === 'MemberAccess'
         ? `${exprText(node.target.object)}.${node.target.field}`
         : (node.name ?? '?');
+      const cleanTarget = target.replace(/\?$/, '');
       em.blank();
-      em.comment(`make ${target} = ${exprText(node.expr)}`);
+      em.comment(`make ${cleanTarget} = ${exprText(node.expr)}`);
       loadExpr(node.expr, em, 'R1');
-      em.regAlloc.store(target, 'R1', em);
+      em.regAlloc.store(cleanTarget, 'R1', em);
       break;
     }
 
+    case 'Speak':
     case 'Say':
     case 'Text': {
       const val = exprText(node.expr);
       em.blank();
-      em.comment(`text ${val}`);
+      em.comment(`${node.type === 'Speak' ? 'say' : 'text'} ${val}`);
       loadExpr(node.expr, em, 'R1');
       em.li('R0', SVC.OUTPUT, 'output service');
-      em.ecall(SVC.OUTPUT, `text ${val}`);
+      em.ecall(SVC.OUTPUT, `output ${val}`);
       break;
     }
 
@@ -1216,7 +1280,7 @@ function compileIf(node, em) {
   // Schedule DECISION nid — will land on the first instruction of the condition eval
   em.scheduleNode(NID.DECISION, `if: ${cond}`);
   loadExpr(node.condition, em, 'R0');
-  em.jne('R0', 'R255', elseL, NID.ELSE_CON, 'false → else');
+  em.jz('R0', elseL, 'false → else');
 
   // True branch
   em.iLevel++;
@@ -1262,6 +1326,18 @@ function compileIf(node, em) {
 // DECISION_PREV is NOT a branch target (the back-edge jumps to CON_PREV, not here).
 // It is purely a flowchart annotation — so we schedule it as a sequential-open nid.
 
+function collectLazyDecls(node, found = new Set()) {
+  if (!node || typeof node !== 'object') return found;
+  if (node.type === 'LazyDecl') found.add(node.name.replace(/\?$/, ''));
+  for (const v of Object.values(node)) {
+    if (v && typeof v === 'object') {
+      if (Array.isArray(v)) v.forEach(n => collectLazyDecls(n, found));
+      else collectLazyDecls(v, found);
+    }
+  }
+  return found;
+}
+
 function compileLoop(node, em) {
   const cond  = exprText(node.condition);
   const topL  = em.fresh('loop_top');
@@ -1269,6 +1345,17 @@ function compileLoop(node, em) {
 
   em.blank();
   em.comment(`loop ${cond}`);
+
+  // Pre-initialize any lazy vars (y?) BEFORE the loop label
+  // so they don't re-initialize on every back-edge iteration
+  const lazyVars = collectLazyDecls(node.condition);
+  for (const name of lazyVars) {
+    if (!em.regAlloc.vars.has(name)) {
+      em.regAlloc.alloc(name);
+      em.li('R1', 0, `init ${name} = 0`);
+      em.regAlloc.store(name, 'R1', em);
+    }
+  }
 
   // CON_PREV is the back-edge branch target — schedule before label
   em.label(topL);
@@ -1287,7 +1374,7 @@ function compileLoop(node, em) {
 
   em.comment(`condition: ${cond}  ; [DECISION_PREV — graph annotation]`);
   loadExpr(node.condition, em, 'R0');   // CON_PREV nid lands here
-  em.jne('R0', 'R255', exitL, NID.CON, 'false → exit');
+  em.jz('R0', exitL, 'false → exit');
 
   em.iLevel++;
   for (const stmt of node.body ?? []) compileStmt(stmt, em);
