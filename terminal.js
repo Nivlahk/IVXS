@@ -22,102 +22,9 @@ function termAppend(text, cls) {
   return el;
 }
 
-function termInfo(text)  { termAppend(text, 'info');  }
-function termError(text) { termAppend(text, 'error'); }
-
-// ── Smart output — detects lists/dicts and renders as tables ─────────────────
-function termOutput(value) {
-  const shape = detectShape(value);
-  if (shape === 'list-of-dicts') { termRenderTable(value);  return; }
-  if (shape === 'list-of-lists') { termRenderMatrix(value); return; }
-  if (shape === 'dict')          { termRenderDict(value);   return; }
-  if (shape === 'long-list')     { termRenderList(value);   return; }
-  termAppend(typeof ivxRepr === 'function' ? ivxRepr(value) : String(value ?? ''), 'output');
-}
-
-function detectShape(v) {
-  if (Array.isArray(v)) {
-    if (v.length === 0) return 'plain';
-    if (v.every(x => Array.isArray(x))) return 'list-of-lists';
-    if (v.every(x => x !== null && typeof x === 'object' && !Array.isArray(x))) return 'list-of-dicts';
-    if (v.length > 6 && v.every(x => typeof x !== 'object' && !Array.isArray(x))) return 'long-list';
-  }
-  if (v instanceof Map && v.size > 0) return 'dict';
-  if (v !== null && typeof v === 'object' && !Array.isArray(v)) return 'dict';
-  return 'plain';
-}
-
-function makeTable(headers, rows, kind) {
-  const isList      = kind !== 'dict';
-  const borderColor = isList ? '#4b5563'              : '#92400e';
-  const headerBg    = isList ? 'rgba(255,255,255,0.07)': '#7c2d12';
-  const headerColor = isList ? '#93c5fd'              : '#fcd34d';
-
-  const wrap = document.createElement('div');
-  wrap.className = 'term-msg term-table-wrap';
-
-  const table = document.createElement('table');
-  table.style.cssText = `border-collapse:collapse;font-family:monospace;font-size:12px;color:#e5e7eb;` +
-    `background:#0a0a0f;border:1.5px solid ${borderColor};border-radius:4px;overflow:hidden;min-width:80px;max-width:100%;`;
-
-  if (headers.length) {
-    const thead = document.createElement('thead');
-    const tr    = document.createElement('tr');
-    headers.forEach((h, i) => {
-      const th = document.createElement('th');
-      th.textContent = String(h);
-      th.style.cssText = `background:${headerBg};color:${headerColor};font-weight:600;` +
-        `padding:4px 10px;border-bottom:1px solid ${borderColor};text-align:left;white-space:nowrap;font-size:11px;` +
-        (i < headers.length - 1 ? `border-right:1px solid ${borderColor};` : '');
-      tr.appendChild(th);
-    });
-    thead.appendChild(tr);
-    table.appendChild(thead);
-  }
-
-  const tbody = document.createElement('tbody');
-  rows.forEach((row, ri) => {
-    const tr = document.createElement('tr');
-    tr.style.background = ri % 2 === 0 ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.15)';
-    row.forEach((cell, ci) => {
-      const td = document.createElement('td');
-      td.textContent = cell == null ? '' : (typeof ivxRepr === 'function' ? ivxRepr(cell) : String(cell));
-      td.style.cssText = `padding:4px 10px;white-space:nowrap;` +
-        (ci < row.length - 1 ? `border-right:1px solid ${borderColor};` : '');
-      tr.appendChild(td);
-    });
-    tbody.appendChild(tr);
-  });
-  table.appendChild(tbody);
-  wrap.appendChild(table);
-  termMsgs.appendChild(wrap);
-  termMsgs.scrollTop = termMsgs.scrollHeight;
-}
-
-function termRenderTable(data) {
-  const keys = [...new Set(data.flatMap(d =>
-    d instanceof Map ? [...d.keys()] : Object.keys(d)
-  ))];
-  const rows = data.map(d => keys.map(k =>
-    d instanceof Map ? d.get(k) : d[k]
-  ));
-  makeTable(keys, rows, 'list');
-}
-
-function termRenderMatrix(data) {
-  const numCols = Math.max(...data.map(r => r.length), 1);
-  const rows    = data.map(r => Array.from({ length: numCols }, (_, i) => r[i] ?? ''));
-  makeTable([], rows, 'list');
-}
-
-function termRenderDict(data) {
-  const entries = data instanceof Map ? [...data.entries()] : Object.entries(data);
-  makeTable(['key', 'value'], entries.map(([k, v]) => [k, v]), 'dict');
-}
-
-function termRenderList(data) {
-  makeTable([], data.map(v => [v]), 'list');
-}
+function termInfo(text)   { termAppend(text, 'info');   }
+function termOutput(text) { termAppend(text, 'output'); }
+function termError(text)  { termAppend(text, 'error');  }
 
 // Show an error with line number — clicking jumps to that line in the editor
 function termErrorLine(message, lineNum) {
@@ -225,8 +132,11 @@ termRun.addEventListener('click', async () => {
   let interpGlobals = null;
   let firstErrorFlagged = false;
   _resumeBreakpoint = null; // reset for this run
+  if (typeof window._khClearErrors === 'function') window._khClearErrors();
 
-  const flagErrorNode = (line) => {
+  const flagErrorNode = (line, col, message) => {
+    if (line != null && typeof window._khMarkError === 'function')
+      window._khMarkError(line, col ?? 1, message ?? '');
     if (firstErrorFlagged || line == null || typeof flashErrorNode !== 'function') return;
     firstErrorFlagged = true;
     const nodeId = lineToNodeId.get(line - 1)
@@ -237,7 +147,7 @@ termRun.addEventListener('click', async () => {
 
   const interp = new Interpreter({
     onOutput: async (value) => {
-      termOutput(value);
+      termOutput(ivxRepr(value));
     },
     onInput: async (varName) => {
       const raw = await termInput(varName);
@@ -246,8 +156,9 @@ termRun.addEventListener('click', async () => {
     },
     onError: (e) => {
       const line = e.ivxLine ?? e.line ?? null;
+      const col  = e.col ?? null;
       termErrorLine(e.message ?? String(e), line ?? null);
-      flagErrorNode(line);
+      flagErrorNode(line, col, e.message ?? String(e));
     },
     onWait: (n) => new Promise(r => setTimeout(r, n * 100)),
     onStep: async (srcLine) => {

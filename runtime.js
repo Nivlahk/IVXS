@@ -85,7 +85,7 @@ class Env {
   del(name) {
     if (this.vars.has(name)) {
       if (this.consts.has(name)) {
-        throw new RuntimeError(`Cannot delete '${name}' — it is inferred immutable.`, 0);
+        throw new RuntimeError(`Can't delete '${name}' — it was created inside a function and can't be removed this way`, 0);
       }
       this.vars.delete(name);
       return true;
@@ -134,7 +134,7 @@ class IVXClass {
 
     const initMethod = this.resolveMethod('init');
     if (!initMethod && args.length > 0) {
-      throw new RuntimeError(`Class '${this.name}' does not define an init() method`, 0, 0);
+      throw new RuntimeError(`The class '${this.name}' needs an init() method to be created this way`, 0, 0);
     }
     if (initMethod) {
       for (let i = 0; i < initMethod.params.length; i++) {
@@ -206,7 +206,7 @@ const BUILTIN_DEFS = {
       if (typeof v === 'string') return v.length;
       if (Array.isArray(v)) return v.length;
       if (v instanceof Map) return v.size;
-      throw new RuntimeError(`length() requires string, list, or dict`, node?.line);
+      throw new RuntimeError(`size() works on strings, lists, and dicts — not this type`, node?.line);
     },
   },
   keys: {
@@ -614,9 +614,9 @@ const BUILTIN_DEFS = {
     params: ['n'],
     call: (args, node) => {
       const n = Math.trunc(Number(args[0]));
-      if (!isFinite(n)) throw new RuntimeError('range() requires a finite integer', node?.line);
+      if (!isFinite(n)) throw new RuntimeError('range() needs a whole number, not this', node?.line);
       if (n < 0) return [];
-      if (n > 100000) throw new RuntimeError('range() limit is 100000', node?.line);
+      if (n > 100000) throw new RuntimeError('range() limit is 100,000 — try a smaller number', node?.line);
       return Array.from({ length: n }, (_, i) => i);
     },
   },
@@ -852,7 +852,7 @@ function tableGroup(table, cols) {
 }
 
 function tableAgg(grouped, col, fn, asName, node) {
-  if (!Array.isArray(grouped)) throw new RuntimeError('agg() expects grouped rows list', node?.line);
+  if (!Array.isArray(grouped)) throw new RuntimeError('agg() needs grouped data — use groupby() first', node?.line);
   const key = String(col ?? '');
   const op = String(fn ?? 'count').toLowerCase();
   const outKey = String(asName ?? `${op}_${key}`);
@@ -867,7 +867,7 @@ function tableAgg(grouped, col, fn, asName, node) {
     else if (op === 'avg') value = values.length ? values.reduce((a, v) => a + Number(v || 0), 0) / values.length : 0;
     else if (op === 'min') value = values.length ? values.reduce((a, v) => (a < v ? a : v)) : NONE;
     else if (op === 'max') value = values.length ? values.reduce((a, v) => (a > v ? a : v)) : NONE;
-    else throw new RuntimeError(`agg(): unknown function '${op}'`, node?.line);
+    else throw new RuntimeError(`'${op}' isn't a valid aggregation — try sum, avg, min, max, or count`, node?.line);
 
     return { ...(g?.key ?? {}), [outKey]: value };
   });
@@ -880,7 +880,7 @@ function tableJoin(leftTable, rightTable, leftCol, rightCol, kind = 'inner', nod
   const rCol = String(rightCol ?? '');
   const mode = String(kind ?? 'inner').toLowerCase();
 
-  if (!lCol || !rCol) throw new RuntimeError('join() requires left and right key columns', node?.line);
+  if (!lCol || !rCol) throw new RuntimeError('join() needs a key column on both sides', node?.line);
 
   const rIndex = new Map();
   for (const r of right) {
@@ -1078,7 +1078,7 @@ class IVXRuntime {
 
   async _saveDriveFile(filename, content, mimeType) {
     if (!driveToken) {
-      throw new RuntimeError("save: not signed in to Google Drive", 0);
+      throw new RuntimeError("Sign in to Google first to save to Drive", 0);
     }
 
     await driveEnsureFolder();
@@ -1531,7 +1531,6 @@ function inferImmutables(ast) {
     if (node.type === 'Fun')  { scanBlock(node.body); return; }
     if (node.type === 'Class') { scanBlock(node.body); return; }
     if (node.type === 'Try')  { scanBlock(node.body); scanBlock(node.errBody); return; }
-    if (node.type === 'Fork') { for (const b of node.branches ?? []) scanBlock(b.body); return; }
     if (node.type === 'Print' || node.type === 'Text' || node.type === 'Give') { scanExpr(node.expr); return; }
     if (node.type === 'ExprStatement') { scanExpr(node.expr); return; }
   }
@@ -1653,7 +1652,7 @@ class Interpreter {
 
       case 'Delete': {
         if (!env.del(node.name)) {
-          throw new RuntimeError(`Cannot delete undefined variable '${node.name}'`, node.line);
+          throw new RuntimeError(`Can't delete '${node.name}' — it doesn't exist`, node.line);
         }
         break;
       }
@@ -1822,7 +1821,7 @@ class Interpreter {
         } else {
           iterable = env.get(node.target);
           if (iterable === undefined) {
-            throw new RuntimeError(`Undefined variable '${node.target}'`, node.line);
+            throw new RuntimeError(`'${node.target}' isn't defined yet — use make to create it first`, node.line);
           }
         }
         const entries = toIterable(iterable, node);
@@ -1854,7 +1853,7 @@ class Interpreter {
           ? this._resolveClassObject(node.superclass.name, env)
           : null;
         if (node.superclass && !superClass) {
-          throw new RuntimeError(`Superclass '${node.superclass.name}' is not defined`, node.superclass.line, node.superclass.col);
+          throw new RuntimeError(`'${node.superclass.name}' isn't defined — check the class name`, node.superclass.line, node.superclass.col);
         }
         const cls = new IVXClass(node.name, node.body, env, superClass);
         const classEnv = env.child();
@@ -1872,30 +1871,6 @@ class Interpreter {
           }
         }
         env.set(node.name, cls);
-        break;
-      }
-
-      case 'Fork': {
-        const branches = node.branches ?? [];
-        if (branches.length === 0) break;
-
-        // If all weights are 1.0, run all branches concurrently
-        const allCertain = branches.every(b => b.weight >= 1.0);
-        if (allCertain) {
-          await Promise.all(branches.map(b => this.execBlock(b.body, env)));
-          break;
-        }
-
-        // Otherwise pick one branch by weighted random selection
-        const total = branches.reduce((s, b) => s + b.weight, 0);
-        let r = Math.random() * total;
-        for (const branch of branches) {
-          r -= branch.weight;
-          if (r <= 0) {
-            await this.execBlock(branch.body, env);
-            break;
-          }
-        }
         break;
       }
 
@@ -1937,7 +1912,7 @@ class Interpreter {
           if (node.names && node.names.length > 0) {
             for (const name of node.names) {
               const val = modEnv.get(name);
-              if (val === undefined) throw new RuntimeError(`Module does not export '${name}'`, node.line);
+              if (val === undefined) throw new RuntimeError(`This module doesn't have '${name}' — check the spelling or the module docs`, node.line);
               env.set(name, val);
             }
           } else {
@@ -2140,7 +2115,7 @@ class Interpreter {
   async _evalIdentifierExpr(node, env) {
     const val = env.get(node.name);
     if (val === undefined) {
-      throw new RuntimeError(`Undefined variable '${node.name}'`, node.line, node.col);
+      throw new RuntimeError(`'${node.name}' isn't defined yet — did you mean to make it first?`, node.line, node.col);
     }
     return val;
   }

@@ -820,3 +820,11 @@ path[data-edge-from]:hover{filter:drop-shadow(0 0 4px #89b4fa);stroke:#89b4fa !i
 
 /* ── Terminal table output ───────────────────────────────────────────────── */
 .term-table-wrap { align-self:flex-start; background:none; border:none; padding:2px 0; max-width:100%; overflow-x:auto; }
+
+/* ── KH yellow error underline ───────────────────────────────────────────── */
+.kh-err-squig {
+  text-decoration: underline wavy #f0b429;
+  text-decoration-skip-ink: none;
+  text-underline-offset: 2px;
+  cursor: help;
+}
