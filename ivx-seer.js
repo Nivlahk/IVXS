@@ -1010,13 +1010,70 @@ function compileSEER(source) {
     const sel = document.getElementById('lens-lang-sel');
     if (!sel) return;
     sel.addEventListener('change', () => {
-      const t = document.getElementById('lens-title');
-      if (t && sel.value === 'seer') { t.textContent = 'SEER Assembly'; t.style.color = '#4ade80'; }
+      const t     = document.getElementById('lens-title');
+      const panel = document.getElementById('lens-panel');
+      const isSeer = sel.value === 'seer';
+      if (t) {
+        if (isSeer) {
+          t.textContent = 'SEER Assembly';
+          t.classList.add('seer-active');
+        } else {
+          t.classList.remove('seer-active');
+        }
+      }
+      if (panel) panel.classList.toggle('seer-mode', isSeer);
     });
   }
 
   function boot() {
     patchTranspiler(); addOption(); watchSelector();
+
+    // window._lensRender is registered by ivx-lens.js at the end of its IIFE.
+    // We wrap it so that whenever it runs with 'seer' selected we correct the
+    // title (ivx-lens.js does LANG_LABELS[lensLang] + ' Lens', which yields
+    // "Undefined Lens" for the 'seer' key that isn't in its private map).
+    const origRender = window._lensRender;
+    window._lensRender = function() {
+      if (typeof origRender === 'function') origRender();
+      const sel   = document.getElementById('lens-lang-sel');
+      const t     = document.getElementById('lens-title');
+      const panel = document.getElementById('lens-panel');
+      const isSeer = sel?.value === 'seer';
+      if (isSeer && t) {
+        t.textContent = 'SEER Assembly';
+        t.classList.add('seer-active');
+      } else if (t) {
+        t.classList.remove('seer-active');
+      }
+      if (panel) panel.classList.toggle('seer-mode', isSeer);
+    };
+
+    // Apply classes immediately if seer is already selected on load
+    const sel   = document.getElementById('lens-lang-sel');
+    const panel = document.getElementById('lens-panel');
+    const t     = document.getElementById('lens-title');
+    if (sel?.value === 'seer') {
+      if (t)     { t.textContent = 'SEER Assembly'; t.classList.add('seer-active'); }
+      if (panel) panel.classList.add('seer-mode');
+    }
+    // Also fix the "(edited)" title — ivx-lens.js's lens-code input handler
+    // sets the title to LANG_LABELS[lensLang] + ' (edited)' which yields
+    // "Undefined (edited)" for seer. We add a listener that runs after it
+    // and corrects the text when seer is active.
+    const lensCode = document.getElementById('lens-code');
+    if (lensCode) {
+      lensCode.addEventListener('input', () => {
+        const sel = document.getElementById('lens-lang-sel');
+        const t   = document.getElementById('lens-title');
+        if (sel?.value === 'seer' && t &&
+            (t.textContent === 'undefined (edited)' ||
+             t.textContent === 'Undefined (edited)' ||
+             t.textContent === 'undefined Lens')) {
+          t.textContent = 'SEER Assembly (edited)';
+        }
+      });
+    }
+
     console.log('[ivx-seer.js] SEER ISA v18 Lens loaded.');
   }
 

@@ -681,6 +681,79 @@ path[data-edge-from]:hover{filter:drop-shadow(0 0 4px #89b4fa);stroke:#89b4fa !i
 }
 #lens-import-msg { flex: 1; }
 
+#lens-title.seer-active {
+  color: #4ade80;
+}
+/* SEER option in the language selector — subtle green tint */
+#lens-lang-sel option[value="seer"] {
+  color: #4ade80;
+  background: #1a2e1a;
+}
+/* SEER machine-code (hex) view — byte pill layout */
+#lens-panel.seer-mode #lens-code {
+  font-size: 12px;
+  line-height: 1;
+  padding: 6px 10px;
+  white-space: normal;   /* pills wrap naturally */
+}
+.seer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  min-height: 22px;
+  font-family: 'JetBrains Mono','Fira Code','Cascadia Code',monospace;
+  border-left: 2px solid transparent;
+}
+.seer-row:hover { background: rgba(137,180,250,.04); }
+.seer-label-row { padding: 4px 0 1px; }
+.seer-comment-row { opacity: 0.5; min-height: 16px; }
+.seer-blank-row  { min-height: 8px; }
+.seer-error-row  { border-left-color: #e05c5c; opacity: 0.7; }
+.seer-addr {
+  font-size: 10px;
+  width: 3.6em;
+  flex-shrink: 0;
+  text-align: right;
+  user-select: none;
+}
+.seer-pills {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+.seer-pill {
+  font-family: 'JetBrains Mono','Fira Code','Cascadia Code',monospace;
+  font-size: 11.5px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  cursor: default;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  transition: filter 0.1s;
+}
+.seer-pill:hover { filter: brightness(1.2); }
+.seer-pack-sep {
+  font-size: 11px;
+  padding: 0 2px;
+  user-select: none;
+  opacity: 0.7;
+}
+.seer-mnem {
+  font-family: 'JetBrains Mono','Fira Code','Cascadia Code',monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+.seer-label-def {
+  font-family: 'JetBrains Mono','Fira Code','Cascadia Code',monospace;
+  font-size: 12px;
+}
+
 /* loading spinner */
 .drive-loading {
   padding: 12px 10px;
