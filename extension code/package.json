@@ -1,0 +1,70 @@
+{
+  "name": "ivx",
+  "displayName": "IVXS",
+  "description": "IVXS flowchart language for VS Code",
+  "version": "0.1.0",
+  "publisher": "ice-bolt",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yefoo/ivx-lahk"
+  },
+  "engines": {
+    "vscode": "^1.109.3"
+  },
+  "categories": ["Other"],
+
+  "main": "./dist/extension.js",
+  "extensionKind": ["workspace"],
+
+  "contributes": {
+    "languages": [
+      {
+        "id": "ivx",
+        "extensions": [".ivx"],
+        "aliases": ["IVXS", "ivx"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "ivx",
+        "scopeName": "source.ivx",
+        "path": "./ivx.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "ivx.dumpGraph",
+        "title": "IVXS: Dump Graph"
+      },
+      {
+        "command": "ivx.showGraph",
+        "title": "IVXS: Show Graph"
+      },
+      {
+        "command": "ivx.toggleRealtimeGraph",
+        "title": "IVXS: Toggle Realtime Graph"
+      },
+      {
+        "command": "ivx.clearDiagnostics",
+        "title": "IVXS: Clear Diagnostics"
+      }
+    ]
+  },
+
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "npm run clean && tsc -p ./tsconfig.json",
+    "watch": "tsc -p ./tsconfig.json -w",
+    "clean": "rimraf dist"
+  },
+
+  "dependencies": {
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.3",
+    "@types/vscode": "^1.107.0",
+    "rimraf": "^6.1.2"
+  }
+}

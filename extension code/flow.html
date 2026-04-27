@@ -1,0 +1,1301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; background: #1e1e1e; color: #ddd; font-family: system-ui, sans-serif; overflow: hidden; }
+    svg#canvas { width: 100vw; height: 100vh; background: #1e1e1e; cursor: grab; }
+    svg#canvas.panning { cursor: grabbing; }
+    text { font-size: 12px; fill: #eee; user-select: none; }
+
+    .panel {
+      position: fixed; z-index: 999; display: flex; align-items: center; gap: 6px;
+      background: #1e1e2e; border: 1px solid #3a3a5c; border-radius: 8px;
+      padding: 6px 10px; box-shadow: 0 2px 12px rgba(0,0,0,.4);
+    }
+    #controls { right: 12px; top: 12px; }
+    #comment-toggle { left: 12px; bottom: 12px; }
+    .panel button, .panel select {
+      background: #2a2a3e; border: 1px solid #3a3a5c; color: #cdd6f4;
+      border-radius: 5px; padding: 4px 10px; cursor: pointer; font-size: 12px; font-family: inherit;
+    }
+    .panel select { padding: 4px 6px; }
+    .panel button:hover { background: #313145; border-color: #89b4fa; color: #89b4fa; }
+
+    #minimap {
+      position: fixed; bottom: 12px; right: 12px; width: 200px; height: 150px;
+      background: #1e1e2e; border: 1px solid #3a3a5c; border-radius: 8px;
+      overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.4); z-index: 998;
+    }
+    #minimap svg { width: 100%; height: 100%; cursor: pointer; }
+    .vp { fill: rgba(137,180,250,.2); stroke: #89b4fa; stroke-width: 2; pointer-events: none; }
+
+    @keyframes flow-a { to { stroke-dashoffset: -18; } }
+    @keyframes flow-b { from { stroke-dashoffset: -9; } to { stroke-dashoffset: -27; } }
+    .flow-a { animation: flow-a .45s linear infinite; pointer-events: none; }
+    .flow-b { animation: flow-b .45s linear infinite; pointer-events: none; }
+  </style>
+</head>
+<body>
+<div id="controls" class="panel"></div>
+<div id="comment-toggle" class="panel"></div>
+<div id="minimap"><svg id="minimap-canvas"></svg></div>
+<svg id="canvas"></svg>
+
+<script>
+'use strict';
+// ─── Constants ───────────────────────────────────────────────────────────────
+const NS = 'http://www.w3.org/2000/svg';
+const BASEY = 40, YSTEP = 80, MAX_NODE_W = 260, PAD_X = 20, PAD_Y = 10;
+const LINE_H = 14, CELL_PAD_X = 6, CELL_H = 22;
+const BLOCK_GAP_Y = 28, BLOCK_PAD = 12, BLANK_LINE_THRESH = 2;
+
+const NODE_FILL = { Decision:'#004b8d', Predictive:'#6a00a3', Function:'#92700a',
+                    Start:'#007f00', End:'#7f0000', Input:'#007f00', Output:'#ED8936',
+                    WaitBlock:'#7c4d00', Speak:'#5b3fa8' };
+const TYPE_FILL = { string:'#b45309', integer:'#60a5fa', float:'#14b8a6',
+                    boolean:'#1e3a8a', range:'#ec4899', none:'#ef4444', list:'#6b7280', dict:'#7a4d2e' };
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let vscode, currentGraph, currentXSTEP = 140;
+let nodePositions = new Map();       // id → pos object (mutated in place)
+let dragOffsets   = new Map();       // id → {x,y} – cleared on new graph
+let blockOffsets  = new Map();       // blockKey → {x,y} – cleared on new graph
+let blockState    = new Map();       // blockKey → {collapsed}
+let watchMap      = new Map();
+let breakpoints   = new Set();
+let varColorCache = new Map();       // rebuilt each render
+
+let viewBox = { x:0, y:0, width:1000, height:800 };
+let graphBounds   = { x:0, y:0, width:1000, height:800 };
+let isFirstRender = true;
+
+// Interaction
+let isPanning = false, panStart = {x:0,y:0}, panMoved = false, cancelNextClick = false;
+let draggedId = null, dragStartSvg = {x:0,y:0}, dragStartMouse = {x:0,y:0}, isDragging = false;
+let draggedBlockKey = null, blockDragStart = {x:0,y:0}, isBlockDragging = false;
+let loopBowSign = 1;
+
+// Edit overlay
+let activeEdit = null, activeEditInput = null, activeEditCancel = null;
+const pendingEditCtx = new Map();
+
+// Highlight / trace
+let traceEvents = [], traceIndex = 0, traceTimer, autoStepTimer;
+let edgeOverlays = [], persistentOverlays = [];
+let lastHighlightedId, stepIntoBtn, stepIntoCtx, persistentEdgeMode, persistentEdge;
+let isVideoPlaying = false;
+
+let showComments = false;
+// block ID → stable string key built from sorted node IDs
+let nextBlockKey = 0;
+
+// ─── DOM refs ─────────────────────────────────────────────────────────────────
+const svg      = /** @type {SVGSVGElement} */ (document.getElementById('canvas'));
+const miniSvg  = /** @type {SVGSVGElement} */ (document.getElementById('minimap-canvas'));
+
+// Hidden measure node – appended to a detached SVG so it never affects getBBox
+const _measureSvg = document.createElementNS(NS, 'svg');
+_measureSvg.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;';
+document.body.appendChild(_measureSvg);
+const measureNode = document.createElementNS(NS, 'text');
+_measureSvg.appendChild(measureNode);
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const ensureVscode = () => { if (!vscode && window.acquireVsCodeApi) vscode = window.acquireVsCodeApi(); };
+const sendMsg = msg => { ensureVscode(); vscode?.postMessage(msg); };
+
+const el = (tag, attrs = {}, parent) => {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
+  parent?.appendChild(e);
+  return e;
+};
+const title = (e, t) => { if (t) { const n = el('title'); n.textContent = t; e.appendChild(n); } };
+const snap  = (v, s) => Math.round(v / s) * s;
+const fwd   = (a, b) => b.line !== a.line ? b.line > a.line : b.segmentIndex >= a.segmentIndex;
+
+const measureText = (s, size = 12) => {
+  measureNode.setAttribute('font-size', String(size));
+  measureNode.textContent = s || '';
+  return measureNode.getComputedTextLength();
+};
+
+function wrapText(text, maxW, fontSize = 12) {
+  const lines = [];
+  for (const rawLine of String(text).split(/\n/)) {
+    let line = '';
+    for (const w of rawLine.split(/\s+/).filter(Boolean)) {
+      const test = line ? line + ' ' + w : w;
+      if (measureText(test, fontSize) > maxW && line) { lines.push(line); line = w; }
+      else line = test;
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+
+const classifyValue = raw => {
+  const t = String(raw).trim();
+  if (/^"(?:[^"\\]|\\.)*"$/.test(t)) return 'string';
+  if (/^-?\d+$/.test(t))             return 'integer';
+  if (/^-?\d*\.\d+([eE][+-]?\d+)?$/.test(t)) return 'float';
+  if (/^(true|false)$/i.test(t))     return 'boolean';
+  if (/^none$/i.test(t))             return 'none';
+  if (/^range\s*\(/.test(t))         return 'range';
+  if (/^\[/.test(t))                 return 'list';
+  if (/^\{/.test(t))                 return 'dict';
+  return 'other';
+};
+
+const normType = raw => {
+  const b = String(raw).trim().toLowerCase().replace(/[^a-z]/g,'');
+  return ({int:'integer',str:'string',bool:'boolean'})[b]
+    || (['integer','string','boolean','float','list','dict','range','none'].includes(b) ? b : '');
+};
+
+const normVar = raw => (String(raw ?? '').match(/^([A-Za-z_]\w*)/) || [])[1] || '';
+
+const numericType = expr => {
+  const s = String(expr);
+  if (/\bfloat\s*\(/.test(s) || /\d+\.\d+/.test(s) || /\//.test(s)) return 'float';
+  if (/\bint\s*\(/.test(s)   || /\d+/.test(s)       || /[+\-*%]/.test(s)) return 'integer';
+  return '';
+};
+
+const extractComment = meta => {
+  if (!meta) return '';
+  const skip = new Set(['fun-header','fun-block','collapsed','expanded','inline-jump','inline-next',
+    'if-join','if-cond','loop-head','loop-cond','loop-exit','switch-expr','switch-join',
+    'edge-label','implicit','start','end','explicit','empty','doc','ex','im','list','dict']);
+  return String(meta)
+    .replace(/labels:\s*\[[^\]]*\]/g,' ')
+    .replace(/fun-body=\[[0-9,]+\]/g,' ')
+    .split(/\s+/).filter(Boolean)
+    .filter(t => !skip.has(t) && !/^(fun-body-of|fun-call-inline|fun-call|potential-call|edge-label|type)[:=]/.test(t))
+    .join(' ').trim();
+};
+
+const fmtDecision = text => {
+  const parts = String(text).split(/\s+(and|or)\s+/i).filter(Boolean);
+  if (parts.length <= 1) return text;
+  const lines = [parts[0]];
+  for (let i = 1; i < parts.length; i += 2) lines.push(`${parts[i]||''} ${parts[i+1]||''}`.trim());
+  return lines.join('\n');
+};
+
+// Smarter CSV split that respects brackets and quotes
+function smartSplit(str, delim) {
+  const parts = []; let cur = '', depth = 0, inS = false, inD = false;
+  for (let i = 0; i < str.length; i++) {
+    const c = str[i], esc = i > 0 && str[i-1] === '\\';
+    if      (c === '"' && !esc && !inS) inD = !inD;
+    else if (c === "'" && !esc && !inD) inS = !inS;
+    else if (!inS && !inD) {
+      if (c === '[') depth++;
+      else if (c === ']') depth--;
+    }
+    if (c === delim && !depth && !inS && !inD) { parts.push(cur); cur = ''; }
+    else cur += c;
+  }
+  if (cur) parts.push(cur);
+  return parts.map(s => s.trim()).filter(Boolean);
+}
+
+// ─── Label rendering ──────────────────────────────────────────────────────────
+function createLabel(text, cx, cy, maxW, tooltip, parent = svg, colorMap = null, fontSize = 12, lineH = LINE_H, fill = '#eee') {
+  const textEl = el('text', { 'text-anchor':'middle', 'dominant-baseline':'middle', 'font-size':fontSize }, parent);
+  if (fill !== '#eee') textEl.style.fill = fill;
+  title(textEl, tooltip);
+  const lines  = wrapText(text, maxW, fontSize);
+  const startY = cy - (lineH * lines.length) / 2 + lineH / 2;
+
+  lines.forEach((line, i) => {
+    const y = startY + i * lineH;
+    if (!colorMap) {
+      const ts = el('tspan', { x: cx, y }, textEl);
+      ts.dataset.lineY = String(y);
+      ts.textContent = line;
+    } else {
+      const re = /\w+/g; let last = 0, m, isFirst = true;
+      const parts = [];
+      while ((m = re.exec(line))) {
+        if (m.index > last) parts.push({ t: line.slice(last, m.index), c: '' });
+        parts.push({ t: m[0], c: colorMap.get(m[0]) || '' });
+        last = m.index + m[0].length;
+      }
+      if (last < line.length) parts.push({ t: line.slice(last), c: '' });
+      parts.forEach(p => {
+        const ts = el('tspan', isFirst ? { x: cx, y } : {}, textEl);
+        if (isFirst) { ts.dataset.lineY = String(y); isFirst = false; }
+        ts.textContent = p.t;
+        if (p.c) ts.style.fill = p.c;
+      });
+    }
+  });
+  return { textEl, bbox: textEl.getBBox() };
+}
+
+const shiftTextY = (textEl, delta) => {
+  if (!delta) return;
+  for (const ts of textEl.childNodes) {
+    const b = ts.dataset?.lineY;
+    if (b != null) ts.setAttribute('y', String(Number(b) + delta));
+  }
+};
+
+// ─── Block bookkeeping ────────────────────────────────────────────────────────
+// Stable key = sorted node IDs joined – survives re-renders
+const blockKey = group => [...group].sort((a,b)=>a-b).join(',');
+
+function getOrCreateBlockState(key) {
+  if (!blockState.has(key)) blockState.set(key, { collapsed: false });
+  return blockState.get(key);
+}
+
+// ─── Layout ───────────────────────────────────────────────────────────────────
+function buildAdj(graph) {
+  const byId = new Map(graph.nodes.map(n => [n.id, n]));
+  const childOf = new Map(), parentOf = new Map();
+  for (const e of graph.edges) {
+    (childOf.get(e.from) ?? (childOf.set(e.from,[]), childOf.get(e.from))).push(e);
+    (parentOf.get(e.to)  ?? (parentOf.set(e.to,[]),  parentOf.get(e.to))).push(e);
+  }
+  return { byId, childOf, parentOf };
+}
+
+function propagate(map, parentOf, cond) {
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [id, parents] of parentOf) {
+      if (map.has(id) || parents.length !== 1) continue;
+      const v = cond(id, parents[0].from, map.get(parents[0].from));
+      if (v !== undefined) { map.set(id, v); changed = true; }
+    }
+  }
+}
+
+function computeBranchInfo(graph, byId, childOf, parentOf) {
+  const branchIdx = new Map(), decOf = new Map();
+  for (const node of graph.nodes) {
+    if (node.kind !== 'Decision') continue;
+    (childOf.get(node.id) || [])
+      .slice().sort((a,b) => {
+        const na = byId.get(a.to), nb = byId.get(b.to);
+        if (!na || !nb) return a.to - b.to;
+        return na.line !== nb.line ? na.line - nb.line
+             : na.segmentIndex !== nb.segmentIndex ? na.segmentIndex - nb.segmentIndex
+             : na.id - nb.id;
+      })
+      .forEach((e, i) => { branchIdx.set(e.to, i); decOf.set(e.to, node.id); });
+  }
+  propagate(branchIdx, parentOf, (id, pid, pv) => pv);
+  propagate(decOf,     parentOf, (id, pid, pv) => pv);
+  return { branchIdx, decOf };
+}
+
+function computeLayering(graph, byId) {
+  const depth = new Map(graph.nodes.map(n => [n.id, (n.kind==='Start'||n.kind==='Function') ? 0 : Infinity]));
+  const fwdEdges = graph.edges.filter(e => { const a=byId.get(e.from),b=byId.get(e.to); return a&&b&&fwd(a,b); });
+  for (let pass = 0; pass < 50; pass++) {
+    let changed = false;
+    for (const e of fwdEdges) {
+      const fd = depth.get(e.from), td = depth.get(e.to);
+      if (fd!=null&&td!=null&&fd+1<td&&byId.get(e.to)?.kind!=='Function') { depth.set(e.to,fd+1); changed=true; }
+    }
+    if (!changed) break;
+  }
+  let fallback = Math.max(...[...depth.values()].filter(isFinite)) + 1;
+  graph.nodes.slice()
+    .sort((a,b) => a.line!==b.line ? a.line-b.line : a.segmentIndex!==b.segmentIndex ? a.segmentIndex-b.segmentIndex : a.id-b.id)
+    .forEach(n => {
+      if (n.kind==='Function') depth.set(n.id, 0);
+      else if (!isFinite(depth.get(n.id))) depth.set(n.id, fallback++);
+    });
+  return depth;
+}
+
+function computeLayout(graph) {
+  const { byId, childOf, parentOf } = buildAdj(graph);
+  const { branchIdx, decOf } = computeBranchInfo(graph, byId, childOf, parentOf);
+  const depthMap = computeLayering(graph, byId);
+  const XSTEP = Math.max(100, Math.min(180,
+    Math.max(80, ...graph.nodes.map(n => Math.min(measureText(n.text||n.kind)+PAD_X*2, MAX_NODE_W))) + 40));
+  currentXSTEP = XSTEP;
+
+  const centerX0 = snap(500, XSTEP);
+  const positions = new Map();
+  let fnOffset = XSTEP * 4;
+
+  for (const node of graph.nodes) {
+    const depth = isFinite(depthMap.get(node.id)) ? depthMap.get(node.id) : 0;
+    const isFn = node.kind === 'Function' || node.kind === 'WaitBlock';
+    const cx = isFn ? centerX0 + fnOffset : centerX0;
+    if (isFn) fnOffset += XSTEP * 3;
+    positions.set(node.id, { id:node.id, kind:node.kind, centerX:cx, centerY:BASEY+depth*YSTEP, x:cx, y:BASEY+depth*YSTEP, width:0, height:0 });
+  }
+
+  // Function body column alignment
+  const fnXMap = new Map();
+  for (const n of graph.nodes) if (n.kind==='Function' || n.kind==='WaitBlock') fnXMap.set(n.id, positions.get(n.id).centerX);
+  for (const n of graph.nodes) {
+    const m = n.meta?.match(/(?:fun|wait)-body-of=(\d+)/);
+    if (m && !n.meta?.includes('fun-call-inline')) {
+      const p = positions.get(n.id), fnX = fnXMap.get(parseInt(m[1],10));
+      if (fnX!=null && p) p.centerX = fnX;
+    }
+  }
+
+  // Branch X offsets
+  const branchesPerDec = new Map();
+  for (const n of graph.nodes) if (n.kind==='Decision') branchesPerDec.set(n.id, new Set());
+  branchIdx.forEach((idx, nid) => { const d=decOf.get(nid); if (d!=null) branchesPerDec.get(d)?.add(idx); });
+  branchIdx.forEach((idx, nid) => {
+    const dId = decOf.get(nid), pos = positions.get(nid);
+    if (!dId || !pos) return;
+    const n = Math.max(...branchesPerDec.get(dId)) + 1;
+    const slot = n%2===1 ? idx-(n-1)/2 : idx-n/2+0.5;
+    pos.centerX = pos.x = snap((positions.get(dId)?.centerX ?? centerX0) + slot*XSTEP, XSTEP);
+  });
+
+  // Connector centering
+  for (const node of graph.nodes) {
+    if (node.kind!=='Connector' && node.kind!=='NextConnector') continue;
+    const pos = positions.get(node.id), parents = parentOf.get(node.id)||[];
+    if (!pos || !parents.length) continue;
+    const decs = new Set(parents.map(e => decOf.get(e.from)).filter(v=>v!=null));
+    if (decs.size!==1) continue;
+    const xs = parents.map(e=>positions.get(e.from)?.centerX).filter(v=>v!=null);
+    if (xs.length) pos.centerX = pos.x = snap((Math.min(...xs)+Math.max(...xs))/2, XSTEP);
+  }
+
+  // Collision resolution
+  const byY = new Map();
+  for (const pos of positions.values())
+    (byY.get(pos.centerY) ?? (byY.set(pos.centerY,[]), byY.get(pos.centerY))).push(pos);
+  for (const group of byY.values()) {
+    if (group.length < 2) continue;
+    const seen = new Map();
+    for (const p of group) (seen.get(p.centerX) ?? (seen.set(p.centerX,[]), seen.get(p.centerX))).push(p);
+    for (const dupes of seen.values()) {
+      if (dupes.length < 2) continue;
+      dupes.sort((a,b)=>a.id-b.id);
+      const mid = (dupes.length-1)/2;
+      dupes.forEach((p,i) => {
+        const slot = i-mid;
+        p.centerX = p.x = snap(p.centerX + (slot!==0 ? slot*XSTEP : (p.centerX>=centerX0?1:-1)*XSTEP), XSTEP);
+      });
+    }
+  }
+
+  // ── Block grouping ────────────────────────────────────────────────────────
+  // Determine ownerKey per node
+  const ownerOf = new Map();
+  for (const n of graph.nodes) {
+    const m = n.meta?.match(/(?:fun|wait)-body-of=(\d+)/);
+    ownerOf.set(n.id, m ? parseInt(m[1],10) : null);
+  }
+
+  // Bucket all nodes by owner.
+  // Function header nodes get their own single-node bucket keyed by their id,
+  // so they appear as the first block heading their function column.
+  const buckets = new Map();
+  for (const n of graph.nodes) {
+    if (n.kind === 'Function' || n.kind === 'WaitBlock') {
+      (buckets.get(n.id) ?? (buckets.set(n.id,[]), buckets.get(n.id))).push(n);
+      continue;
+    }
+    const own = ownerOf.get(n.id) ?? null;
+    (buckets.get(own) ?? (buckets.set(own,[]), buckets.get(own))).push(n);
+  }
+
+  // Split into groups; compute stable keys
+  const segmentLines = new Set((graph.segments || []).map(s => s.physicalLine));
+  const hasSegments = segmentLines.size > 0;
+  const blankCountBetween = (a, b) => {
+    if (!hasSegments) return Math.max(0, b - a - 1);
+    let blanks = 0;
+    for (let l = a + 1; l < b; l++) if (!segmentLines.has(l)) blanks++;
+    return blanks;
+  };
+  const layoutBlocks = [];
+  for (const [ownerKey, nodes] of buckets) {
+    nodes.sort((a,b) => a.line!==b.line ? a.line-b.line : a.segmentIndex!==b.segmentIndex ? a.segmentIndex-b.segmentIndex : a.id-b.id);
+    const splitAfter = new Set();
+    for (let i=0; i<nodes.length-1; i++)
+      if (blankCountBetween(nodes[i].line, nodes[i+1].line) >= BLANK_LINE_THRESH) splitAfter.add(nodes[i].id);
+   
+    let cur = new Set();
+    for (const node of nodes) {
+      cur.add(node.id);
+      if (splitAfter.has(node.id)) { layoutBlocks.push({ ownerKey, group:cur }); cur=new Set(); }
+    }
+    if (cur.size) layoutBlocks.push({ ownerKey, group:cur });
+  }
+
+  // Apply vertical gaps per owner; build block boxes; FIX: shift applied AFTER box is measured
+  const shiftByOwner = new Map();
+  const blockBoxes = [];
+  for (const blk of layoutBlocks) {
+    const { ownerKey, group } = blk;
+    const key = blockKey(group);
+    const state = getOrCreateBlockState(key);
+    const shift = shiftByOwner.get(ownerKey) ?? 0;
+
+    // Apply cumulative shift from PREVIOUS blocks
+    if (shift) {
+      for (const id of group) {
+        const p = positions.get(id);
+        if (p) { p.centerY += shift; p.y = p.centerY - (p.height||0)/2; }
+      }
+    }
+
+    // Measure bounding box AFTER shift
+    let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+    for (const id of group) {
+      const p = positions.get(id); if (!p) continue;
+      const hw=(p.width||80)/2, hh=(p.height||30)/2;
+      minX=Math.min(minX,p.centerX-hw); maxX=Math.max(maxX,p.centerX+hw);
+      minY=Math.min(minY,p.centerY-hh); maxY=Math.max(maxY,p.centerY+hh);
+    }
+    if (!isFinite(minX)) continue;
+
+    blockBoxes.push({ key, collapsed:state.collapsed, ownerKey, minX,maxX,minY,maxY, group });
+    shiftByOwner.set(ownerKey, shift + BLOCK_GAP_Y);
+  }
+
+  nodePositions = positions;
+  return { positions, blockBoxes, parentOf, branchIdx, decOf };
+}
+
+// ─── Hidden node computation ──────────────────────────────────────────────────
+function computeHidden(graph, blockBoxes) {
+  const hidden = new Set();
+  // Fun-block collapse
+  const collapsedFunHeaders = [];
+  for (const n of graph.nodes) {
+    if (n.meta?.includes('virtual-start')) hidden.add(n.id);
+    if (!n.meta?.includes('fun-block collapsed')) continue;
+    const m = n.meta.match(/fun-body=\[([^\]]*)\]/);
+    if (m) m[1].split(',').map(s=>parseInt(s.trim(),10)).filter(isFinite).forEach(id=>hidden.add(id));
+    collapsedFunHeaders.push(n.id);
+  }
+  if (collapsedFunHeaders.length) {
+    for (const n of graph.nodes)
+      if (collapsedFunHeaders.some(h=>n.meta?.includes(`fun-body-of=${h}`)||n.meta?.includes(`fun-footer-of=${h}`)))
+        hidden.add(n.id);
+  }
+  // Layout-block collapse – FIX: merge BEFORE renderNodes
+  for (const box of blockBoxes)
+    if (box.collapsed) for (const id of box.group) hidden.add(id);
+
+  return { hidden, collapsedFunHeaders };
+}
+
+// ─── Block collapse: vertical compaction ─────────────────────────────────────
+function applyCollapseShift(blockBoxes, positions) {
+  const byOwner = new Map();
+  for (const box of blockBoxes)
+    (byOwner.get(box.ownerKey) ?? (byOwner.set(box.ownerKey,[]), byOwner.get(box.ownerKey))).push(box);
+  for (const blocks of byOwner.values()) {
+    blocks.sort((a,b)=>a.minY-b.minY);
+    let removed = 0;
+    for (const box of blocks) {
+      if (removed) {
+        for (const id of box.group) {
+          const p = positions.get(id);
+          if (p) { p.centerY -= removed; p.y = p.centerY - (p.height||0)/2; }
+        }
+      }
+      if (box.collapsed) removed += (box.maxY - box.minY) + BLOCK_PAD*2;
+    }
+  }
+}
+
+// ─── Node shape factory ───────────────────────────────────────────────────────
+function makeShape(node, cx, cy, w, h, x, y) {
+  const isRet = node.kind==='Process' && node.meta?.includes('return-node');
+  if (['Start','End','Function'].includes(node.kind) || isRet)
+    return el('ellipse', {cx,cy,rx:w/2,ry:h/2});
+  if (node.kind==='Decision')
+    return el('polygon', { points:[[cx,cy-h/2],[cx+w/2,cy],[cx,cy+h/2],[cx-w/2,cy]].map(p=>p.join(',')).join(' ') });
+  if (node.kind==='Input' || node.kind==='Output') {
+    const s = w*0.125;
+    return el('polygon', { points:[[x,y],[x+w-s,y],[x+w,y+h],[x+s,y+h]].map(p=>p.join(',')).join(' ') });
+  }
+  return el('rect', {x,y,width:w,height:h,rx:4,ry:4});
+}
+
+// ─── Variable color map ───────────────────────────────────────────────────────
+function buildVarColorMap(graph) {
+  const map = new Map();
+  for (const node of graph.nodes) {
+    // Param colors from function headers
+    if (node.kind==='Function' || node.meta?.includes('fun-header')) {
+      for (const [k,v] of buildParamColors(node.text||'', node.id, graph.nodes)) map.set(k,v);
+    }
+    if (!node.title) continue;
+    const varName = normVar(node.title);
+    if (!varName) continue;
+    const meta = node.meta||'';
+    let typeKey = node.meta?.match(/\btype=(\w+)\b/)?.[1] || '';
+    if (!typeKey) typeKey = /\blist\b/.test(meta) ? 'list' : /\bdict\b/.test(meta) ? 'dict' : classifyValue(node.text||'');
+    if (typeKey==='other') typeKey = numericType(node.text||'');
+    const color = TYPE_FILL[typeKey];
+    if (color) map.set(varName, color);
+  }
+  return map;
+}
+
+function buildParamColors(funText, headerId, nodes) {
+  const map = new Map();
+  const m = String(funText).match(/^[^(]*\(([^)]*)\)/);
+  if (!m) return map;
+  for (const raw of m[1].split(',').map(p=>p.trim()).filter(Boolean)) {
+    const base = raw.replace(/^\*+/,'').trim();
+    const [namePart, typePart] = base.split(':');
+    if (!namePart) continue;
+    const name = namePart.split('=')[0].trim();
+    let typeName = typePart ? normType(typePart.split('=')[0]) : '';
+    if (!typeName && headerId!=null) {
+      for (const node of nodes) {
+        if (!node?.meta?.includes(`fun-body-of=${headerId}`) || node.title!==name) continue;
+        const tm = node.meta?.match(/\btype=(\w+)\b/);
+        typeName = normType(tm?.[1]??'') || numericType(node.text||'');
+        if (typeName) break;
+      }
+    }
+    const color = TYPE_FILL[typeName];
+    if (name && color) map.set(name, color);
+  }
+  return map;
+}
+
+// ─── Render table nodes (list/dict) ──────────────────────────────────────────
+function renderTableNode(node, pos, cx, cy, kind) {
+  const raw = node.text.trim().replace(/^[\[{]/,'').replace(/[\]}]$/,'');
+  const parts = smartSplit(raw,',');
+  const rows = kind==='list'
+    ? [parts]
+    : [parts.map(p=>smartSplit(p,':')[0]?.trim()??''), parts.map(p=>smartSplit(p,':').slice(1).join(':').trim())];
+  const cols = Math.max(...rows.map(r=>r.length));
+  let colWs = Array.from({length:cols}, (_,c) => Math.max(...rows.map(r=>measureText(String(r[c]??''))+2*CELL_PAD_X), 40));
+  let totalW = colWs.reduce((a,b)=>a+b,0);
+  const BASE_W = MAX_NODE_W/3;
+  if (totalW <= BASE_W) { colWs = colWs.map(w=>w*(BASE_W/totalW)); totalW = BASE_W; }
+  const totalH = rows.length*CELL_H, x0=cx-totalW/2, y0=cy-totalH/2;
+  const g = el('g',{},svg);
+  const bg = el('rect',{x:x0,y:y0,width:totalW,height:totalH,rx:4,ry:4,fill:TYPE_FILL[kind]||'#5C563F',stroke:'#ccc','stroke-width':1.5},g);
+  title(bg, extractComment(node.meta)); bg.dataset.nodeId = node.id;
+  let curY=y0;
+  for (const row of rows) {
+    let curX=x0;
+    for (let c=0;c<row.length;c++) {
+      el('rect',{x:curX,y:curY,width:colWs[c],height:CELL_H,fill:'none',stroke:'#ddd','stroke-width':0.5},g);
+      if (row[c]) {
+        const t = el('text',{x:curX+colWs[c]/2,y:curY+CELL_H/2+3,'text-anchor':'middle','dominant-baseline':'middle','font-size':12,fill:'#e6e6e6'},g);
+        t.textContent=row[c]; t.dataset.nodeId=node.id;
+      }
+      curX+=colWs[c];
+    }
+    curY+=CELL_H;
+  }
+  Object.assign(pos, {x:x0,y:y0,width:totalW,height:totalH,edgeTop:y0,edgeBottom:y0+totalH});
+}
+
+// ─── Render nodes ─────────────────────────────────────────────────────────────
+function renderNodes(graph, positions, hidden) {
+  const vcMap = buildVarColorMap(graph);
+  varColorCache = vcMap;
+  const funFooterOf = new Map();
+  for (const n of graph.nodes) {
+    const m = n.meta?.match(/fun-footer-of=(\d+)/);
+    if (m) funFooterOf.set(parseInt(m[1],10), n.id);
+  }
+
+  for (const node of graph.nodes) {
+    if (hidden.has(node.id)) continue;
+    const pos = positions.get(node.id);
+    if (!pos) continue;
+    const { centerX:cx, centerY:cy } = pos;
+
+    // Connector dots
+    if (node.kind==='Connector' || node.kind==='NextConnector') {
+      const r=6, fill=node.kind==='Connector'?'#bbb':'#00bfff';
+      const c = el('circle',{cx,cy,r,fill,stroke:'#ccc','stroke-width':1.5},svg);
+      title(c, extractComment(node.meta)); c.dataset.nodeId=node.id; c.style.cursor='text';
+      Object.assign(pos,{x:cx-r,y:cy-r,width:r*2,height:r*2,edgeTop:cy-r,edgeBottom:cy+r});
+      continue;
+    }
+
+    const raw = node.text.trim();
+    const meta = node.meta||'';
+    if (/\blist\b/.test(meta)) { renderTableNode(node,pos,cx,cy,'list'); continue; }
+    if (/\bdict\b/.test(meta)) { renderTableNode(node,pos,cx,cy,'dict'); continue; }
+
+    const isFun = (node.kind==='Process'||node.kind==='Function') && raw.startsWith('fun');
+    const isFunCall = node.kind==='Process' && /^[A-Za-z_]\w*\s*\(/.test(raw);
+    const isElse = node.kind==='Process' && raw.startsWith('else');
+    let bodyLabel = isElse ? raw.slice(5).trim() : isFun ? raw.replace(/^fun!?/,'').trim() : raw||node.kind;
+    if (node.kind==='Decision') bodyLabel = fmtDecision(bodyLabel);
+
+    const isFunHeader = node.kind==='Function' || meta.includes('fun-header');
+    let labelText = bodyLabel;
+    if (isFunHeader) {
+      const m2 = bodyLabel.match(/^([^(]+)\(([^)]*)\)\s*$/);
+      if (m2) labelText = `${m2[1].trim()}\n(${m2[2].trim()})`;
+    }
+    const labelMap = isFunHeader ? new Map([...vcMap, ...buildParamColors(raw,node.id,graph.nodes)]) : vcMap;
+
+    const g = el('g',{},svg);
+    const tooltip = extractComment(meta);
+    const { textEl:bodyTxt, bbox:bodyBB } = createLabel(labelText,cx,cy,MAX_NODE_W-PAD_X*2,tooltip,g,labelMap);
+    let bw = Math.max(bodyBB.width+PAD_X*2, 60);
+    let bh = Math.max(bodyBB.height+PAD_Y*2, 30);
+
+    if (showComments) {
+      const cmtText = extractComment(meta);
+      if (cmtText) {
+        const { textEl:cmtEl, bbox:cmtBB } = createLabel(cmtText,cx,cy,MAX_NODE_W-PAD_X*2,tooltip,g,null,11,12,'#4ade80');
+        const gap=6, totalH=bodyBB.height+gap+cmtBB.height;
+        shiftTextY(bodyTxt, cy - totalH/2 + bodyBB.height/2 - cy);
+        shiftTextY(cmtEl,   cy - totalH/2 + bodyBB.height + gap + cmtBB.height/2 - cy);
+        bw = Math.max(Math.max(bodyBB.width,cmtBB.width)+PAD_X*2, 60);
+        bh = Math.max(totalH+PAD_Y*2, 30);
+        cmtEl.dataset.nodeId = node.id; cmtEl.style.cursor='text';
+      }
+    }
+
+    let edgeTop = cy-bh/2;
+    if (node.title) {
+      const { textEl:hTxt, bbox:hBB } = createLabel(node.title,cx,cy-bh/2-10,MAX_NODE_W-PAD_X*2,tooltip,g);
+      const hw=Math.max(hBB.width+PAD_X/2,40), hh2=Math.max(hBB.height+4,18);
+      const hy = cy-bh/2+6-hh2;
+      for (const ts of hTxt.childNodes) ts.setAttribute('y', String(Number(ts.getAttribute('y')||0)+(hy+hh2/2)-(cy-bh/2-10)));
+      const titleColor = (normVar(node.title)&&vcMap.get(normVar(node.title)))||TYPE_FILL[classifyValue(bodyLabel)]||'#222831';
+      const hRect = el('rect',{x:cx-hw/2,y:hy,width:hw,height:hh2,rx:4,ry:4,fill:titleColor,stroke:'#ccc','stroke-width':1});
+      g.insertBefore(hRect, hTxt); hTxt.dataset.nodeId=node.id; hTxt.style.cursor='text';
+      edgeTop = Math.min(edgeTop, hy);
+    }
+
+    const shape = makeShape(node,cx,cy,bw,bh,cx-bw/2,cy-bh/2);
+    const isImport = node.kind==='Process' && /^(import|from)\b/.test(raw);
+    shape.setAttribute('fill', isImport?'#007f00':(NODE_FILL[node.kind]||(isFun||isFunCall?'#6b21a8':'#333')));
+    if (breakpoints.has(node.id)) {
+      shape.setAttribute('stroke','#ff4444');
+      shape.setAttribute('stroke-width','3');
+    } else {
+      shape.setAttribute('stroke','#ccc');
+      shape.setAttribute('stroke-width','1.5');
+    }
+    title(shape,tooltip);
+    shape.dataset.nodeId = node.id; shape.style.cursor='text';
+    bodyTxt.dataset.nodeId = node.id; bodyTxt.style.cursor='text';
+    g.insertBefore(shape, bodyTxt);
+    Object.assign(pos,{x:cx-bw/2,y:cy-bh/2,width:bw,height:bh,edgeTop,edgeBottom:cy+bh/2});
+
+    if (watchMap.has(node.id)) {
+      const wt = el('text',{x:cx+bw/2+12,y:cy,'text-anchor':'start','dominant-baseline':'middle','font-size':12},g);
+      wt.style.fill='#888'; wt.style.fontStyle='italic'; wt.textContent=watchMap.get(node.id);
+    }
+  }
+  return funFooterOf;
+}
+
+// ─── Block backgrounds ────────────────────────────────────────────────────────
+function renderBlockBg(blockBoxes, positions) {
+  const HEADER_H = 18, BTN = 10, CLEARANCE = 4;
+  for (const box of blockBoxes) {
+    const { key, collapsed, minX, maxX, minY, maxY } = box;
+    const x = minX - BLOCK_PAD, w = (maxX-minX)+BLOCK_PAD*2;
+    const headerY = minY - HEADER_H - CLEARANCE;
+    const contentH = (maxY - minY) + BLOCK_PAD;
+
+    // All block chrome goes in one group tagged for back-insertion
+    const g = el('g', {'data-block-bg':'1'}, svg);
+
+    if (!collapsed) {
+      el('rect',{x,y:headerY,width:w,height:HEADER_H+CLEARANCE+contentH,rx:8,ry:8,
+        fill:'rgba(255,255,255,0.025)',stroke:'rgba(255,255,255,0.07)','stroke-width':1,
+        style:'pointer-events:none;'},g);
+    }
+
+    el('rect',{x,y:headerY,width:w,height:HEADER_H,rx:5,ry:5,
+      fill:'rgba(40,40,70,0.9)',stroke:'rgba(255,255,255,0.07)','stroke-width':1,'data-block-key':key,style:'cursor:grab'},g);
+
+    const lbl = el('text',{x:x+8,y:headerY+HEADER_H-5,'text-anchor':'start','font-size':10,fill:'#9ca3af'},g);
+    lbl.textContent=`Block ${key.split(',')[0]}…`;
+
+    const bx=x+w-BTN-5, by=headerY+(HEADER_H-BTN)/2;
+    const btnG = el('g',{style:'cursor:pointer'},g);
+    el('rect',{x:bx,y:by,width:BTN,height:BTN,rx:2,fill:'#2a2a3e',stroke:'#3a3a5c'},btnG);
+    const ic = el('text',{x:bx+BTN/2,y:by+BTN-2,'text-anchor':'middle','font-size':10,fill:'#e5e7eb'},btnG);
+    ic.textContent = collapsed ? '+' : '−';
+    btnG.addEventListener('click', evt => {
+      evt.stopPropagation();
+      const s = getOrCreateBlockState(key);
+      blockState.set(key, { collapsed: !s.collapsed });
+      if (currentGraph) renderGraph(currentGraph);
+    });
+  }
+}
+
+// ─── Edges ────────────────────────────────────────────────────────────────────
+function edgeClearance(x1,y1,x2,y2,positions,fromId,toId,hidden) {
+  const MARGIN=16, dx=x2-x1, dy=y2-y1, len=Math.hypot(dx,dy);
+  if (!len) return 0;
+  const ux=dx/len, uy=dy/len, midX=(x1+x2)/2;
+  let sum=0, cnt=0;
+  for (const [id,pos] of positions) {
+    if (id===fromId||id===toId||hidden.has(id)||!pos.width||!pos.height) continue;
+    const t=Math.max(0,Math.min(1,((pos.centerX-x1)*ux+(pos.centerY-y1)*uy)/len));
+    const px=x1+t*ux*len, py=y1+t*uy*len;
+    if (Math.abs(pos.centerX-px)<pos.width/2+MARGIN && Math.abs(pos.centerY-py)<pos.height/2+MARGIN)
+      { sum+=pos.centerX-midX; cnt++; }
+  }
+  return cnt ? sum/cnt : 0;
+}
+
+function drawEdge(x1,y1,x2,y2,label,bow=0,fromId,toId) {
+  const midX=(x1+x2)/2, midY=(y1+y2)/2;
+  const nat = 0.3*(x2-x1);
+  const avoid = bow ? -Math.sign(bow)*Math.abs(currentXSTEP*1.5) : 0;
+  let loop = 0;
+  if (y2<y1 && Math.abs(nat+avoid)<currentXSTEP*0.5) { loop=loopBowSign*currentXSTEP*1.5; loopBowSign*=-1; }
+  const cpX = midX+nat+avoid+loop;
+  const color = label==='yes'?'#4ade80':label==='no'?'#f87171':'#aaa';
+  const eA = fromId!=null ? {'data-edge-from':fromId,'data-edge-to':toId} : {};
+  const d = `M ${x1} ${y1} Q ${cpX} ${midY} ${x2} ${y2}`;
+  if (fromId!=null) el('path',{d,fill:'none',stroke:'transparent','stroke-width':12,style:'cursor:pointer;',...eA},svg);
+  el('path',{d,fill:'none',stroke:color,'stroke-width':1.5,style:'pointer-events:none;',...eA},svg);
+  const ang=Math.atan2(y2-midY,x2-cpX), AS=6;
+  el('polygon',{points:[[x2,y2],[x2-AS*Math.cos(ang-Math.PI/6),y2-AS*Math.sin(ang-Math.PI/6)],[x2-AS*Math.cos(ang+Math.PI/6),y2-AS*Math.sin(ang+Math.PI/6)]].map(p=>p.join(',')).join(' '),fill:color,style:'pointer-events:none;',...eA},svg);
+  if (label && label!=='break' && label!=='continue') {
+    const t = el('text',{x:midX+avoid*0.5,y:midY-5,'text-anchor':'middle',fill:color,style:'pointer-events:none;'},svg);
+    t.textContent=label;
+  }
+}
+
+function renderEdges(graph, positions, hidden, extra=[], blockBoxes=[]) {
+  const nodeBlock = new Map();
+  for (const box of blockBoxes) for (const id of box.group) nodeBlock.set(id,box);
+  loopBowSign = 1;
+  for (const e of [...graph.edges,...extra]) {
+    if (hidden.has(e.from)||hidden.has(e.to)) continue;
+    const bF=nodeBlock.get(e.from), bT=nodeBlock.get(e.to);
+    if (bF && bF===bT && bF.collapsed) continue;
+    const fp=positions.get(e.from), tp=positions.get(e.to);
+    if (!fp||!tp) continue;
+    const x1=fp.centerX, y1=fp.edgeBottom??(fp.centerY+fp.height/2);
+    const x2=tp.centerX, y2=tp.edgeTop??(tp.centerY-tp.height/2);
+    drawEdge(x1,y1,x2,y2,e.label,edgeClearance(x1,y1,x2,y2,positions,e.from,e.to,hidden),e.from,e.to);
+  }
+}
+
+// FIX: try-error brackets computed before edges, not after
+function renderTryBrackets(graph, positions, hidden) {
+  for (const tryNode of graph.nodes.filter(n=>n.meta?.includes('try-block'))) {
+    const m = tryNode.meta?.match(/try-body=\[([^\]]*)\]/);
+    if (!m) continue;
+    const ids = m[1].split(',').map(id=>parseInt(id.trim(),10)).filter(id=>!isNaN(id)&&!hidden.has(id));
+    if (!ids.length) continue;
+    const fp=positions.get(ids[0]), lp=positions.get(ids[ids.length-1]);
+    if (!fp||!lp) continue;
+
+    // Reposition error handler BEFORE edges are drawn
+    const errHandler = graph.nodes.find(n=>n.meta?.includes(`error-handler-of=${tryNode.id}`));
+    if (errHandler) {
+      const ep = positions.get(errHandler.id);
+      if (ep) {
+        ep.centerX=ep.x=fp.centerX-currentXSTEP*0.7-currentXSTEP*0.8;
+        ep.centerY=ep.y=(fp.centerY+lp.centerY)/2;
+      }
+    }
+
+    const bx=fp.centerX-currentXSTEP*0.7, top=fp.centerY, bot=lp.centerY;
+    el('path',{d:`M ${bx+15} ${top} L ${bx} ${top} L ${bx} ${bot} L ${bx+15} ${bot}`,fill:'none',stroke:'#f59e0b','stroke-width':2,style:'pointer-events:none;'},svg);
+    createLabel('try',bx-20,top,60,null,svg,null,11,12,'#f59e0b');
+  }
+}
+
+// ─── Main render ──────────────────────────────────────────────────────────────
+function renderGraph(graph) {
+  currentGraph = graph;
+  svg.textContent = '';
+
+  const { positions, blockBoxes } = computeLayout(graph);
+
+  // FIX: compute hidden BEFORE renderNodes so collapsed nodes are skipped
+  const { hidden, collapsedFunHeaders } = computeHidden(graph, blockBoxes);
+
+  // Apply drag offsets to nodes
+  for (const [id, off] of dragOffsets) {
+    const p = positions.get(id);
+    if (p) { p.centerX+=off.x; p.centerY+=off.y; p.x=p.centerX-p.width/2; p.y=p.centerY-p.height/2; }
+  }
+
+  // Apply block offsets to nodes within those blocks
+  for (const box of blockBoxes) {
+    const blockOff = blockOffsets.get(box.key);
+    if (blockOff) {
+      for (const nodeId of box.group) {
+        const p = positions.get(nodeId);
+        if (p) { p.centerX+=blockOff.x; p.centerY+=blockOff.y; p.x=p.centerX-p.width/2; p.y=p.centerY-p.height/2; }
+      }
+    }
+  }
+
+  // Collapse vertical compaction (shift visible nodes up past hidden blocks)
+  applyCollapseShift(blockBoxes, positions);
+  nodePositions = positions;
+
+  // FIX: render try brackets BEFORE edges so error handler positions are correct
+  renderTryBrackets(graph, positions, hidden);
+
+  const funFooterOf = renderNodes(graph, positions, hidden);
+
+  // Block backgrounds drawn AFTER renderNodes so real node sizes (width/height) are known.
+  // Recompute minX/maxX/minY/maxY from actual rendered positions before drawing.
+  for (const box of blockBoxes) {
+    let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+    for (const id of box.group) {
+      const p = positions.get(id); if (!p || !p.width) continue;
+      // use edgeTop if set (accounts for title badges above the shape)
+      const top = p.edgeTop ?? p.y;
+      minX=Math.min(minX,p.x);      maxX=Math.max(maxX,p.x+p.width);
+      minY=Math.min(minY,top);      maxY=Math.max(maxY,p.y+p.height);
+    }
+    if (isFinite(minX)) { box.minX=minX; box.maxX=maxX; box.minY=minY; box.maxY=maxY; }
+  }
+  renderBlockBg(blockBoxes, positions);
+  // Push the full-bg rects AND header rects to back so they sit behind nodes.
+  // We mark them with a data attribute in renderBlockBg to make selection reliable.
+  const bgEls = Array.from(svg.querySelectorAll('[data-block-bg]'));
+  for (const r of bgEls) svg.insertBefore(r, svg.firstChild);
+
+  // Extra edges around collapsed function bodies
+  const extra = [];
+  for (const hId of collapsedFunHeaders) {
+    const fId = funFooterOf.get(hId);
+    if (fId) for (const e of graph.edges) if (e.from===fId && !hidden.has(e.to)) extra.push({from:hId,to:e.to,label:e.label});
+  }
+  renderEdges(graph, positions, hidden, extra, blockBoxes);
+
+  const bbox=svg.getBBox(), pad=80;
+  graphBounds={x:bbox.x-pad,y:bbox.y-pad,width:bbox.width+pad*2,height:bbox.height+pad*2};
+  if (isFirstRender) { viewBox={...graphBounds}; isFirstRender=false; }
+  applyVB(); renderMinimap();
+
+  if (lastHighlightedId!=null) {
+    for (const e of svg.querySelectorAll(`[data-node-id="${lastHighlightedId}"]`))
+      { e.dataset.highlight='true'; styleHL(e,true); }
+    updateStepIntoBtn(lastHighlightedId);
+  }
+  redrawPersistentEdge();
+}
+
+const applyVB = () => svg.setAttribute('viewBox',`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`);
+
+// ─── Zoom / Pan ───────────────────────────────────────────────────────────────
+function zoom(factor, cx, cy) {
+  const ow=viewBox.width, oh=viewBox.height;
+  viewBox.width*=factor; viewBox.height*=factor;
+  const mn=Math.min(graphBounds.width,graphBounds.height)*0.05, mx=Math.max(graphBounds.width,graphBounds.height)*2;
+  viewBox.width=Math.min(Math.max(viewBox.width,mn),mx);
+  viewBox.height=viewBox.width*(svg.clientHeight/svg.clientWidth);
+  if (cx!=null) {
+    viewBox.x-=(viewBox.width-ow)*((cx-viewBox.x)/ow-0.5);
+    viewBox.y-=(viewBox.height-oh)*((cy-viewBox.y)/oh-0.5);
+  } else { viewBox.x+=(ow-viewBox.width)/2; viewBox.y+=(oh-viewBox.height)/2; }
+  applyVB(); renderMinimap();
+}
+const pan = (dx,dy) => { viewBox.x-=dx; viewBox.y-=dy; applyVB(); renderMinimap(); };
+const fitScreen = () => { viewBox={...graphBounds}; applyVB(); renderMinimap(); };
+
+svg.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r=svg.getBoundingClientRect();
+  zoom(e.deltaY>0?1.1:0.9, viewBox.x+(e.clientX-r.left)/r.width*viewBox.width, viewBox.y+(e.clientY-r.top)/r.height*viewBox.height);
+}, {passive:false});
+
+svg.addEventListener('mousedown', e => {
+  if (e.button!==0) return;
+  const shape = e.target?.closest?.('ellipse,polygon,rect,circle');
+  const edgePath = e.target?.closest?.('path[data-edge-from]');
+
+  if (edgePath) {
+    const from=parseInt(edgePath.getAttribute('data-edge-from')||'-1',10);
+    const to  =parseInt(edgePath.getAttribute('data-edge-to')  ||'-1',10);
+    if (from>-1&&to>-1) { showEdgeMenu(e,from,to); e.preventDefault(); return; }
+  }
+
+  // Check for block header drag
+  const blockHeader = e.target?.getAttribute?.('data-block-key');
+  if (blockHeader) {
+    draggedBlockKey = blockHeader;
+    blockDragStart = {x:e.clientX, y:e.clientY};
+    isBlockDragging = false;
+    e.preventDefault();
+    return;
+  }
+
+  if (shape?.dataset.nodeId) {
+    if (e.target?.tagName?.toLowerCase()==='text') return;
+    draggedId=parseInt(shape.dataset.nodeId,10);
+    const pos=nodePositions.get(draggedId);
+    if (!pos) { draggedId=null; return; }
+    dragStartSvg={x:pos.centerX,y:pos.centerY};
+    dragStartMouse={x:e.clientX,y:e.clientY};
+    isDragging=false; e.preventDefault(); return;
+  }
+
+  if (!e.target?.getAttribute?.('data-node-id') && !e.target?.closest?.('[data-node-id]')) {
+    isPanning=true; svg.classList.add('panning');
+    panStart={x:e.clientX,y:e.clientY}; panMoved=false; e.preventDefault();
+  }
+});
+
+svg.addEventListener('contextmenu', e => {
+  const shape = e.target?.closest?.('ellipse,polygon,rect,circle');
+  if (shape?.dataset.nodeId) {
+    const nodeId = parseInt(shape.dataset.nodeId, 10);
+    if (breakpoints.has(nodeId)) {
+      breakpoints.delete(nodeId);
+    } else {
+      breakpoints.add(nodeId);
+    }
+    renderGraph(currentGraph);
+    e.preventDefault();
+  }
+});
+
+window.addEventListener('mousemove', e => {
+  const r=svg.getBoundingClientRect();
+  if (draggedBlockKey!==null) {
+    const dx=e.clientX-blockDragStart.x, dy=e.clientY-blockDragStart.y;
+    if (!isBlockDragging && Math.hypot(dx,dy)<3) return;
+    isBlockDragging=true; cancelNextClick=true;
+    blockOffsets.set(draggedBlockKey,{x:dx*viewBox.width/r.width, y:dy*viewBox.height/r.height});
+    renderGraph(currentGraph); return;
+  }
+  if (draggedId!==null) {
+    const dx=e.clientX-dragStartMouse.x, dy=e.clientY-dragStartMouse.y;
+    if (!isDragging && Math.hypot(dx,dy)<3) return;
+    isDragging=true; cancelNextClick=true;
+    dragOffsets.set(draggedId,{x:dx*viewBox.width/r.width, y:dy*viewBox.height/r.height});
+    renderGraph(currentGraph); return;
+  }
+  if (!isPanning) return;
+  if (!panMoved && Math.hypot(e.clientX-panStart.x,e.clientY-panStart.y)>3) { panMoved=true; activeEditCancel?.(); }
+  pan((e.clientX-panStart.x)*viewBox.width/r.width, (e.clientY-panStart.y)*viewBox.height/r.height);
+  panStart={x:e.clientX,y:e.clientY};
+});
+
+window.addEventListener('mouseup', () => {
+  if (isPanning && panMoved) cancelNextClick=true;
+  isPanning=false; svg.classList.remove('panning');
+  // FIX: only set cancelNextClick if we actually dragged, then clear drag state
+  if (isDragging) cancelNextClick=true;
+  if (isBlockDragging) cancelNextClick=true;
+  draggedId=null; isDragging=false;
+  draggedBlockKey=null; isBlockDragging=false;
+});
+
+// ─── Minimap ──────────────────────────────────────────────────────────────────
+function renderMinimap() {
+  miniSvg.textContent='';
+  if (!currentGraph) return;
+  miniSvg.setAttribute('viewBox',`${graphBounds.x} ${graphBounds.y} ${graphBounds.width} ${graphBounds.height}`);
+  for (const pos of nodePositions.values())
+    if (pos.width) el('rect',{x:pos.x,y:pos.y,width:pos.width,height:pos.height,fill:'#555',stroke:'none'},miniSvg);
+  el('rect',{class:'vp',x:viewBox.x,y:viewBox.y,width:viewBox.width,height:viewBox.height},miniSvg);
+}
+miniSvg.addEventListener('click', e => {
+  const r=miniSvg.getBoundingClientRect();
+  viewBox.x=graphBounds.x+(e.clientX-r.left)/r.width*graphBounds.width-viewBox.width/2;
+  viewBox.y=graphBounds.y+(e.clientY-r.top)/r.height*graphBounds.height-viewBox.height/2;
+  applyVB(); renderMinimap();
+});
+
+// ─── Edge insert menu ─────────────────────────────────────────────────────────
+function showEdgeMenu(e, fromId, toId) {
+  const menu = Object.assign(document.createElement('div'), {
+    style:`position:fixed;left:${e.clientX}px;top:${e.clientY}px;background:#2a2a3e;border:1px solid #3a3a5c;border-radius:6px;padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,.6);z-index:10000;font:13px system-ui`
+  });
+  for (const kind of ['Process','Decision','Connector','End']) {
+    const item = Object.assign(document.createElement('div'), {
+      textContent:kind,
+      style:'padding:8px 14px;color:#cdd6f4;cursor:pointer;white-space:nowrap;user-select:none;'
+    });
+    item.onmouseenter=()=>item.style.background='#313145';
+    item.onmouseleave=()=>item.style.background='';
+    item.onclick=()=>{ sendMsg({type:'insertNodeOnEdge',fromNodeId:fromId,toNodeId:toId,nodeKind:kind}); menu.remove(); };
+    menu.appendChild(item);
+  }
+  document.body.appendChild(menu);
+  setTimeout(()=>document.addEventListener('mousedown',function h(ev){ if(!menu.contains(ev.target)){menu.remove();document.removeEventListener('mousedown',h);} }),0);
+}
+
+// ─── Node click / edit ────────────────────────────────────────────────────────
+svg.addEventListener('click', e => {
+  // FIX: reset cancelNextClick atomically so one stale flag can't eat two events
+  if (cancelNextClick) { cancelNextClick=false; return; }
+  let el2=e.target;
+  while (el2 && el2!==svg) {
+    const id=el2.dataset?.nodeId;
+    if (id!=null) {
+      const nodeId=parseInt(id,10), node=currentGraph?.nodes.find(n=>n.id===nodeId);
+      const pos=nodePositions.get(nodeId);
+      if (!node||!pos) return;
+      if (el2.tagName.toLowerCase()==='text' && el2.getBBox) {
+        const bb=el2.getBBox(), s=window.getComputedStyle(el2);
+        pendingEditCtx.set(nodeId,{textBox:{x:bb.x,y:bb.y,width:bb.width,height:bb.height},
+          fontSize:s.fontSize||'12px',lineHeight:s.lineHeight||'14px',
+          fontFamily:s.fontFamily||'system-ui, sans-serif',textAnchor:el2.getAttribute('text-anchor')||'middle'});
+      } else pendingEditCtx.delete(nodeId);
+      sendMsg({type:'requestNodeEdit',nodeId,line:node.line,segmentIndex:node.segmentIndex,x:pos.x,y:pos.y,width:pos.width,height:pos.height});
+      return;
+    }
+    el2=el2.parentElement;
+  }
+});
+
+function startNodeEdit({ nodeId, text, x, y, width, height, line, segmentIndex }) {
+  const ctx = nodeId!=null ? pendingEditCtx.get(Number(nodeId)) : null;
+  if (nodeId!=null) pendingEditCtx.delete(Number(nodeId));
+  const hideText = h => svg.querySelectorAll(`[data-node-id="${nodeId}"]`).forEach(el3=>{ if(el3.tagName.toLowerCase()==='text') el3.style.opacity=h?'0':''; });
+  const cleanup = commit => {
+    if (!activeEdit) return;
+    if (commit) sendMsg({type:'commitNodeEdit',nodeId,newText:activeEditInput.value,line,segmentIndex});
+    activeEdit.remove(); activeEdit=activeEditInput=activeEditCancel=null; hideText(false);
+  };
+  if (activeEdit) cleanup(false);
+  hideText(true);
+  const box = ctx?.textBox?.width>8&&ctx?.textBox?.height>8 ? ctx.textBox : {x,y,width,height};
+  const fo = el('foreignObject',{x:box.x,y:box.y,width:box.width,height:box.height},svg);
+  const div = document.createElement('div');
+  Object.assign(div.style,{width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center',background:'transparent'});
+  const inp = document.createElement('input');
+  inp.type='text'; inp.value=text;
+  Object.assign(inp.style,{width:'100%',background:'transparent',color:'#eee',border:'none',outline:'none',padding:'0',margin:'0',
+    textAlign:ctx?.textAnchor==='start'?'left':ctx?.textAnchor==='end'?'right':'center',
+    fontFamily:ctx?.fontFamily||'system-ui, sans-serif',fontSize:ctx?.fontSize||'12px',
+    lineHeight:ctx?.lineHeight||'14px',height:'100%',boxSizing:'border-box'});
+  inp.addEventListener('keydown', e=>{ if(e.key==='Enter') cleanup(true); else if(e.key==='Escape') cleanup(false); });
+  inp.addEventListener('blur', ()=>cleanup(false));
+  div.appendChild(inp); fo.appendChild(div);
+  activeEdit=fo; activeEditInput=inp; activeEditCancel=()=>cleanup(false);
+  inp.focus(); inp.select();
+}
+
+function startNodeEditByLine({ line, text }) {
+  if (!currentGraph) return;
+  const node=currentGraph.nodes.find(n=>n.line===line); if (!node) return;
+  const pos=nodePositions.get(node.id); if (!pos) return;
+  const textEl=svg.querySelector(`text[data-node-id="${node.id}"]`);
+  if (textEl?.getBBox) {
+    const bb=textEl.getBBox(), s=window.getComputedStyle(textEl);
+    pendingEditCtx.set(node.id,{textBox:{x:bb.x,y:bb.y,width:bb.width,height:bb.height},
+      fontSize:s.fontSize||'12px',lineHeight:s.lineHeight||'14px',
+      fontFamily:s.fontFamily||'system-ui',textAnchor:textEl.getAttribute('text-anchor')||'middle'});
+  }
+  startNodeEdit({nodeId:node.id,text:text||node.text||'',x:pos.x,y:pos.y,width:pos.width,height:pos.height,line,segmentIndex:node.segmentIndex||0});
+}
+
+// ─── Highlight / trace ────────────────────────────────────────────────────────
+const styleHL = (el4, on) => {
+  if (el4.tagName.toLowerCase()==='text') el4.style.fill=on?'#fffb66':'';
+  else { el4.setAttribute('stroke',on?'#ffd54f':'#ccc'); el4.setAttribute('stroke-width',on?'3':'1.5'); el4.style.filter=on?'drop-shadow(0 0 8px #ffd54f)':''; }
+};
+function clearHL() {
+  for (const e of svg.querySelectorAll('[data-highlight="true"]')) { e.removeAttribute('data-highlight'); styleHL(e,false); }
+  for (const e of edgeOverlays) e.remove();
+  edgeOverlays=[]; lastHighlightedId=null;
+  if (stepIntoBtn) stepIntoBtn.style.display='none';
+}
+const clearPersistent = () => { for (const e of persistentOverlays) e.remove(); persistentOverlays=[]; persistentEdgeMode=persistentEdge=null; };
+
+function flowEdge(x1,y1,x2,y2,target,color) {
+  const mid=(x1+x2)/2, midY=(y1+y2)/2, cpX=mid+0.4*(x2-x1)+currentXSTEP*0.8;
+  const d=`M ${x1} ${y1} Q ${cpX} ${midY} ${x2} ${y2}`;
+  target.push(el('path',{d,fill:'none',stroke:color,'stroke-width':6,'stroke-opacity':.25,'stroke-linecap':'round'},svg));
+  const f1=el('path',{d,fill:'none',stroke:color,'stroke-width':2.5,'stroke-dasharray':'10 8','stroke-linecap':'butt'},svg);
+  f1.classList.add('flow-a'); target.push(f1);
+  const f2=el('path',{d,fill:'none',stroke:color,'stroke-width':2.5,'stroke-dasharray':'2 16','stroke-linecap':'round','stroke-opacity':.85},svg);
+  f2.classList.add('flow-b'); target.push(f2);
+}
+
+function highlightEdge(fromId, toId) {
+  const path=svg.querySelector(`path[data-edge-from="${fromId}"][data-edge-to="${toId}"]`);
+  if (!path) return;
+  const d=path.getAttribute('d');
+  edgeOverlays.push(el('path',{d,fill:'none',stroke:'#ffd54f','stroke-width':7,'stroke-opacity':.2,'stroke-linecap':'round'},svg));
+  const f1=el('path',{d,fill:'none',stroke:'#ffd54f','stroke-width':2.5,'stroke-dasharray':'10 8','stroke-linecap':'butt'},svg);
+  f1.classList.add('flow-a'); edgeOverlays.push(f1);
+  const f2=el('path',{d,fill:'none',stroke:'#ffd54f','stroke-width':2.5,'stroke-dasharray':'2 16','stroke-linecap':'round','stroke-opacity':.85},svg);
+  f2.classList.add('flow-b'); edgeOverlays.push(f2);
+}
+
+function drawVirtualEdge(fromId, toId, target=edgeOverlays, color='#c084fc') {
+  const fp=nodePositions.get(fromId), tp=nodePositions.get(toId);
+  if (fp&&tp) flowEdge(fp.centerX,fp.centerY+fp.height/2,tp.centerX,tp.centerY-tp.height/2,target,color);
+}
+const drawPersistentEdge = (f,t,c='#c084fc') => { clearPersistent(); drawVirtualEdge(f,t,persistentOverlays,c); persistentEdge={fromId:f,toId:t,color:c}; };
+const redrawPersistentEdge = () => { if (!persistentEdge) return; for(const e of persistentOverlays) e.remove(); persistentOverlays=[]; drawVirtualEdge(persistentEdge.fromId,persistentEdge.toId,persistentOverlays,persistentEdge.color); };
+
+const getFunCallTarget = id => { const m=currentGraph?.nodes.find(n=>n.id===id)?.meta?.match(/fun-call:(\d+)/); return m?parseInt(m[1],10):null; };
+const getFunBodyHeader = n => { const m=n?.meta?.match(/fun-body-of=(\d+)/); return m?parseInt(m[1],10):null; };
+const isFunExit = (node, hId) => {
+  if (!node || getFunBodyHeader(node)!==hId) return false;
+  if (node.meta?.includes('return-node')||node.text.trim().startsWith('return')) return true;
+  return !currentGraph.edges.some(e=>e.from===node.id && getFunBodyHeader(currentGraph.nodes.find(n=>n.id===e.to))===hId);
+};
+
+function highlightNode(nodeId, nextId) {
+  if (nodeId==null||nodeId===-1) {
+    svg.style.transition='opacity .25s ease-out'; svg.style.opacity='.45';
+    setTimeout(()=>{ clearHL(); svg.style.opacity='1'; svg.style.transition='opacity .2s ease-in'; },260);
+    return;
+  }
+  clearHL(); lastHighlightedId=nodeId;
+  for (const e of svg.querySelectorAll(`[data-node-id="${nodeId}"]`)) { e.dataset.highlight='true'; styleHL(e,true); }
+  if (nextId!=null&&nextId!==-1) highlightEdge(nodeId,nextId);
+  updateStepIntoBtn(nodeId);
+  if (stepIntoCtx) {
+    const node=currentGraph?.nodes.find(n=>n.id===nodeId);
+    if (isFunExit(node,stepIntoCtx.headerNodeId)) { drawPersistentEdge(nodeId,stepIntoCtx.fromNodeId); persistentEdgeMode='return'; }
+  }
+  const pos=nodePositions.get(nodeId);
+  if (pos) { viewBox.x=(pos.centerX??pos.x+pos.width/2)-viewBox.width/2; viewBox.y=(pos.centerY??pos.y+pos.height/2)-viewBox.height/2; applyVB(); renderMinimap(); }
+}
+const updateStepIntoBtn = id => { if(stepIntoBtn) stepIntoBtn.style.display=getFunCallTarget(id)!=null?'':'none'; };
+
+// ─── Trace ────────────────────────────────────────────────────────────────────
+const stopTrace = () => { clearTimeout(traceTimer); traceTimer=null; traceEvents=[]; traceIndex=0; };
+function playNext() {
+  if (traceIndex>=traceEvents.length) {
+    if (isVideoPlaying) {
+      isVideoPlaying = false;
+      updateVideoButton();
+    }
+    return;
+  }
+  const speed=Number(speedSel.value)||1, ev=traceEvents[traceIndex++], nxt=traceIndex<traceEvents.length?traceEvents[traceIndex]:null;
+  highlightNode(ev.nodeId, nxt?.nodeId??null);
+  
+  // Check if we hit a breakpoint
+  if (breakpoints.has(ev.nodeId)) {
+    if (isVideoPlaying) {
+      isVideoPlaying = false;
+      updateVideoButton();
+      sendMsg({type:'seedExecFromVideo',nodeId:ev.nodeId});
+    }
+    return;
+  }
+  
+  if (traceIndex<traceEvents.length) traceTimer=setTimeout(playNext, Math.max(10,(((nxt?.ts||0)-(ev.ts||0))||100)/speed));
+  else if (isVideoPlaying) {
+    isVideoPlaying = false;
+    updateVideoButton();
+  }
+}
+const startTrace = events => { stopTrace(); traceEvents=events.slice(); traceIndex=0; playNext(); };
+
+// ─── Message handler ──────────────────────────────────────────────────────────
+window.addEventListener('message', ({data:msg}) => {
+  if (!msg) return;
+  switch (msg.type) {
+    case 'graph':             
+      // FIX: clear drag offsets when a new graph arrives to avoid phantom offsets
+      dragOffsets.clear(); blockOffsets.clear(); renderGraph(msg.graph); break;
+    case 'startNodeEdit':     startNodeEdit(msg); break;
+    case 'startNodeEditByLine': startNodeEditByLine(msg); break;
+    case 'highlight':         highlightNode(msg.nodeId); break;
+    case 'clearHighlights':   clearHL(); break;
+    case 'stepAdvance':       { const pm=persistentEdgeMode; clearPersistent(); if(pm==='return') stepIntoCtx=null; break; }
+    case 'trace':             if (msg.events && msg.events.length > 0) { isVideoPlaying=true; updateVideoButton(); } startTrace(msg.events||[]); break;
+    case 'traceClear':        stopTrace(); isVideoPlaying=false; updateVideoButton(); break;
+    case 'watchUpdate':       watchMap.clear(); (msg.items||[]).forEach(i=>watchMap.set(i.nodeId,i.text)); if(currentGraph) renderGraph(currentGraph); break;
+    case 'watchClear':        watchMap.clear(); if(currentGraph) renderGraph(currentGraph); break;
+    case 'stepIntoResult':    stepIntoCtx={fromNodeId:msg.fromNodeId,headerNodeId:msg.headerNodeId}; drawPersistentEdge(msg.fromNodeId,msg.headerNodeId); persistentEdgeMode='call'; setTimeout(()=>highlightNode(msg.headerNodeId),120); break;
+  }
+});
+
+// ─── Controls ─────────────────────────────────────────────────────────────────
+const ctrlRoot = document.getElementById('controls');
+const cmtRoot  = document.getElementById('comment-toggle');
+
+const mkBtn = (label, fn, style='') => {
+  const b=Object.assign(document.createElement('button'),{textContent:label});
+  if (style) b.style.cssText=style;
+  if (typeof fn === 'function') b.addEventListener('click',fn);
+  return b;
+};
+
+const speedSel = document.createElement('select');
+for (const s of [0.25,0.5,1,1.5,2]) {
+  const o=Object.assign(document.createElement('option'),{value:String(s),textContent:`${s}x`});
+  if (s===1) o.selected=true; speedSel.appendChild(o);
+}
+
+const postStepNext = () => {
+  if (persistentEdgeMode==='return'&&stepIntoCtx?.fromNodeId!=null)
+    sendMsg({type:'stepNext',stepOutFrom:stepIntoCtx.fromNodeId});
+  else sendMsg({type:'stepNext'});
+};
+
+let autoTimer;
+const stopAuto = () => { clearTimeout(autoTimer); autoTimer=null; };
+const startAuto = () => {
+  stopAuto();
+  const tick=()=>{ postStepNext(); autoTimer=setTimeout(tick, 300/(Number(speedSel.value)||1)); };
+  tick();
+};
+
+let playVideoBtn;
+const updateVideoButton = () => {
+  if (isVideoPlaying) {
+    playVideoBtn.textContent = '⏹';
+    playVideoBtn.style.cssText = 'background:#6b2b2b;border-color:#f87171;color:#f87171';
+  } else {
+    playVideoBtn.textContent = '▶';
+    playVideoBtn.style.cssText = 'background:#1f4d6e;border-color:#60a5fa;color:#60a5fa';
+  }
+};
+
+const toggleVideoDebug = () => {
+  if (isVideoPlaying) {
+    isVideoPlaying = false;
+    updateVideoButton();
+    stopAuto();
+    stopTrace();
+    sendMsg({type:'traceClear'});
+  } else {
+    sendMsg({type:'playVideoDebug'});
+  }
+};
+
+const sep = () => Object.assign(document.createElement('span'),{textContent:'|',style:'color:#555;margin:0 4px'});
+ctrlRoot.append(
+  mkBtn('Fit',fitScreen), mkBtn('−',()=>zoom(1.2)), mkBtn('+',()=>zoom(0.8)), sep(),
+  mkBtn('<',()=>sendMsg({type:'stepPrev'})), mkBtn('Play',startAuto), mkBtn('Pause',()=>{ stopAuto(); stopTrace(); sendMsg({type:'traceClear'}); }), mkBtn('>',postStepNext)
+);
+
+stepIntoBtn = mkBtn('⤵', ()=>{ const t=getFunCallTarget(lastHighlightedId); if(t!=null) sendMsg({type:'stepInto',fromNodeId:lastHighlightedId,headerNodeId:t}); }, 'display:none;background:#3b1f6e;border-color:#c084fc;color:#c084fc');
+const watchBtn = mkBtn('Watch',()=>sendMsg({type:'toggleWatchVariables'}));
+playVideoBtn = mkBtn('▶',toggleVideoDebug, 'background:#1f4d6e;border-color:#60a5fa;color:#60a5fa');
+ctrlRoot.append(stepIntoBtn, watchBtn, playVideoBtn, speedSel);
+
+const cmtBtn = mkBtn('Comments', ()=>{
+  showComments=!showComments;
+  Object.assign(cmtBtn.style,{background:showComments?'#1f6b3b':'#2a2a3e',borderColor:showComments?'#4ade80':'#3a3a5c',color:showComments?'#c8facc':'#cdd6f4'});
+  if (currentGraph) renderGraph(currentGraph);
+});
+cmtRoot.appendChild(cmtBtn);
+
+window.addEventListener('load', ()=>sendMsg({type:'webviewReady'}));
+</script>
+</body>
+</html>
