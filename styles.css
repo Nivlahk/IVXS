@@ -681,6 +681,8 @@ path[data-edge-from]:hover{filter:drop-shadow(0 0 4px #89b4fa);stroke:#89b4fa !i
 }
 #lens-import-msg { flex: 1; }
 
+/* ── SEER Assembly lens ──────────────────────────────────────────────────── */
+/* Title turns green when SEER lens is active (toggled by ivx-seer.js) */
 #lens-title.seer-active {
   color: #4ade80;
 }
