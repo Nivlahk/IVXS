@@ -1071,6 +1071,37 @@ function compileStmt(node, em) {
       break;
     }
 
+    case 'Fork': {
+      // Emit weighted random branch selection
+      const branches = node.branches ?? [];
+      if (!branches.length) break;
+      const allCertain = branches.every(b => b.weight >= 1.0);
+      em.blank();
+      em.comment(allCertain ? 'fork — concurrent (all weight 1.0)' : `fork — weighted (${branches.length} branches)`);
+      if (allCertain) {
+        for (const b of branches) for (const s of b.body) compileStmt(s, em);
+      } else {
+        // Load random, compare against cumulative weights
+        em.ecall(7, 'random()');  // SVC 7 = random float → R0
+        let cum = 0;
+        const exitL = em.fresh('fork_exit');
+        for (const b of branches) {
+          cum += b.weight;
+          const nextL = em.fresh('fork_next');
+          em.li('R1', cum, `cumulative ${cum}`);
+          em.instr(`5B R2 R0 R1 0`, `R0 < ${cum}?`);
+          em.jz('R2', nextL, `skip if random >= ${cum}`);
+          for (const s of b.body) compileStmt(s, em);
+          em.jmp(exitL, NID.CON, 'branch done');
+          em.label(nextL);
+          em.scheduleNode(NID.CON, `fork branch ${cum}`);
+        }
+        em.label(exitL);
+        em.scheduleNode(NID.CON, 'fork exit');
+      }
+      break;
+    }
+
     case 'Print':
     case 'Speak':
     case 'Say':
@@ -1830,6 +1861,26 @@ const LensTranspiler = (() => {
         return lang.give(E(node.expr));
       case 'Delete':
         return lang.del(node.name);
+      case 'Fork': {
+        // Emit as a commented block showing weighted branches
+        const branches = node.branches ?? [];
+        if (branches.length === 0) return lang.comment('fork (no branches)');
+        const allCertain = branches.every(b => b.weight >= 1.0);
+        if (allCertain) {
+          // Concurrent — emit all branches sequentially with a comment
+          return lang.comment('fork — concurrent branches') + '\n' +
+            branches.map(b => B(b.body)).join('\n');
+        }
+        // Probabilistic — emit as if/elif chain with weight comments
+        return branches.map((b, i) => {
+          const pct = Math.round(b.weight * 100) + '%';
+          const comment = lang.comment(`fork branch (weight ${b.weight} = ${pct})`);
+          const body = B(b.body);
+          if (i === 0) return lang.ifHead(`random() < ${b.weight}`) + ' ' + lang.comment(`${pct}`) + '\n' + body;
+          if (i === branches.length - 1) return lang.elseHead() + ' ' + lang.comment(`${pct}`) + '\n' + body;
+          return lang.elseifHead(`random() < ${b.weight}`) + ' ' + lang.comment(`${pct}`) + '\n' + body;
+        }).join('\n') + '\n' + (lang.blockEnd ? lang.blockEnd() : '');
+      }
       case 'If': {
         const cond = E(node.condition);
         let out = lang.ifHead(cond) + '\n' + B(node.body);

@@ -512,7 +512,7 @@ function parseivx(source) {
                 continue;
             }
             else if (nodeKey === 'fork') {
-                node = addNode('Decision', lineNum, content || 'fork', 'fork');
+                node = addNode('Fork', lineNum, content || 'fork', 'fork');
                 flushUntil(indent, node);
               const parentBranchDc = ctx.decStack[ctx.decStack.length - 1] ?? null;
               const wiredAsBranch = tryWireAsBranch(node);

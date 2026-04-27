@@ -17,7 +17,7 @@ const BLOCK_GAP_Y = 28, BLOCK_PAD = 12, BLANK_LINE_THRESH = 2;
 
 const NODE_FILL = { Decision:'#004b8d', Predictive:'#6a00a3', Function:'#92700a',
                     Start:'#007f00', End:'#7f0000', Input:'#007f00', Output:'#ED8936',
-                    WaitBlock:'#7c4d00', Speak:'#5b3fa8' };
+                    WaitBlock:'#7c4d00', Speak:'#5b3fa8', Fork:'#5c2d91' };
 const TYPE_FILL = { string:'#b45309', integer:'#60a5fa', float:'#14b8a6',
                     boolean:'#1e3a8a', range:'#ec4899', none:'#ef4444', list:'#6b7280', dict:'#7a4d2e' };
 
@@ -71,6 +71,7 @@ _measureSvg.appendChild(measureNode);
 // Map from graph node kind → IVX keyword (for reconstructing source lines)
 const KIND_TO_KEY = {
   Decision: 'if', Input: 'take', Output: 'print', Speak: 'say', End: 'end',
+  Fork: 'fork',
   Connector: 'dot', Function: 'fun', Start: 'from'
 };
 
@@ -938,6 +939,9 @@ function makeShape(node, cx, cy, w, h, x, y) {
     return el('ellipse', {cx,cy,rx:w/2,ry:h/2});
   if (node.kind==='Decision')
     return el('polygon', { points:[[cx,cy-h/2],[cx+w/2,cy],[cx,cy+h/2],[cx-w/2,cy]].map(p=>p.join(',')).join(' ') });
+  if (node.kind==='Fork')
+    // Circle — visually distinct from Decision diamond
+    return el('circle', {cx, cy, r: Math.min(w,h)/2});
   if (node.kind==='Input' || node.kind==='Output') {
     const s = w*0.125;
     return el('polygon', { points:[[x,y],[x+w-s,y],[x+w,y+h],[x+s,y+h]].map(p=>p.join(',')).join(' ') });

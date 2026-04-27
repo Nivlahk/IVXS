@@ -1,16 +1,11 @@
+'use strict';
 // ivx-core.js — IVX Language Core
 // Lexer, Parser, Type Checker
 // Pure language pipeline — no I/O, no DOM, no external services
 // Licensed under the Apache License, Version 2.0
 // https://www.apache.org/licenses/LICENSE-2.0
 // Copyright 2026 IVX
-
-
-'use strict';
-
-
 // ── lexer.js ─────────────────────────────────────────────────────────────────
-
 // ── IVX Lexer ──────────────────────────────────────────────────────────────────
 // Turns raw IVX source into a flat stream of typed tokens.
 // Design decisions:
@@ -25,56 +20,55 @@
 //   - Invalid / unknown characters are silently skipped
 //   - 'note ' starts a comment that consumes the rest of the line (not emitted)
 //   - Strings: single-line only, both " and ' delimiters, Python escape sequences
-
 // ── Token types ───────────────────────────────────────────────────────────────
 const T = Object.freeze({
   // Structure
-  NEWLINE:    'NEWLINE',
-  INDENT:     'INDENT',
-  DEDENT:     'DEDENT',
-  EOF:        'EOF',
+  NEWLINE: 'NEWLINE',
+  INDENT: 'INDENT',
+  DEDENT: 'DEDENT',
+  EOF: 'EOF',
 
   // Literals
-  NUMBER:     'NUMBER',     // integer or float
-  STRING:     'STRING',     // "..." or '...'
+  NUMBER: 'NUMBER',     // integer or float
+  STRING: 'STRING',     // "..." or '...'
 
   // Names
-  KEYWORD:    'KEYWORD',    // reserved word
+  KEYWORD: 'KEYWORD',    // reserved word
   IDENTIFIER: 'IDENTIFIER', // variable / function name (not a keyword)
-  LAZY:       'LAZY',       // identifier? — lazy global declaration
+  LAZY: 'LAZY',       // identifier? — lazy global declaration
 
   // Operators (all symbols)
-  OP:         'OP',
+  OP: 'OP',
 
   // Punctuation
-  LPAREN:     'LPAREN',    // (
-  RPAREN:     'RPAREN',    // )
-  LBRACKET:   'LBRACKET',  // [
-  RBRACKET:   'RBRACKET',  // ]
-  LBRACE:     'LBRACE',    // {
-  RBRACE:     'RBRACE',    // }
-  COMMA:      'COMMA',     // ,
-  COLON:      'COLON',     // :
-  SEMICOLON:  'SEMICOLON', // ;
-  BACKSLASH:  'BACKSLASH', // \ (outside strings)
+  LPAREN: 'LPAREN',    // (
+  RPAREN: 'RPAREN',    // )
+  LBRACKET: 'LBRACKET',  // [
+  RBRACKET: 'RBRACKET',  // ]
+  LBRACE: 'LBRACE',    // {
+  RBRACE: 'RBRACE',    // }
+  COMMA: 'COMMA',     // ,
+  COLON: 'COLON',     // :
+  SEMICOLON: 'SEMICOLON', // ;
+  BACKSLASH: 'BACKSLASH', // \ (string escape)
 });
 
 // ── Keyword sets ──────────────────────────────────────────────────────────────
 const KEYWORDS = new Set([
   // Control flow
-  'if', 'else', 'for', 'loop', 'end', 'so', 'then',
+  'if', 'else', 'loop', 'end', 'so', 'then',
   // Functions
   'fun', 'class', 'give', 'init',
   // OOP
-  'extends', 'super',
+  'super',
   // Data
-  'make', 'del', 'take', 'say', 'print', 'save', 'local',
+  'make', 'del', 'take', 'say', 'print', 'save', 'download',
   // Navigation / graph
   'dot', 'fork', 'prev', 'next', 'from',
   // Logic / literals
   'not', 'and', 'or', 'same', 'is', 'yes', 'no', 'none',
   // Iteration
-  'in',
+  'in', 'for',
   // Other
   'wait', 'note', 'try', 'err',
   // Network / AI
@@ -95,17 +89,17 @@ const ONE_CHAR_OPS = new Set(['+', '-', '/', '*', '%', '^', '=', '<', '>', '.'])
 // Python-style escape sequences resolved inside string literals
 const ESCAPE_MAP = {
   'n': '\n', 't': '\t', 'r': '\r', '\\': '\\',
-  "'": "'",  '"': '"',  '0': '\0', 'a': '\x07',
+  "'": "'", '"': '"', '0': '\0', 'a': '\x07',
   'b': '\b', 'f': '\f', 'v': '\v',
 };
 
 // ── Token class ───────────────────────────────────────────────────────────────
 class Token {
   constructor(type, value, line, col) {
-    this.type  = type;
+    this.type = type;
     this.value = value;
-    this.line  = line;  // 1-based
-    this.col   = col;   // 1-based
+    this.line = line;  // 1-based
+    this.col = col;   // 1-based
   }
   toString() {
     return `Token(${this.type}, ${JSON.stringify(this.value)}, ${this.line}:${this.col})`;
@@ -115,10 +109,10 @@ class Token {
 // ── Lexer ─────────────────────────────────────────────────────────────────────
 class Lexer {
   constructor(source) {
-    this.src    = source;
-    this.pos    = 0;
-    this.line   = 1;
-    this.col    = 1;
+    this.src = source;
+    this.pos = 0;
+    this.line = 1;
+    this.col = 1;
     this.tokens = [];
 
     // Indentation stack — starts at column 0
@@ -133,7 +127,7 @@ class Lexer {
   advance() {
     const ch = this.src[this.pos++];
     if (ch === '\n') { this.line++; this.col = 1; }
-    else             { this.col++; }
+    else { this.col++; }
     return ch;
   }
 
@@ -318,9 +312,9 @@ class Lexer {
         }
       }
 
-      const ch    = this.peek();
+      const ch = this.peek();
       const sLine = this.line;
-      const sCol  = this.col;
+      const sCol = this.col;
 
       // ── Newline ────────────────────────────────────────────────────────────
       if (ch === '\n') {
@@ -382,17 +376,17 @@ class Lexer {
 
       // ── Punctuation ────────────────────────────────────────────────────────
       switch (ch) {
-        case '(': this.advance(); this.emit(T.LPAREN,    ch, sLine, sCol); break;
-        case ')': this.advance(); this.emit(T.RPAREN,    ch, sLine, sCol); break;
-        case '[': this.advance(); this.emit(T.LBRACKET,  ch, sLine, sCol); break;
-        case ']': this.advance(); this.emit(T.RBRACKET,  ch, sLine, sCol); break;
-        case '{': this.advance(); this.emit(T.LBRACE,    ch, sLine, sCol); break;
-        case '}': this.advance(); this.emit(T.RBRACE,    ch, sLine, sCol); break;
-        case ',': this.advance(); this.emit(T.COMMA,     ch, sLine, sCol); break;
-        case ':': this.advance(); this.emit(T.COLON,     ch, sLine, sCol); break;
+        case '(': this.advance(); this.emit(T.LPAREN, ch, sLine, sCol); break;
+        case ')': this.advance(); this.emit(T.RPAREN, ch, sLine, sCol); break;
+        case '[': this.advance(); this.emit(T.LBRACKET, ch, sLine, sCol); break;
+        case ']': this.advance(); this.emit(T.RBRACKET, ch, sLine, sCol); break;
+        case '{': this.advance(); this.emit(T.LBRACE, ch, sLine, sCol); break;
+        case '}': this.advance(); this.emit(T.RBRACE, ch, sLine, sCol); break;
+        case ',': this.advance(); this.emit(T.COMMA, ch, sLine, sCol); break;
+        case ':': this.advance(); this.emit(T.COLON, ch, sLine, sCol); break;
         case ';': this.advance(); this.emit(T.SEMICOLON, ch, sLine, sCol); break;
-        case '\\':this.advance(); this.emit(T.BACKSLASH, ch, sLine, sCol); break;
-        default:  this.advance(); break; // skip unknown characters silently
+        case '\\': this.advance(); this.emit(T.BACKSLASH, ch, sLine, sCol); break;
+        default: this.advance(); break; // skip unknown characters silently
       }
     }
 
@@ -443,7 +437,7 @@ const Node = (type, props) => ({ type, ...props });
 // DictLit         { pairs: [{key: Expr, value: Expr}] }
 
 // ── Arithmetic operator set (shared by parseFun and parseMake) ───────────────
-const ARITH_OPS = new Set(['+','-','*','/','//','%','^']);
+const ARITH_OPS = new Set(['+', '-', '*', '/', '//', '%', '^']);
 
 // ── Operator precedence ───────────────────────────────────────────────────────
 const PREC = {
@@ -457,18 +451,18 @@ const PREC = {
   '^': 7, // right-associative
 };
 const RIGHT_ASSOC = new Set(['^']);
-const BINARY_OPS  = new Set(Object.keys(PREC).filter(k => k !== 'not'));
+const BINARY_OPS = new Set(Object.keys(PREC).filter(k => k !== 'not'));
 
 // ── Parser ────────────────────────────────────────────────────────────────────
 class Parser {
   constructor(source) {
-    this.tokens  = lex(source);
-    this.pos     = 0;
-    this.errors  = [];
+    this.tokens = lex(source);
+    this.pos = 0;
+    this.errors = [];
 
     // Implicit subject/operator carry state for conditions
-    this._impliedSubject  = null;
-    this._impliedOp       = null;
+    this._impliedSubject = null;
+    this._impliedOp = null;
 
     // For-loop nesting depth → iterator variable names
     // depth 0 → i/ii, depth 1 → j/jj, depth 2 → k/kk
@@ -476,44 +470,45 @@ class Parser {
 
     this._statementParsers = {
       make: () => this.parseMake(),
-      del:  () => this.parseDel(),
+      del: () => this.parseDel(),
       print: () => this.parseText(),
-      say:  () => this.parseSay(),
+      say: () => this.parseSay(),
       take: () => this.parseTake(),
       save: () => this.parseSave(),
       local: () => this.parseLocal(),
       give: () => this.parseGive(),
       wait: () => this.parseWait(),
-      ask:  () => this.parseExprStatement(), // ask is an expression
+      ask: () => this.parseExprStatement(), // ask is an expression
       post: () => this.parsePost(),
-      key:  () => this.parseKey(),
-      use:  () => this.parseUseImport(),
+      key: () => this.parseKey(),
+      use: () => this.parseUseImport(),
       email: () => this.parseGmail(),
-      sheets:    () => this.parseExprStatement(), // sheets is an expression
+      sheets: () => this.parseExprStatement(), // sheets is an expression
       class: () => this.parseClass(),
-      if:   () => this.parseIf(),
-      for:  () => this.parseFor(),
+      if: () => this.parseIf(),
+      for: () => this.parseFor(),
       loop: () => this.parseLoop(),
-      fun:  () => this.parseFun(),
+      fun: () => this.parseFun(),
       init: () => this.parseInit(),
-      dot:  () => {
+      fork: () => this.parseFork(),
+      dot: () => {
         const tok = this.advance();
         this.eatNewline();
         return Node('Dot', { line: tok.line });
       },
-      end:  () => this.parseEnd(),
+      end: () => this.parseEnd(),
       from: () => this.parseFrom(),
-      try:  () => this.parseTry(),
+      try: () => this.parseTry(),
     };
   }
 
   // ── Token helpers ───────────────────────────────────────────────────────────
   peek(offset = 0) { return this.tokens[this.pos + offset] ?? { type: T.EOF, value: null }; }
-  advance()        { return this.tokens[this.pos++] ?? { type: T.EOF, value: null }; }
+  advance() { return this.tokens[this.pos++] ?? { type: T.EOF, value: null }; }
 
-  check(type, value)  { const t = this.peek(); return t.type === type && (value === undefined || t.value === value); }
-  checkKw(value)      { return this.check(T.KEYWORD, value); }
-  checkOp(value)      { return this.check(T.OP, value); }
+  check(type, value) { const t = this.peek(); return t.type === type && (value === undefined || t.value === value); }
+  checkKw(value) { return this.check(T.KEYWORD, value); }
+  checkOp(value) { return this.check(T.OP, value); }
 
   eat(type, value) {
     if (this.check(type, value)) return this.advance();
@@ -615,7 +610,7 @@ class Parser {
     // Check for shorthand: make x <op> <expr> where op is a binary arithmetic op
     const nextTok = this.peek();
     let expr;
-    if (nextTok.type === T.OP && ['+','-','*','/','//','%','^'].includes(nextTok.value)) {
+    if (nextTok.type === T.OP && ['+', '-', '*', '/', '//', '%', '^'].includes(nextTok.value)) {
       // make x + 5  →  make x x + 5  (implied LHS is x itself)
       const impliedLeft = target;
       const op = this.advance().value;
@@ -665,7 +660,7 @@ class Parser {
     const nameTok = this.peek();
 
     // Handle take int(user), take flt(user) etc. — converter wraps the variable
-    const CONVERTERS = new Set(['int','flt','str','bin','list','dict']);
+    const CONVERTERS = new Set(['int', 'flt', 'str', 'bin', 'list', 'dict']);
     if (nameTok.type === T.IDENTIFIER && CONVERTERS.has(nameTok.value) && this.peek(1).type === T.LPAREN) {
       const converter = this.advance().value; // eat converter name e.g. 'int'
       this.advance(); // eat '('
@@ -688,8 +683,8 @@ class Parser {
     const name = this.advance().value;
     // Check for file extension: take file.csv — dot followed by extension
     if (this.peek().type === T.OP && this.peek().value === '.' ||
-        (this.peek().type !== T.NEWLINE && this.peek().type !== T.EOF &&
-         /^\.(csv|json|txt|tsv|xml)$/.test('.' + (this.peek().value ?? '')))) {
+      (this.peek().type !== T.NEWLINE && this.peek().type !== T.EOF &&
+        /^\.(csv|json|txt|tsv|xml)$/.test('.' + (this.peek().value ?? '')))) {
       // Consume the dot and extension
       let ext = '';
       if (this.peek().value === '.') { this.advance(); ext = this.advance().value ?? ''; }
@@ -769,7 +764,7 @@ class Parser {
 
     // wait x = 5 — inline condition (no body, not a trigger)
     if (next.type === T.IDENTIFIER && this.peek(1).type === T.OP && this.peek(1).value === '=') {
-      const name  = this.advance().value;
+      const name = this.advance().value;
       this.advance();
       const value = this.parseExpr();
       this.eatNewline();
@@ -789,7 +784,7 @@ class Parser {
   // ── post <url> <body> [use <key>] ─────────────────────────────────────────
   parsePost() {
     const tok = this.advance(); // eat 'post'
-    const url  = this.parseExpr();
+    const url = this.parseExpr();
     const body = this.parseExpr();
     let credential = null;
     if (this.checkKw('use')) { this.advance(); credential = this.parseExpr(); }
@@ -847,7 +842,7 @@ class Parser {
 
     // save "report.txt" — string literal with no second argument → save response to that file
     if (first.type === 'StringLit' &&
-        !this.check(T.NEWLINE) && !this.check(T.EOF) && !this.check(T.DEDENT)) {
+      !this.check(T.NEWLINE) && !this.check(T.EOF) && !this.check(T.DEDENT)) {
       // save "title" value  — string is the filename, next expr is the value
       const valueExpr = this._parseSaveFilenameExpr();
       this.eatNewline();
@@ -862,7 +857,7 @@ class Parser {
     // save x — bare identifier with nothing after it → x is the VALUE,
     // auto-generate filename as the variable name
     if (first.type === 'Identifier' &&
-        (this.check(T.NEWLINE) || this.check(T.EOF) || this.check(T.DEDENT))) {
+      (this.check(T.NEWLINE) || this.check(T.EOF) || this.check(T.DEDENT))) {
       // Auto-filename: use the variable name; _executeSave will pick extension by type
       const autoFilename = Node('StringLit', { value: first.name, line: first.line, col: first.col });
       this.eatNewline();
@@ -932,11 +927,11 @@ class Parser {
   parseIf() {
     const tok = this.advance(); // eat 'if'
     this._impliedSubject = null;
-    this._impliedOp      = null;
+    this._impliedOp = null;
     const condition = this.parseCondition();
     this.eatNewline();
-    const body  = this.parseBlock();
-    let else_   = null;
+    const body = this.parseBlock();
+    let else_ = null;
 
     this.skipNewlines();
     if (this.checkKw('else')) {
@@ -980,8 +975,8 @@ class Parser {
     const tok = this.advance(); // eat 'for'
 
     // Determine iterator variable names based on nesting depth
-    const varNames = [['i','ii'], ['j','jj'], ['k','kk']];
-    const depth    = Math.min(this._forDepth, varNames.length - 1);
+    const varNames = [['i', 'ii'], ['j', 'jj'], ['k', 'kk']];
+    const depth = Math.min(this._forDepth, varNames.length - 1);
     const [primary, secondary] = varNames[depth];
 
     // Target: the thing being iterated over
@@ -1008,7 +1003,7 @@ class Parser {
     let iterVar = primary, iterVar2 = secondary;
     if (target !== null && this.checkKw('in')) {
       this.advance(); // eat 'in'
-      iterVar  = target;
+      iterVar = target;
       iterVar2 = secondary;
       const realTarget = this.peek();
       if (realTarget.type === T.IDENTIFIER) {
@@ -1040,7 +1035,7 @@ class Parser {
   parseLoop() {
     const tok = this.advance(); // eat 'loop'
     this._impliedSubject = null;
-    this._impliedOp      = null;
+    this._impliedOp = null;
     const condition = this.parseCondition();
     this.eatNewline();
     const body = this.parseBlock();
@@ -1049,7 +1044,7 @@ class Parser {
 
   // ── fun name(params) NEWLINE INDENT <body> ────────────────────────────────
   parseFun() {
-    const tok  = this.advance(); // eat 'fun'
+    const tok = this.advance(); // eat 'fun'
     const nameTok = this.peek();
     if (nameTok.type !== T.IDENTIFIER) {
       this.error("Expected function name after 'fun'", nameTok);
@@ -1114,6 +1109,61 @@ class Parser {
     // Allow empty fun body — implicit init and other bodyless funs are valid
     const body = this.check(T.INDENT) ? this.parseBlock() : [];
     return Node('Fun', { name, params, body, line: tok.line, col: tok.col });
+  }
+
+  // ── fork — probability-weighted branching ─────────────────────────────────
+  // fork
+  //   0.7          ← weight (0..1), omit = 1.0
+  //     say "sunny"
+  //   0.3
+  //     say "rain"
+  //
+  // Branches with weight 1.0 always execute.
+  // If ALL weights are 1.0 all branches run concurrently.
+  // Otherwise one branch is chosen randomly weighted by the values.
+  parseFork() {
+    const tok = this.advance(); // eat 'fork'
+    this.eatNewline();
+
+    const branches = [];
+
+    if (!this.check(T.INDENT)) {
+      return Node('Fork', { branches: [], line: tok.line, col: tok.col });
+    }
+    this.advance(); // eat INDENT
+
+    while (!this.check(T.DEDENT) && !this.check(T.EOF)) {
+      this.skipNewlines();
+      if (this.check(T.DEDENT) || this.check(T.EOF)) break;
+
+      // Optional inline weight: a number at the start of the branch line
+      let weight = 1.0;
+      if (this.check(T.NUMBER)) {
+        weight = Number(this.advance().value);
+      }
+
+      // First statement of the branch — on the same line as the weight (or alone)
+      const body = [];
+      if (!this.check(T.NEWLINE) && !this.check(T.EOF) && !this.check(T.DEDENT)) {
+        const first = this.parseStatement();
+        if (first) body.push(first);
+      } else {
+        this.eatNewline();
+      }
+
+      // Optional indented continuation block for this branch
+      if (this.check(T.INDENT)) {
+        const rest = this.parseBlock();
+        body.push(...rest);
+      }
+
+      branches.push({ weight, body });
+      this.skipNewlines();
+    }
+
+    if (this.check(T.DEDENT)) this.advance(); // eat DEDENT
+
+    return Node('Fork', { branches, line: tok.line, col: tok.col });
   }
 
   // ── try / err ─────────────────────────────────────────────────────────────────
@@ -1191,7 +1241,7 @@ class Parser {
   // ── class name(superclass?) ───────────────────────────────────────────────
   // Example: class Dog(Animal)
   parseClass() {
-    const tok  = this.advance(); // eat 'class'
+    const tok = this.advance(); // eat 'class'
     const nameTok = this.peek();
     if (nameTok.type !== T.IDENTIFIER) {
       this.error("Expected class name after 'class'", nameTok);
@@ -1251,7 +1301,7 @@ class Parser {
         }
       }
       // also accept 'key' for backward compat during transition
-      
+
       this.eatNewline();
       return Node('Import', { url, names, line: tok.line, col: tok.col });
     }
@@ -1295,7 +1345,7 @@ class Parser {
       // Check for compound 'not and', 'not or', 'not same'
       if (this.checkKw('not')) {
         const next = this.peek(1);
-        if (next && next.type === T.KEYWORD && ['and','or','same'].includes(next.value)) {
+        if (next && next.type === T.KEYWORD && ['and', 'or', 'same'].includes(next.value)) {
           this.advance(); // eat 'not'
           const binOp = this.advance().value; // eat 'and'/'or'/'same'
           // Map to compound op: 'not and'→'nand', 'not or'→'nor', 'not same'→'xor'
@@ -1306,7 +1356,7 @@ class Parser {
         }
       }
       if (this.checkKw('and') || this.checkKw('or') || this.checkKw('same')) {
-        const op  = this.advance().value;
+        const op = this.advance().value;
         const right = this.parseConditionClause();
         left = Node('BinOp', { op, left, right, line: left?.line });
         continue;
@@ -1322,7 +1372,7 @@ class Parser {
     // handled in parseConditionExpr; here only plain 'not <value>' is unary
     if (this.checkKw('not')) {
       const next = this.peek(1);
-      const isCompound = next && next.type === T.KEYWORD && ['and','or','same'].includes(next.value);
+      const isCompound = next && next.type === T.KEYWORD && ['and', 'or', 'same'].includes(next.value);
       if (!isCompound) {
         const tok = this.advance();
         const operand = this.parseConditionClause();
@@ -1332,15 +1382,15 @@ class Parser {
 
     // Peek: do we have a subject (identifier/literal) followed by an operator?
     // Or are we missing the subject (implied), or missing both subject and op?
-    const tok  = this.peek();
+    const tok = this.peek();
     const tok1 = this.peek(1);
 
     const isCompOp = t => t && (
-      (t.type === T.OP     && ['=','!=','<','>','<=','>='].includes(t.value)) ||
-      (t.type === T.KEYWORD && ['is','in'].includes(t.value))
+      (t.type === T.OP && ['=', '!=', '<', '>', '<=', '>='].includes(t.value)) ||
+      (t.type === T.KEYWORD && ['is', 'in'].includes(t.value))
     );
 
-    const isArithOp = t => t && t.type === T.OP && ['+','-','*','/','//','%','^'].includes(t.value);
+    const isArithOp = t => t && t.type === T.OP && ['+', '-', '*', '/', '//', '%', '^'].includes(t.value);
 
     // Parse arithmetic sub-expressions but stop before comparison and logical operators
     const parseClauseExpr = () => this.parseExpr(4);
@@ -1349,9 +1399,9 @@ class Parser {
 
     if (isCompOp(tok)) {
       // No subject — use implied. e.g. "and < 4"
-      op    = this.advance().value;
+      op = this.advance().value;
       right = parseClauseExpr();
-      left  = this._impliedSubject ?? Node('Identifier', { name: '?', line: tok.line });
+      left = this._impliedSubject ?? Node('Identifier', { name: '?', line: tok.line });
       this._impliedOp = op;
     } else if (isArithOp(tok) && this._impliedSubject) {
       // Arithmetic op with implied subject — e.g. "and % 5 = 0" means "and go % 5 = 0"
@@ -1360,9 +1410,9 @@ class Parser {
       const arithRight = parseClauseExpr();
       const arithNode = Node('BinOp', { op: arithOp, left: this._impliedSubject, right: arithRight, line: tok.line });
       if (isCompOp(this.peek())) {
-        op    = this.advance().value;
+        op = this.advance().value;
         right = parseClauseExpr();
-        left  = arithNode;
+        left = arithNode;
         this._impliedOp = op;
       } else {
         // No comp op — treat the arithmetic result as a boolean check
@@ -1372,20 +1422,20 @@ class Parser {
       // Only the value is present — subject AND operator are implied
       // e.g. "a = 3 or 5" → second clause is "5" meaning "a = 5"
       right = parseClauseExpr();
-      left  = this._impliedSubject;
-      op    = this._impliedOp ?? '=';
+      left = this._impliedSubject;
+      op = this._impliedOp ?? '=';
     } else {
       // Normal: subject op value
       left = parseClauseExpr();
       if (isCompOp(this.peek())) {
-        op    = this.advance().value;
+        op = this.advance().value;
         right = parseClauseExpr();
         // _impliedSubject should be the bare subject (leftmost identifier),
         // not the whole arithmetic expression — so dig into BinOp to find it
         let subj = left;
         while (subj && subj.type === 'BinOp') subj = subj.left;
         this._impliedSubject = subj;
-        this._impliedOp      = op;
+        this._impliedOp = op;
         return Node('BinOp', { op, left, right, line: left?.line });
       }
       // No operator found — just return the expression as-is (e.g. boolean check)
@@ -1404,7 +1454,7 @@ class Parser {
 
     while (true) {
       const tok = this.peek();
-      const op  = tok.value;
+      const op = tok.value;
       const prec = PREC[op];
 
       if (prec === undefined || prec <= minPrec) break;
@@ -1568,7 +1618,7 @@ class Parser {
     }
 
     // Boolean / none literals
-    if (tok.type === T.KEYWORD && ['yes','no','none'].includes(tok.value)) {
+    if (tok.type === T.KEYWORD && ['yes', 'no', 'none'].includes(tok.value)) {
       this.advance();
       const value = tok.value === 'yes' ? true : tok.value === 'no' ? false : null;
       return this.parsePostfix(Node('BoolLit', { value, raw: tok.value, line: tok.line, col: tok.col }));
@@ -1611,7 +1661,7 @@ class Parser {
     }
 
     // Implicit loop variables used as identifiers
-    if (tok.type === T.KEYWORD && ['i','ii','iii','j','jj','jjj','k','kk','kkk'].includes(tok.value)) {
+    if (tok.type === T.KEYWORD && ['i', 'ii', 'iii', 'j', 'jj', 'jjj', 'k', 'kk', 'kkk'].includes(tok.value)) {
       this.advance();
       return this.parsePostfix(Node('Identifier', { name: tok.value, line: tok.line, col: tok.col }));
     }
@@ -1654,7 +1704,7 @@ class Parser {
       name: nameTok.value,
       args,
       line: nameTok.line,
-      col:  nameTok.col
+      col: nameTok.col
     });
   }
 
@@ -1714,7 +1764,7 @@ class Parser {
       this.skipNewlines();
     }
     return {
-      ast:    Node('Program', { body }),
+      ast: Node('Program', { body }),
       errors: this.errors,
     };
   }
@@ -1731,15 +1781,15 @@ function parse(source) {
 // ── IVX Type system ───────────────────────────────────────────────────────────
 // Seven types + a special UNKNOWN used during inference before a type is known
 const TYPE = Object.freeze({
-  STRING:  'string',
+  STRING: 'string',
   INTEGER: 'integer',
-  FLOAT:   'float',
+  FLOAT: 'float',
   BOOLEAN: 'boolean',
-  LIST:    'list',
-  DICT:    'dict',
-  NONE:    'none',    // universal "not yet set" sentinel
+  LIST: 'list',
+  DICT: 'dict',
+  NONE: 'none',    // universal "not yet set" sentinel
   UNKNOWN: 'unknown', // internal — type not yet resolved
-  URL:     'url',     // HTTP/HTTPS URL — fetched on evaluation
+  URL: 'url',     // HTTP/HTTPS URL — fetched on evaluation
 });
 
 // ── Type compatibility ─────────────────────────────────────────────────────────
@@ -1748,10 +1798,10 @@ function compatible(from, to) {
   if (from === TYPE.UNKNOWN || to === TYPE.UNKNOWN) return true; // defer
   if (from === to) return true;
   if (from === TYPE.NONE) return true;   // none is assignable to any type
-  if (to   === TYPE.NONE) return true;
+  if (to === TYPE.NONE) return true;
   // integer and float can interop in expressions
   if (from === TYPE.INTEGER && to === TYPE.FLOAT) return true;
-  if (from === TYPE.FLOAT   && to === TYPE.INTEGER) return true;
+  if (from === TYPE.FLOAT && to === TYPE.INTEGER) return true;
   return false;
 }
 
@@ -1760,26 +1810,26 @@ function compatible(from, to) {
 // or null if the operation is invalid.
 function opResultType(op, left, right) {
   // Comparison operators always return boolean
-  if (['=','!=','<','>','<=','>=','is'].includes(op)) {
+  if (['=', '!=', '<', '>', '<=', '>=', 'is'].includes(op)) {
     if (compatible(left, right)) return TYPE.BOOLEAN;
     return null;
   }
   // Logical operators — operands should be boolean, result is boolean
-  if (['and','or','same','nand','nor','xor'].includes(op)) {
+  if (['and', 'or', 'same', 'nand', 'nor', 'xor'].includes(op)) {
     return TYPE.BOOLEAN;
   }
   // 'in' — check membership, returns boolean
   if (op === 'in') return TYPE.BOOLEAN;
 
   // Arithmetic operators
-  if (['+','-','*','%'].includes(op)) {
+  if (['+', '-', '*', '%'].includes(op)) {
     if (left === TYPE.STRING && op === '+') {
       // String concatenation
       if (right === TYPE.STRING) return TYPE.STRING;
       return null;
     }
     if ([TYPE.INTEGER, TYPE.FLOAT, TYPE.NONE, TYPE.UNKNOWN].includes(left) &&
-        [TYPE.INTEGER, TYPE.FLOAT, TYPE.NONE, TYPE.UNKNOWN].includes(right)) {
+      [TYPE.INTEGER, TYPE.FLOAT, TYPE.NONE, TYPE.UNKNOWN].includes(right)) {
       if (left === TYPE.FLOAT || right === TYPE.FLOAT) return TYPE.FLOAT;
       return TYPE.INTEGER;
     }
@@ -1788,18 +1838,18 @@ function opResultType(op, left, right) {
   if (op === '/') {
     // Division always returns float
     if ([TYPE.INTEGER, TYPE.FLOAT, TYPE.NONE, TYPE.UNKNOWN].includes(left) &&
-        [TYPE.INTEGER, TYPE.FLOAT, TYPE.NONE, TYPE.UNKNOWN].includes(right)) return TYPE.FLOAT;
+      [TYPE.INTEGER, TYPE.FLOAT, TYPE.NONE, TYPE.UNKNOWN].includes(right)) return TYPE.FLOAT;
     return null;
   }
   if (op === '//') {
     // Floor division always returns integer
     if ([TYPE.INTEGER, TYPE.FLOAT, TYPE.NONE, TYPE.UNKNOWN].includes(left) &&
-        [TYPE.INTEGER, TYPE.FLOAT, TYPE.NONE, TYPE.UNKNOWN].includes(right)) return TYPE.INTEGER;
+      [TYPE.INTEGER, TYPE.FLOAT, TYPE.NONE, TYPE.UNKNOWN].includes(right)) return TYPE.INTEGER;
     return null;
   }
   if (op === '^') {
     if ([TYPE.INTEGER, TYPE.FLOAT, TYPE.NONE, TYPE.UNKNOWN].includes(left) &&
-        [TYPE.INTEGER, TYPE.FLOAT, TYPE.NONE, TYPE.UNKNOWN].includes(right)) return TYPE.FLOAT;
+      [TYPE.INTEGER, TYPE.FLOAT, TYPE.NONE, TYPE.UNKNOWN].includes(right)) return TYPE.FLOAT;
     return null;
   }
 
@@ -1810,8 +1860,8 @@ function opResultType(op, left, right) {
 class TypeError_ {
   constructor(message, line, col) {
     this.message = message;
-    this.line    = line ?? 0;
-    this.col     = col  ?? 0;
+    this.line = line ?? 0;
+    this.col = col ?? 0;
   }
   toString() { return `TypeError at ${this.line}:${this.col} — ${this.message}`; }
 }
@@ -1821,9 +1871,9 @@ class TypeError_ {
 class TCEnv {
   constructor(parent = null, name = 'global') {
     this.parent = parent;
-    this.name   = name;
-    this.vars   = new Map(); // name → { type, defined }
-    this.fns    = new Map(); // name → { params: [{name, type}], returnType }
+    this.name = name;
+    this.vars = new Map(); // name → { type, defined }
+    this.fns = new Map(); // name → { params: [{name, type}], returnType }
   }
 
   // Define a variable in this scope
@@ -1871,40 +1921,40 @@ class TCEnv {
 // All built-in function names — must match BUILTIN_DEFS in ivx-runtime.js
 const BUILTIN_NAMES = new Set([
   // Type conversion
-  'int','flt','str','bin','list','dict',
+  'int', 'flt', 'str', 'bin', 'list', 'dict',
   // Math
-  'abs','floor','ceil','round','min','max','sqrt',
+  'abs', 'floor', 'ceil', 'round', 'min', 'max', 'sqrt',
   // String
-  'length','size','upper','lower','trim','split','join','contains','replace',
-  'starts','ends','index','slice','pad','padend','chars','repeat',
+  'length', 'size', 'upper', 'lower', 'trim', 'split', 'join', 'contains', 'replace',
+  'starts', 'ends', 'index', 'slice', 'pad', 'padend', 'chars', 'repeat',
   // List
-  'push','pop','keys','values','has',
-  'sort','reverse','unique','flat','first','last','head','drop','zip',
-  'map','filter','reduce',
+  'push', 'pop', 'keys', 'values', 'has',
+  'sort', 'reverse', 'unique', 'flat', 'first', 'last', 'head', 'drop', 'zip',
+  'map', 'filter', 'reduce',
   // 2D list
-  'col','row','cols','rows','transpose','colnames',
+  'col', 'row', 'cols', 'rows', 'transpose', 'colnames',
   // Table
-  'where','order','group','agg',
+  'where', 'order', 'group', 'agg',
   // Date/time
-  'now','time','timestamp','year','month','day','hour','minute','weekday',
-  'dateadd','datediff','format',
+  'now', 'time', 'timestamp', 'year', 'month', 'day', 'hour', 'minute', 'weekday',
+  'dateadd', 'datediff', 'format',
   // Dict
-  'merge','pick','omit','update','entries','fromkeys',
+  'merge', 'pick', 'omit', 'update', 'entries', 'fromkeys',
   // Regex
-  'match','findall','search','sub','split_re',
+  'match', 'findall', 'search', 'sub', 'split_re',
   // Extended math
-  'log','log2','log10','sin','cos','tan','asin','acos','atan','atan2',
-  'pi','e','tau','inf','random','randint','roll','sign','clamp','lerp',
-  'degrees','radians','gcd','lcm','isPrime',
+  'log', 'log2', 'log10', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
+  'pi', 'e', 'tau', 'inf', 'random', 'randint', 'roll', 'sign', 'clamp', 'lerp',
+  'degrees', 'radians', 'gcd', 'lcm', 'isPrime',
   // Type checking
-  'type','isString','isInt','isFloat','isBool','isList','isDict','isNone','isNum',
+  'type', 'isString', 'isInt', 'isFloat', 'isBool', 'isList', 'isDict', 'isNone', 'isNum',
   // Misc
-  'range','error',
+  'range', 'error',
 ]);
 
 class TypeChecker {
   constructor() {
-    this.errors  = [];
+    this.errors = [];
     this.globals = new TCEnv(null, 'global');
     // Built-in: err is always in scope as none (universal sentinel)
     this.globals.define('err', TYPE.NONE);
@@ -1931,9 +1981,9 @@ class TypeChecker {
       Fun: (node, env) => this._checkFunStmt(node, env),
       Class: (node, env) => this._checkClassStmt(node, env),
       ExprStatement: (node, env) => this._checkExprStatementStmt(node, env),
-      End: () => {},
-      Dot: () => {},
-      Import: () => {},
+      End: () => { },
+      Dot: () => { },
+      Import: () => { },
     };
   }
 
@@ -2103,8 +2153,8 @@ class TypeChecker {
     const forEnv = env.child('for-body');
     const elemType = iterType === TYPE.LIST ? TYPE.UNKNOWN
       : iterType === TYPE.STRING ? TYPE.STRING
-      : iterType === TYPE.DICT ? TYPE.UNKNOWN
-      : TYPE.UNKNOWN;
+        : iterType === TYPE.DICT ? TYPE.UNKNOWN
+          : TYPE.UNKNOWN;
     forEnv.define(node.iterVar, elemType);
     forEnv.define(node.iterVar2, iterType === TYPE.DICT ? TYPE.UNKNOWN : TYPE.INTEGER);
     this.checkBlock(node.body, forEnv);
@@ -2302,7 +2352,7 @@ class TypeChecker {
       }
 
       case 'BinOp': {
-        const left  = this.checkExpr(node.left,  env);
+        const left = this.checkExpr(node.left, env);
         const right = this.checkExpr(node.right, env);
         const result = opResultType(node.op, left, right);
         if (result === null) {
@@ -2342,8 +2392,8 @@ class TypeChecker {
         }
         // Check argument types
         for (let i = 0; callee.params !== null && i < Math.min(node.args.length, callee.params.length); i++) {
-          const argType    = this.checkExpr(node.args[i], env);
-          const paramType  = callee.params[i]?.type ?? TYPE.UNKNOWN;
+          const argType = this.checkExpr(node.args[i], env);
+          const paramType = callee.params[i]?.type ?? TYPE.UNKNOWN;
           if (!compatible(argType, paramType)) {
             this.err(
               `Argument ${i + 1} of '${node.name}': expected ${paramType}, got ${argType}`,

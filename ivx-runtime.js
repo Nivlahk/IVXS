@@ -1531,6 +1531,7 @@ function inferImmutables(ast) {
     if (node.type === 'Fun')  { scanBlock(node.body); return; }
     if (node.type === 'Class') { scanBlock(node.body); return; }
     if (node.type === 'Try')  { scanBlock(node.body); scanBlock(node.errBody); return; }
+    if (node.type === 'Fork') { for (const b of node.branches ?? []) scanBlock(b.body); return; }
     if (node.type === 'Print' || node.type === 'Text' || node.type === 'Give') { scanExpr(node.expr); return; }
     if (node.type === 'ExprStatement') { scanExpr(node.expr); return; }
   }
@@ -1871,6 +1872,30 @@ class Interpreter {
           }
         }
         env.set(node.name, cls);
+        break;
+      }
+
+      case 'Fork': {
+        const branches = node.branches ?? [];
+        if (branches.length === 0) break;
+
+        // If all weights are 1.0, run all branches concurrently
+        const allCertain = branches.every(b => b.weight >= 1.0);
+        if (allCertain) {
+          await Promise.all(branches.map(b => this.execBlock(b.body, env)));
+          break;
+        }
+
+        // Otherwise pick one branch by weighted random selection
+        const total = branches.reduce((s, b) => s + b.weight, 0);
+        let r = Math.random() * total;
+        for (const branch of branches) {
+          r -= branch.weight;
+          if (r <= 0) {
+            await this.execBlock(branch.body, env);
+            break;
+          }
+        }
         break;
       }
 
