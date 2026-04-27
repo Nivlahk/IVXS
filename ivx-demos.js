@@ -1255,9 +1255,140 @@ const IVX_DEMOS = [
       return mkSvg(body, 580, 340);
     },
   },
+
+  // ── Logic Operator Demos ──────────────────────────────────────────────────
+  {
+    id: 'logic-is', label: 'is', color: DC.B,
+    tagline: 'True when two values are equal',
+    insert: ' is ',
+    node: () => nodeShape('diamond', 'x is y', '#004b8d'),
+    svgFn: () => mkSvg(`
+      ${codePanel(280, 220)}
+      ${codeLine(36, 82,  [['if ', DC.K], ['pet ', DC.V], ['is ', DC.B], ['"cat"', DC.S]])}
+      ${codeLine(36, 108, [['  print ', DC.K], ['"meow"', DC.S]])}
+      ${codeLine(36, 134, [['if ', DC.K], ['x ', DC.V], ['is ', DC.B], ['none', DC.B]])}
+      ${codeLine(36, 160, [['  print ', DC.K], ['"nothing here"', DC.S]])}
+      ${codeLine(36, 186, [['note same as = for equality', DC.M]])}
+      <g transform="translate(310,20)">
+        <rect width="230" height="220" rx="6" fill="#0a0a0f" stroke="#2a2a40"/>
+        <circle cx="95" cy="105" r="65" fill="#4a9eff" opacity="0.55" stroke="#3a3a5c" stroke-width="1.5"/>
+        <text x="95"  y="99"  text-anchor="middle" font-family="monospace" font-size="11" fill="${DC.D}" font-weight="600">matching</text>
+        <text x="95"  y="115" text-anchor="middle" font-family="monospace" font-size="11" fill="${DC.D}" font-weight="600">values</text>
+        <text x="185" y="75"  text-anchor="middle" font-family="monospace" font-size="10" fill="${DC.M}">other</text>
+        <text x="185" y="89"  text-anchor="middle" font-family="monospace" font-size="10" fill="${DC.M}">values</text>
+        <text x="115" y="205" text-anchor="middle" font-family="monospace" font-size="10" fill="${DC.B}" font-weight="600">✓ inside = yes</text>
+      </g>
+    `, 550, 240),
+  },
+  {
+    id: 'logic-not', label: 'not', color: DC.B,
+    tagline: 'Inverts a truth value — yes becomes no, no becomes yes',
+    insert: 'not ',
+    node: () => nodeShape('diamond', 'not done', '#004b8d'),
+    svgFn: () => mkSvg(`
+      ${codePanel(280, 220)}
+      ${codeLine(36, 82,  [['if ', DC.K], ['not ', DC.B], ['done', DC.V]])}
+      ${codeLine(36, 108, [['  print ', DC.K], ['"still going"', DC.S]])}
+      ${codeLine(36, 134, [['if ', DC.K], ['not ', DC.B], ['x ', DC.V], ['is ', DC.B], ['none', DC.B]])}
+      ${codeLine(36, 160, [['  print ', DC.K], ['x', DC.V]])}
+      ${codeLine(36, 186, [['note flips yes↔no', DC.M]])}
+      <g transform="translate(310,20)">
+        <rect width="230" height="220" rx="6" fill="#0a0a0f" stroke="#2a2a40"/>
+        <rect x="8" y="8" width="214" height="204" rx="5" fill="#4a9eff" opacity="0.55"/>
+        <circle cx="100" cy="106" r="65" fill="#0a0a0f" stroke="#3a3a5c" stroke-width="1.5"/>
+        <text x="100" y="110" text-anchor="middle" font-family="monospace" font-size="11" fill="${DC.M}">true zone</text>
+        <text x="180" y="55"  text-anchor="middle" font-family="monospace" font-size="10" fill="${DC.D}" font-weight="600">false</text>
+        <text x="180" y="69"  text-anchor="middle" font-family="monospace" font-size="10" fill="${DC.D}" font-weight="600">zone</text>
+        <text x="115" y="205" text-anchor="middle" font-family="monospace" font-size="10" fill="${DC.B}" font-weight="600">✓ outside = yes</text>
+      </g>
+    `, 550, 240),
+  },
+  {
+    id: 'logic-and', label: 'and', color: DC.B,
+    tagline: 'True only when BOTH sides are true',
+    insert: ' and ',
+    node: () => nodeShape('diamond', 'a and b', '#004b8d'),
+    svgFn: () => mkSvg(`
+      ${codePanel(280, 220)}
+      ${codeLine(36, 82,  [['if ', DC.K], ['age ', DC.V], ['> ', DC.K], ['18 ', DC.N], ['and ', DC.B], ['member', DC.V]])}
+      ${codeLine(36, 108, [['  print ', DC.K], ['"welcome"', DC.S]])}
+      ${codeLine(36, 134, [['if ', DC.K], ['hot ', DC.V], ['and ', DC.B], ['sunny', DC.V]])}
+      ${codeLine(36, 160, [['  print ', DC.K], ['"go swimming"', DC.S]])}
+      ${codeLine(36, 186, [['note both must be yes', DC.M]])}
+      <g transform="translate(305,15)">
+        <rect width="245" height="230" rx="6" fill="#0a0a0f" stroke="#2a2a40"/>
+        <defs>
+          <clipPath id="dcb_and"><circle cx="150" cy="112" r="62"/></clipPath>
+        </defs>
+        <circle cx="95"  cy="112" r="62" fill="#0a0a0f" stroke="#3a3a5c" stroke-width="1.5"/>
+        <circle cx="150" cy="112" r="62" fill="#0a0a0f" stroke="#3a3a5c" stroke-width="1.5"/>
+        <circle cx="95"  cy="112" r="62" fill="#4a9eff" opacity="0.55" clip-path="url(#dcb_and)"/>
+        <text x="68"  y="116" text-anchor="middle" font-family="monospace" font-size="12" fill="${DC.D}" font-weight="600">A</text>
+        <text x="177" y="116" text-anchor="middle" font-family="monospace" font-size="12" fill="${DC.D}" font-weight="600">B</text>
+        <text x="122" y="214" text-anchor="middle" font-family="monospace" font-size="10" fill="${DC.B}" font-weight="600">✓ overlap only</text>
+      </g>
+    `, 560, 245),
+  },
+  {
+    id: 'logic-or', label: 'or', color: DC.B,
+    tagline: 'True when EITHER side is true',
+    insert: ' or ',
+    node: () => nodeShape('diamond', 'a or b', '#004b8d'),
+    svgFn: () => mkSvg(`
+      ${codePanel(280, 220)}
+      ${codeLine(36, 82,  [['if ', DC.K], ['cash ', DC.V], ['or ', DC.B], ['card', DC.V]])}
+      ${codeLine(36, 108, [['  print ', DC.K], ['"can pay"', DC.S]])}
+      ${codeLine(36, 134, [['if ', DC.K], ['win ', DC.V], ['or ', DC.B], ['draw', DC.V]])}
+      ${codeLine(36, 160, [['  print ', DC.K], ['"not a loss"', DC.S]])}
+      ${codeLine(36, 186, [['note either one is enough', DC.M]])}
+      <g transform="translate(305,15)">
+        <rect width="245" height="230" rx="6" fill="#0a0a0f" stroke="#2a2a40"/>
+        <circle cx="95"  cy="112" r="62" fill="#4a9eff" opacity="0.55" stroke="#3a3a5c" stroke-width="1.5"/>
+        <circle cx="150" cy="112" r="62" fill="#4a9eff" opacity="0.55" stroke="#3a3a5c" stroke-width="1.5"/>
+        <text x="68"  y="116" text-anchor="middle" font-family="monospace" font-size="12" fill="${DC.D}" font-weight="600">A</text>
+        <text x="177" y="116" text-anchor="middle" font-family="monospace" font-size="12" fill="${DC.D}" font-weight="600">B</text>
+        <text x="122" y="214" text-anchor="middle" font-family="monospace" font-size="10" fill="${DC.B}" font-weight="600">✓ all blue = yes</text>
+      </g>
+    `, 560, 245),
+  },
+  {
+    id: 'logic-same', label: 'same', color: DC.B,
+    tagline: 'True when both sides agree — both yes or both no',
+    insert: ' same ',
+    node: () => nodeShape('diamond', 'a same b', '#004b8d'),
+    svgFn: () => mkSvg(`
+      ${codePanel(280, 220)}
+      ${codeLine(36, 82,  [['if ', DC.K], ['a ', DC.V], ['same ', DC.B], ['b', DC.V]])}
+      ${codeLine(36, 108, [['  print ', DC.K], ['"they agree"', DC.S]])}
+      ${codeLine(36, 134, [['if ', DC.K], ['am_pm ', DC.V], ['same ', DC.B], ['their_pm', DC.V]])}
+      ${codeLine(36, 160, [['  print ', DC.K], ['"same schedule"', DC.S]])}
+      ${codeLine(36, 186, [['note both yes, or both no', DC.M]])}
+      <g transform="translate(305,15)">
+        <rect width="245" height="230" rx="6" fill="#0a0a0f" stroke="#2a2a40"/>
+        <defs>
+          <clipPath id="dca_same"><circle cx="95"  cy="112" r="62"/></clipPath>
+          <clipPath id="dcb_same"><circle cx="150" cy="112" r="62"/></clipPath>
+        </defs>
+        <!-- base: everything lit -->
+        <rect x="8" y="8" width="229" height="214" rx="5" fill="#4a9eff" opacity="0.55"/>
+        <!-- punch out A-only (A minus intersection) -->
+        <circle cx="95"  cy="112" r="62" fill="#0a0a0f"/>
+        <!-- re-light intersection (clip to B) -->
+        <circle cx="95"  cy="112" r="62" fill="#4a9eff" opacity="0.55" clip-path="url(#dcb_same)"/>
+        <!-- punch out B-only (B minus intersection) by drawing dark B then re-lighting intersection -->
+        <circle cx="150" cy="112" r="62" fill="#0a0a0f"/>
+        <circle cx="95"  cy="112" r="62" fill="#4a9eff" opacity="0.55" clip-path="url(#dcb_same)"/>
+        <!-- outlines -->
+        <circle cx="95"  cy="112" r="62" fill="none" stroke="#3a3a5c" stroke-width="1.5"/>
+        <circle cx="150" cy="112" r="62" fill="none" stroke="#3a3a5c" stroke-width="1.5"/>
+        <text x="68"  y="116" text-anchor="middle" font-family="monospace" font-size="12" fill="${DC.D}" font-weight="600">A</text>
+        <text x="177" y="116" text-anchor="middle" font-family="monospace" font-size="12" fill="${DC.D}" font-weight="600">B</text>
+        <text x="122" y="214" text-anchor="middle" font-family="monospace" font-size="10" fill="${DC.B}" font-weight="600">✓ both lit or both dark</text>
+      </g>
+    `, 560, 245),
+  },
 ];
 
-// ── Demo index ────────────────────────────────────────────────────────────────
 const IVX_DEMO_MAP = Object.fromEntries(IVX_DEMOS.filter(d => d && d.id).map(d => [d.id, d]));
 
 const IVX_DEMO_SECTIONS = [
@@ -1266,6 +1397,7 @@ const IVX_DEMO_SECTIONS = [
   { label: 'Functions',    ids: ['give', 'fun', 'class'] },
   { label: 'Network & AI', ids: ['ask', 'wait', 'email', 'sheets', 'key', 'from'] },
   { label: 'Types',        ids: ['type-string', 'type-integer', 'type-float', 'type-boolean', 'type-none', 'type-list', 'type-dict'] },
+  { label: 'Logic Operators', ids: ['logic-is', 'logic-not', 'logic-and', 'logic-or', 'logic-same'] },
   { label: 'How Flowcharts Work',    ids: ['cf-arrows', 'cf-steps', 'cf-fork', 'cf-connector'] },
   { label: 'Binary Categorization',  ids: ['bc-yesno', 'bc-bytes', 'bc-types'] },
 ];
