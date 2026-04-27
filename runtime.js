@@ -2395,7 +2395,7 @@ class Interpreter {
 
   async _evalUnaryOpExpr(node, env) {
     const operand = await this.evalExpr(node.operand, env);
-    if (node.op === 'not') return !isTruthy(operand);
+    if (node.op === 'not') return Number.isInteger(operand) ? ~operand : !isTruthy(operand);
     return operand;
   }
 
@@ -2418,25 +2418,27 @@ class Interpreter {
     }
 
     // Short-circuit for logical operators
+    // If both sides are integers, use bitwise ops instead of boolean
     if (node.op === 'and') {
       const l = await this.evalExpr(node.left, env);
-      if (!isTruthy(l)) return false;
-      return isTruthy(await this.evalExpr(node.right, env));
+      if (!isTruthy(l)) return Number.isInteger(l) ? 0 : false;
+      const r = await this.evalExpr(node.right, env);
+      return (Number.isInteger(l) && Number.isInteger(r)) ? (l & r) : isTruthy(r);
     }
     if (node.op === 'or') {
       const l = await this.evalExpr(node.left, env);
-      if (isTruthy(l)) return true;
-      return isTruthy(await this.evalExpr(node.right, env));
+      const r = await this.evalExpr(node.right, env);
+      return (Number.isInteger(l) && Number.isInteger(r)) ? (l | r) : (isTruthy(l) || isTruthy(r));
     }
     if (node.op === 'nand') {
       const l = await this.evalExpr(node.left, env);
-      if (!isTruthy(l)) return true;  // short-circuit: false and _ → nand = true
-      return !isTruthy(await this.evalExpr(node.right, env));
+      const r = await this.evalExpr(node.right, env);
+      return (Number.isInteger(l) && Number.isInteger(r)) ? ~(l & r) : !(isTruthy(l) && isTruthy(r));
     }
     if (node.op === 'nor') {
       const l = await this.evalExpr(node.left, env);
-      if (isTruthy(l)) return false;  // short-circuit: true or _ → nor = false
-      return !isTruthy(await this.evalExpr(node.right, env));
+      const r = await this.evalExpr(node.right, env);
+      return (Number.isInteger(l) && Number.isInteger(r)) ? ~(l | r) : !(isTruthy(l) || isTruthy(r));
     }
 
     const left  = await this.evalExpr(node.left,  env);
@@ -2497,10 +2499,10 @@ class Interpreter {
       case '>=':  return left >= right;
       case 'is':   return ivxEqual(left, right);
       case 'in':   return ivxIn(left, right, node);
-      case 'same': return isTruthy(left) === isTruthy(right);   // XNOR
-      case 'xor':  return isTruthy(left) !== isTruthy(right);   // not same
-      case 'nand': return !(isTruthy(left) && isTruthy(right));
-      case 'nor':  return !(isTruthy(left) || isTruthy(right));
+      case 'same': return (Number.isInteger(left) && Number.isInteger(right)) ? ~(left ^ right) : isTruthy(left) === isTruthy(right);
+      case 'xor':  return (Number.isInteger(left) && Number.isInteger(right)) ? (left ^ right)  : isTruthy(left) !== isTruthy(right);
+      case 'nand': return (Number.isInteger(left) && Number.isInteger(right)) ? ~(left & right)  : !(isTruthy(left) && isTruthy(right));
+      case 'nor':  return (Number.isInteger(left) && Number.isInteger(right)) ? ~(left | right)  : !(isTruthy(left) || isTruthy(right));
       default:     throw new RuntimeError(`Unknown operator '${node.op}'`, node.line);
     }
   }
