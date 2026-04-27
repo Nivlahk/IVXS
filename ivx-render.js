@@ -70,7 +70,7 @@ _measureSvg.appendChild(measureNode);
 // ── Bidirectional source sync ─────────────────────────────────────────────────
 // Map from graph node kind → IVX keyword (for reconstructing source lines)
 const KIND_TO_KEY = {
-  Decision: 'if', Input: 'take', Output: 'text', Speak: 'say', End: 'end',
+  Decision: 'if', Input: 'take', Output: 'print', Speak: 'say', End: 'end',
   Connector: 'dot', Function: 'fun', Start: 'from'
 };
 
@@ -2045,7 +2045,7 @@ function showEdgeMenu(e, fromId, toId) {
     { kind:'Process',   label:'Process',   key:'' },
     { kind:'Decision',  label:'if — Decision', key:'if' },
     { kind:'Input',     label:'take — Input',  key:'take' },
-    { kind:'Output',    label:'text — Output', key:'text' },
+    { kind:'Output',    label:'print — Output', key:'print' },
     { kind:'Speak',     label:'say — Speak', key:'say' },
     { kind:'Connector', label:'dot — Connector', key:'dot' },
     { kind:'End',       label:'end — End',   key:'end' },

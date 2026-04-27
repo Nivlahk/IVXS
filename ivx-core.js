@@ -68,7 +68,7 @@ const KEYWORDS = new Set([
   // OOP
   'extends', 'super',
   // Data
-  'make', 'del', 'take', 'say', 'text', 'save', 'local',
+  'make', 'del', 'take', 'say', 'print', 'save', 'local',
   // Navigation / graph
   'dot', 'fork', 'prev', 'next', 'from',
   // Logic / literals
@@ -477,7 +477,7 @@ class Parser {
     this._statementParsers = {
       make: () => this.parseMake(),
       del:  () => this.parseDel(),
-      text: () => this.parseText(),
+      print: () => this.parseText(),
       say:  () => this.parseSay(),
       take: () => this.parseTake(),
       save: () => this.parseSave(),
@@ -645,10 +645,10 @@ class Parser {
 
   // ── give <expr> ────────────────────────────────────────────────────────────
   parseText() {
-    const tok = this.advance(); // eat 'text'
+    const tok = this.advance(); // eat 'print'
     const expr = this.parseExpr();
     this.eatNewline();
-    return Node('Text', { expr, line: tok.line, col: tok.col });
+    return Node('Print', { expr, line: tok.line, col: tok.col });
   }
 
   // ── say <expr> — speak text aloud via browser speech synthesis ───────────

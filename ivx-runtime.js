@@ -1531,7 +1531,7 @@ function inferImmutables(ast) {
     if (node.type === 'Fun')  { scanBlock(node.body); return; }
     if (node.type === 'Class') { scanBlock(node.body); return; }
     if (node.type === 'Try')  { scanBlock(node.body); scanBlock(node.errBody); return; }
-    if (node.type === 'Text' || node.type === 'Give') { scanExpr(node.expr); return; }
+    if (node.type === 'Print' || node.type === 'Give') { scanExpr(node.expr); return; }
     if (node.type === 'ExprStatement') { scanExpr(node.expr); return; }
   }
 
@@ -1657,7 +1657,7 @@ class Interpreter {
         break;
       }
 
-      case 'Text': {
+      case 'Print': {
         const value = await this.evalExpr(node.expr, env);
         await this.onOutput(value);
         break;

@@ -52,7 +52,7 @@ const INCOMING_KEYWORDS = ['then', 'else']; // 'then' is accepted but has no eff
 // in NODE_KEYWORDS, otherwise parseLine sets nodeKey='note' and the main loop's
 // else-branch silently creates a spurious Process node for every standalone
 // 'note ...' line, and KIND_TO_KEY has no entry for it so round-trips break.
-const NODE_KEYWORDS = ['if', 'fork', 'loop', 'dot', 'take', 'say', 'text', 'give', 'fun', 'end', 'from', 'wait', 'try'];
+const NODE_KEYWORDS = ['if', 'fork', 'loop', 'dot', 'take', 'say', 'print', 'give', 'fun', 'end', 'from', 'wait', 'try'];
 const OUTGOING_KEYWORDS = ['prev', 'next'];
 const NODE_KEYS = new Set(NODE_KEYWORDS);
 const IN_KEYS = new Set(INCOMING_KEYWORDS);
@@ -576,7 +576,7 @@ function parseivx(source) {
                 }
                 setLastExec(node);
             }
-            else if (nodeKey === 'text') {
+            else if (nodeKey === 'print') {
                 node = addNode('Output', lineNum, content);
                 flushUntil(indent, node);
                 if (!tryWireAsBranch(node)) {

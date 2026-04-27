@@ -1,0 +1,1445 @@
+// ivx-demos.js — Keyword Demo Panel
+// Replaces the keywords dropdown with animated SVG demos.
+// Depends on: ivx-render.js (srcEl, updateHighlight, scheduleRender)
+// Licensed under the Apache License, Version 2.0
+// Copyright 2026 IVX
+
+'use strict';
+
+// ── Colour palette (matches syntax highlighter) ───────────────────────────────
+const DC = {
+  K: '#cba6f7',  // keyword purple
+  V: '#9cdcfe',  // variable blue
+  S: '#ce9178',  // string orange
+  N: '#b5cea8',  // number green
+  B: '#4a7fff',  // boolean blue
+  F: '#c9a227',  // function gold
+  C: '#4ec9b0',  // class teal
+  G: '#4ade80',  // google green
+  A: '#a78bfa',  // AI purple
+  D: '#cdd6f4',  // default text
+  M: '#6b7280',  // muted grey
+};
+
+// ── SVG helpers ───────────────────────────────────────────────────────────────
+function ts(text, color) {
+  const safe = String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  return color ? `<tspan fill="${color}">${safe}</tspan>` : `<tspan>${safe}</tspan>`;
+}
+
+function codeLine(x, y, parts, cls = '') {
+  const inner = parts.map(([t, c]) => ts(t, c)).join('');
+  const clsAttr = cls ? ` class="${cls}"` : '';
+  return `<text x="${x}" y="${y}" font-family="monospace" font-size="12.5" opacity="1"${clsAttr}>${inner}</text>`;
+}
+
+function codePanel(width = 330, height = 280) {
+  return `
+    <rect x="20" y="20" width="${width}" height="${height}" rx="6" fill="#12121a" stroke="#2a2a40"/>
+    <circle cx="40" cy="40" r="4" fill="#e05050"/>
+    <circle cx="55" cy="40" r="4" fill="#f0a030"/>
+    <circle cx="70" cy="40" r="4" fill="#00e5a0"/>`;
+}
+
+function termPanel(x, y, width, height, label = 'TERMINAL') {
+  return `
+    <rect x="${x}" y="${y}" width="${width}" height="${height}" rx="6" fill="#0d0d12" stroke="#2a2a40"/>
+    <text x="${x + 14}" y="${y + 23}" font-family="monospace" font-size="9" fill="#4b5563" letter-spacing="1">${label}</text>
+    <line x1="${x}" y1="${y + 30}" x2="${x + width}" y2="${y + 30}" stroke="#1e1e2e"/>`;
+}
+
+// Renamed from 'svg' to 'mkSvg' to avoid collision with ivx-render.js's
+// `const svg = document.getElementById('canvas')`
+function mkSvg(body, vw = 580, vh = 300) {
+  return `<svg viewBox="0 0 ${vw} ${vh}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block;font-family:monospace">${body}</svg>`;
+}
+
+// ── Node shape preview ────────────────────────────────────────────────────────
+// Returns an SVG string showing the flowchart node for a keyword
+function nodeShape(kind, label, fill, stroke = '#ccc') {
+  const W = 160, H = 56, cx = W / 2, cy = H / 2;
+  let shape = '';
+  let textY = cy + 4;
+
+  if (kind === 'ellipse') {
+    shape = `<ellipse cx="${cx}" cy="${cy}" rx="${W/2 - 4}" ry="${cy - 4}" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
+  } else if (kind === 'diamond') {
+    shape = `<polygon points="${cx},6 ${W-6},${cy} ${cx},${H-6} 6,${cy}" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
+  } else if (kind === 'parallelogram') {
+    const s = W * 0.1;
+    shape = `<polygon points="6,4 ${W-s},4 ${W-6},${H-4} ${s},${H-4}" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
+  } else if (kind === 'circle') {
+    shape = `<circle cx="${cx}" cy="${cy}" r="14" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
+    textY = cy + 4;
+  } else {
+    // rect
+    shape = `<rect x="6" y="6" width="${W-12}" height="${H-12}" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
+  }
+
+  const text = kind === 'circle' ? '' :
+    `<text x="${cx}" y="${textY}" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="12" fill="#eee">${label}</text>`;
+
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:${W}px;height:${H}px;display:block">${shape}${text}</svg>`;
+}
+
+
+const IVX_DEMOS = [
+  {
+    id: 'make', label: 'make', color: DC.K,
+    tagline: 'Assign a value to a variable',
+    node: () => `<svg viewBox="0 0 160 64" xmlns="http://www.w3.org/2000/svg" style="width:160px;height:64px;display:block">
+      <rect x="40" y="6"  width="80" height="18" rx="4" fill="#1a3a5c" stroke="#ccc" stroke-width="1"/>
+      <text x="80" y="18" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="11" font-weight="600" fill="#93c5fd">score</text>
+      <rect x="28" y="24" width="104" height="34" rx="4" fill="#1e2d3e" stroke="#ccc" stroke-width="1.5"/>
+      <text x="80" y="44" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="12" fill="#eee">42</text>
+    </svg>`,
+    insert: 'make ',
+    svgFn: () => mkSvg(`
+      ${codePanel(330, 240)}
+      ${codeLine(36, 82,  [['make ', DC.K], ['name ', DC.V], ['"Alice"', DC.S]])}
+      ${codeLine(36, 108, [['make ', DC.K], ['score ', DC.V], ['42', DC.N]])}
+      ${codeLine(36, 134, [['make ', DC.K], ['score ', DC.V], ['+ 8', DC.K], ['  note → 50', DC.M]])}
+      ${codeLine(36, 160, [['make ', DC.K], ['active ', DC.V], ['yes', DC.B]])}
+      ${termPanel(370, 20, 190, 240)}
+      <text x="384" y="60"  font-family="monospace" font-size="11" fill="${DC.M}">name =</text>
+      <text x="384" y="76"  font-family="monospace" font-size="13" fill="${DC.S}">"Alice"</text>
+      <text x="384" y="100" font-family="monospace" font-size="11" fill="${DC.M}">score =</text>
+      <text x="384" y="116" font-family="monospace" font-size="13" fill="${DC.N}">42 → 50</text>
+      <text x="384" y="140" font-family="monospace" font-size="11" fill="${DC.M}">active =</text>
+      <text x="384" y="156" font-family="monospace" font-size="13" fill="${DC.B}">yes</text>
+    `),
+  },
+  {
+    id: 'print', label: 'print', color: '#ED8936',
+    tagline: 'Print a value to the terminal',
+    node: () => nodeShape('parallelogram', 'print x', '#ED8936'),
+    insert: 'print ',
+    svgFn: () => mkSvg(`
+      <style>
+        @keyframes ivx-sy1{0%,10%,100%{opacity:0}20%,92%{opacity:1}}
+        @keyframes ivx-sy2{0%,28%,100%{opacity:0}38%,92%{opacity:1}}
+        @keyframes ivx-sy3{0%,50%,100%{opacity:0}60%,92%{opacity:1}}
+        @keyframes ivx-sy4{0%,70%,100%{opacity:0}78%,92%{opacity:1}}
+        @keyframes ivx-sycur{50%{opacity:0}}
+        .ivx-sy1{animation:ivx-sy1 7s ease infinite}
+        .ivx-sy2{animation:ivx-sy2 7s ease infinite}
+        .ivx-sy3{animation:ivx-sy3 7s ease infinite}
+        .ivx-sy4{animation:ivx-sy4 7s ease infinite}
+        .ivx-sycur{animation:ivx-sycur 1s infinite}
+      </style>
+      ${codePanel(330, 260)}
+      ${codeLine(36, 82,  [['make', DC.K], [' x ', DC.V], ['7', DC.N]])}
+      ${codeLine(36, 108, [['print', '#ED8936'], [' "Hello!"', DC.S]])}
+      ${codeLine(36, 134, [['print', '#ED8936'], [' x', DC.V]])}
+      ${codeLine(36, 160, [['print', '#ED8936'], [' "x is ', DC.S], ['\u007bx\u007d', DC.V], ['"', DC.S]])}
+      ${codeLine(36, 186, [['print', '#ED8936'], [' x ', DC.V], ['* 2', DC.K]])}
+      ${termPanel(370, 20, 190, 260)}
+      <text x="384" y="74"  font-family="monospace" font-size="13" fill="#ED8936" class="ivx-sy1">Hello!</text>
+      <text x="384" y="100" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-sy2">7</text>
+      <text x="384" y="126" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-sy3">x is 7</text>
+      <text x="384" y="152" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-sy4">14</text>
+      <rect x="384" y="158" width="2" height="13" fill="#ED8936" class="ivx-sycur ivx-sy4"/>
+    `),
+  },
+  {
+    id: 'say', label: 'say', color: '#a78bfa',
+    tagline: 'Speak text aloud via the browser\'s built-in voice synthesis',
+    node: () => nodeShape('ellipse', 'say "hello"', '#5b3fa8'),
+    insert: 'say ',
+    svgFn: () => {
+      const body = `
+      ${codePanel(310, 200)}
+      ${codeLine(36, 82,  [['say ', DC.K], ['"Hello, world!"', DC.S]])}
+      ${codeLine(36, 108, [['say ', DC.K], ['name', DC.V]])}
+      ${codeLine(36, 134, [['say ', DC.K], ['"You scored \u007bscore\u007d"', DC.S]])}
+      ${codeLine(36, 170, [['note speaks via browser TTS', DC.M]])}
+      ${termPanel(330, 20, 220, 200)}
+      <text x="344" y="82"  font-family="monospace" font-size="18">🔊</text>
+      <text x="370" y="84"  font-family="monospace" font-size="12" fill="${DC.S}">"Hello, world!"</text>
+      <text x="344" y="112" font-family="monospace" font-size="18">🔊</text>
+      <text x="370" y="114" font-family="monospace" font-size="12" fill="${DC.V}">Alice</text>
+      `;
+      return mkSvg(body, 580, 220);
+    },
+  },
+  {
+    id: 'take', label: 'take', color: DC.G,
+    tagline: 'Read input from the user',
+    node: () => nodeShape('parallelogram', 'take name', '#007f00'),
+    insert: 'take ',
+    svgFn: () => mkSvg(`
+      <style>
+        @keyframes ivx-tkp1{0%,8%,100%{opacity:0}16%,92%{opacity:1}}
+        @keyframes ivx-tkt1{0%,20%,100%{opacity:0}30%,92%{opacity:1}}
+        @keyframes ivx-tkp2{0%,35%,100%{opacity:0}43%,92%{opacity:1}}
+        @keyframes ivx-tkt2{0%,48%,100%{opacity:0}58%,92%{opacity:1}}
+        @keyframes ivx-tkout{0%,65%,100%{opacity:0}73%,92%{opacity:1}}
+        @keyframes ivx-tkcur{50%{opacity:0}}
+        .ivx-tkp1{animation:ivx-tkp1 8s ease infinite}
+        .ivx-tkt1{animation:ivx-tkt1 8s ease infinite}
+        .ivx-tkp2{animation:ivx-tkp2 8s ease infinite}
+        .ivx-tkt2{animation:ivx-tkt2 8s ease infinite}
+        .ivx-tkout{animation:ivx-tkout 8s ease infinite}
+        .ivx-tkcur{animation:ivx-tkcur 0.8s infinite}
+      </style>
+      ${codePanel(330, 200)}
+      ${codeLine(36, 82,  [['take', DC.G], [' name', DC.V]])}
+      ${codeLine(36, 108, [['take', DC.G], [' int', DC.B], ['(', DC.D], ['age', DC.V], [')', DC.D]])}
+      ${codeLine(36, 134, [['print', DC.K], [' "Hi ', DC.S], ['\u007bname\u007d', DC.V], [', you are ', DC.S], ['\u007bage\u007d', DC.V], ['"', DC.S]])}
+      ${termPanel(370, 20, 190, 260)}
+      <text x="384" y="72"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-tkp1">name ›</text>
+      <rect x="422" y="59" width="120" height="18" rx="3" fill="#1e1e2e" stroke="${DC.G}" stroke-width="0.8" class="ivx-tkp1"/>
+      <text x="428" y="72"  font-family="monospace" font-size="11" fill="${DC.D}" class="ivx-tkt1">Alice</text>
+      <rect x="455" y="61" width="2" height="14" fill="${DC.G}" class="ivx-tkp1 ivx-tkcur"/>
+      <text x="384" y="102" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-tkp2">age ›</text>
+      <rect x="420" y="89" width="120" height="18" rx="3" fill="#1e1e2e" stroke="${DC.G}" stroke-width="0.8" class="ivx-tkp2"/>
+      <text x="426" y="102" font-family="monospace" font-size="11" fill="${DC.D}" class="ivx-tkt2">30</text>
+      <rect x="439" y="91" width="2" height="14" fill="${DC.G}" class="ivx-tkp2 ivx-tkcur"/>
+      <text x="384" y="138" font-family="monospace" font-size="11" fill="#ED8936" class="ivx-tkout">Hi Alice,</text>
+      <text x="384" y="154" font-family="monospace" font-size="11" fill="#ED8936" class="ivx-tkout">you are 30</text>
+    `),
+  },
+  {
+    id: 'give', label: 'give', color: DC.K,
+    tagline: 'Return a value from a function',
+    node: () => nodeShape('ellipse', 'give result', '#92700a'),
+    insert: 'give ',
+    svgFn: () => mkSvg(`
+      <style>
+        @keyframes ivx-gvcall{0%,15%,100%{opacity:0}25%,92%{opacity:1}}
+        @keyframes ivx-gvr1{0%,30%,100%{opacity:0}42%,92%{opacity:1}}
+        @keyframes ivx-gvr2{0%,52%,100%{opacity:0}62%,92%{opacity:1}}
+        .ivx-gvcall{animation:ivx-gvcall 8s ease infinite}
+        .ivx-gvr1{animation:ivx-gvr1 8s ease infinite}
+        .ivx-gvr2{animation:ivx-gvr2 8s ease infinite}
+      </style>
+      ${codePanel(330, 260)}
+      <rect x="28" y="58" width="314" height="74" rx="4" fill="${DC.F}" fill-opacity=".05" stroke="${DC.F}" stroke-opacity=".2"/>
+      ${codeLine(36, 78,  [['fun', DC.F], [' double', DC.F], ['(n)', DC.D]])}
+      ${codeLine(50, 104, [['give', DC.K], [' n ', DC.V], ['* 2', DC.K]])}
+      ${codeLine(36, 148, [['print', DC.K], [' double', DC.F], ['(6)', DC.D]])}
+      ${codeLine(36, 174, [['print', DC.K], [' double', DC.F], ['(21)', DC.D]])}
+      ${codeLine(36, 200, [['print', DC.K], [' double', DC.F], ['(', DC.D], ['double', DC.F], ['(3))', DC.D]])}
+      ${termPanel(370, 20, 190, 260)}
+      <text x="384" y="90"  font-family="monospace" font-size="26" fill="#ED8936" font-weight="bold" class="ivx-gvr1">12</text>
+      <text x="384" y="134" font-family="monospace" font-size="26" fill="#ED8936" font-weight="bold" class="ivx-gvr1">42</text>
+      <text x="384" y="178" font-family="monospace" font-size="26" fill="#ED8936" font-weight="bold" class="ivx-gvr2">12</text>
+      <text x="384" y="200" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-gvr2">double(double(3))</text>
+      <text x="384" y="214" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-gvr2">= double(6) = 12</text>
+    `),
+  },
+  {
+    id: 'if', label: 'if', color: '#89b4fa',
+    tagline: 'Branch on a condition',
+    node: () => nodeShape('diamond', 'x > 10', '#004b8d'),
+    insert: 'if ',
+    svgFn: () => mkSvg(`
+      <style>
+        @keyframes ivx-ifa{0%,8%,100%{opacity:0}18%,92%{opacity:1}}
+        @keyframes ivx-ifb{0%,35%,55%,100%{opacity:0}45%,52%{opacity:1}}
+        @keyframes ivx-ifc{0%,60%,100%{opacity:0}70%,92%{opacity:1}}
+        @keyframes ivx-ifhlb{0%,35%,55%,100%{fill:transparent}45%,52%{fill:rgba(137,180,250,0.1)}}
+        @keyframes ivx-ifhlc{0%,60%,100%{fill:transparent}70%,92%{fill:rgba(137,180,250,0.1)}}
+        .ivx-ifa{animation:ivx-ifa 8s ease infinite}
+        .ivx-ifb{animation:ivx-ifb 8s ease infinite}
+        .ivx-ifc{animation:ivx-ifc 8s ease infinite}
+        .ivx-ifhlb{animation:ivx-ifhlb 8s ease infinite}
+        .ivx-ifhlc{animation:ivx-ifhlc 8s ease infinite}
+      </style>
+      ${codePanel(330, 260)}
+      ${codeLine(36, 82,  [['make', DC.K], [' score ', DC.V], ['85', DC.N]])}
+      ${codeLine(36, 108, [['if', '#89b4fa'], [' score ', DC.V], ['>= 90', '#89b4fa']])}
+      ${codeLine(50, 132, [['print', DC.K], [' "A grade"', DC.S]])}
+      <rect x="28" y="142" width="314" height="22" rx="2"/>
+      ${codeLine(36, 158, [['else if', '#89b4fa'], [' score ', DC.V], ['>= 80', '#89b4fa']])}
+      ${codeLine(50, 182, [['print', DC.K], [' "B grade"', DC.S]])}
+      <rect x="28" y="192" width="314" height="22" rx="2"/>
+      ${codeLine(36, 208, [['else', '#89b4fa']])}
+      ${codeLine(50, 232, [['print', DC.K], [' "C grade"', DC.S]])}
+      ${termPanel(370, 20, 190, 260)}
+      <text x="384" y="70"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ifa">score = 85</text>
+      <text x="384" y="88"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ifa">85 ≥ 90? no</text>
+      <text x="384" y="108" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ifb">85 ≥ 80? yes</text>
+      <text x="384" y="148" font-family="monospace" font-size="22" fill="#ED8936" font-weight="bold" class="ivx-ifb">B grade</text>
+      <text x="384" y="196" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ifc">score = 65</text>
+      <text x="384" y="214" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ifc">65 ≥ 80? no →</text>
+      <text x="384" y="248" font-family="monospace" font-size="16" fill="#ED8936" font-weight="bold" class="ivx-ifc">C grade</text>
+    `),
+  },
+  {
+    id: 'else', label: 'else', color: '#89b4fa',
+    tagline: 'Alternate branch when if is false',
+    node: () => nodeShape('diamond', 'x > 10', '#004b8d'),
+    insert: 'else ',
+    svgFn: () => mkSvg(`
+      <style>
+        @keyframes ivx-ela{0%,10%,100%{opacity:0}20%,92%{opacity:1}}
+        @keyframes ivx-elb{0%,40%,100%{opacity:0}50%,92%{opacity:1}}
+        @keyframes ivx-elhlb{0%,35%,100%{fill:transparent}45%,92%{fill:rgba(137,180,250,0.1)}}
+        .ivx-ela{animation:ivx-ela 7s ease infinite}
+        .ivx-elb{animation:ivx-elb 7s ease infinite}
+        .ivx-elhlb{animation:ivx-elhlb 7s ease infinite}
+      </style>
+      ${codePanel(330, 220)}
+      ${codeLine(36, 82,  [['make', DC.K], [' temp ', DC.V], ['15', DC.N]])}
+      ${codeLine(36, 108, [['if', '#89b4fa'], [' temp ', DC.V], ['> 20', '#89b4fa']])}
+      ${codeLine(50, 132, [['print', DC.K], [' "warm"', DC.S]])}
+      <rect x="28" y="142" width="314" height="22" rx="2"/>
+      ${codeLine(36, 158, [['else', '#89b4fa']])}
+      ${codeLine(50, 182, [['print', DC.K], [' "cold"', DC.S]])}
+      ${termPanel(370, 20, 190, 220)}
+      <text x="384" y="70"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ela">temp = 15</text>
+      <text x="384" y="88"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ela">15 &gt; 20? no</text>
+      <text x="384" y="108" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ela">→ else branch</text>
+      <text x="384" y="152" font-family="monospace" font-size="22" fill="#ED8936" font-weight="bold" class="ivx-elb">cold</text>
+    `),
+  },
+  {
+    id: 'loop', label: 'loop', color: DC.K,
+    tagline: 'Repeat while a condition is true',
+    node: () => nodeShape('diamond', 'count < 5', '#004b8d'),
+    insert: 'loop ',
+    svgFn: () => mkSvg(`
+      <style>
+        @keyframes ivx-lp1{0%,8%,100%{opacity:0}16%,92%{opacity:1}}
+        @keyframes ivx-lp2{0%,22%,100%{opacity:0}30%,92%{opacity:1}}
+        @keyframes ivx-lp3{0%,36%,100%{opacity:0}44%,92%{opacity:1}}
+        @keyframes ivx-lp4{0%,50%,100%{opacity:0}58%,92%{opacity:1}}
+        @keyframes ivx-lp5{0%,64%,100%{opacity:0}72%,92%{opacity:1}}
+        @keyframes ivx-lpdone{0%,78%,100%{opacity:0}86%,92%{opacity:1}}
+        .ivx-lp1{animation:ivx-lp1 8s ease infinite}
+        .ivx-lp2{animation:ivx-lp2 8s ease infinite}
+        .ivx-lp3{animation:ivx-lp3 8s ease infinite}
+        .ivx-lp4{animation:ivx-lp4 8s ease infinite}
+        .ivx-lp5{animation:ivx-lp5 8s ease infinite}
+        .ivx-lpdone{animation:ivx-lpdone 8s ease infinite}
+      </style>
+      ${codePanel(330, 200)}
+      ${codeLine(36, 82,  [['loop', DC.K], [' count? ', DC.V], ['< 5', '#89b4fa']])}
+      ${codeLine(50, 108, [['print', DC.K], [' count', DC.V]])}
+      ${codeLine(50, 134, [['make', DC.K], [' count ', DC.V], ['+ 1', DC.K]])}
+      ${codeLine(36, 170, [['note count? starts at 0', DC.M]])}
+      ${termPanel(370, 20, 190, 260)}
+      <text x="384" y="74"  font-family="monospace" font-size="16" fill="#ED8936" class="ivx-lp1">0</text>
+      <text x="384" y="100" font-family="monospace" font-size="16" fill="#ED8936" class="ivx-lp2">1</text>
+      <text x="384" y="126" font-family="monospace" font-size="16" fill="#ED8936" class="ivx-lp3">2</text>
+      <text x="384" y="152" font-family="monospace" font-size="16" fill="#ED8936" class="ivx-lp4">3</text>
+      <text x="384" y="178" font-family="monospace" font-size="16" fill="#ED8936" class="ivx-lp5">4</text>
+      <text x="384" y="216" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-lpdone">5 &lt; 5 → false</text>
+      <text x="384" y="230" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-lpdone">loop exits</text>
+    `),
+  },
+  {
+    id: 'for', label: 'for', color: DC.K,
+    tagline: 'Iterate over a list — i = value, ii = index',
+    node: () => nodeShape('rect', 'for item in list', '#1e2d3e'),
+    insert: 'for ',
+    svgFn: () => mkSvg(`
+      <style>
+        @keyframes ivx-fr1{0%,8%,38%,100%{opacity:0}16%,34%{opacity:1}}
+        @keyframes ivx-fr2{0%,38%,68%,100%{opacity:0}46%,64%{opacity:1}}
+        @keyframes ivx-fr3{0%,68%,92%,100%{opacity:0}76%,90%{opacity:1}}
+        @keyframes ivx-frh1{0%,8%,38%,100%{fill:#1a1a26}16%,34%{fill:rgba(137,180,250,0.18)}}
+        @keyframes ivx-frh2{0%,38%,68%,100%{fill:#1a1a26}46%,64%{fill:rgba(137,180,250,0.18)}}
+        @keyframes ivx-frh3{0%,68%,92%,100%{fill:#1a1a26}76%,90%{fill:rgba(137,180,250,0.18)}}
+        .ivx-fr1{animation:ivx-fr1 9s ease infinite}
+        .ivx-fr2{animation:ivx-fr2 9s ease infinite}
+        .ivx-fr3{animation:ivx-fr3 9s ease infinite}
+        .ivx-frh1{animation:ivx-frh1 9s ease infinite}
+        .ivx-frh2{animation:ivx-frh2 9s ease infinite}
+        .ivx-frh3{animation:ivx-frh3 9s ease infinite}
+      </style>
+      ${codePanel(310, 220)}
+      ${codeLine(36, 82,  [['make', DC.K], [' colors ', DC.V], ['["red","green","blue"]', DC.M]])}
+      ${codeLine(36, 108, [['for', DC.K], [' color ', DC.V], ['in', DC.K], [' colors', DC.V]])}
+      ${codeLine(50, 134, [['print', DC.K], [' color', DC.V]])}
+      ${codeLine(36, 175, [['note i = value, ii = index', DC.M]])}
+      <rect x="330" y="30" width="110" height="26" rx="3" fill="#1a1a2e" stroke="#2a2a3e"/>
+      <text x="344" y="47" font-family="monospace" font-size="12" fill="${DC.S}">"red"</text>
+      <rect x="330" y="62" width="110" height="26" rx="3" fill="#1a1a2e" stroke="#2a2a3e"/>
+      <text x="344" y="79" font-family="monospace" font-size="12" fill="${DC.S}">"green"</text>
+      <rect x="330" y="94" width="110" height="26" rx="3" fill="#1a1a2e" stroke="#2a2a3e"/>
+      <text x="344" y="111" font-family="monospace" font-size="12" fill="${DC.S}">"blue"</text>
+      ${termPanel(450, 20, 110, 220, 'OUT')}
+      <text x="464" y="76"  font-family="monospace" font-size="13" fill="#ED8936" class="ivx-fr1">red</text>
+      <text x="464" y="102" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-fr2">green</text>
+      <text x="464" y="128" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-fr3">blue</text>
+    `),
+  },
+  {
+    id: 'end', label: 'end', color: '#f87171',
+    tagline: 'Terminate a flow path early',
+    node: () => nodeShape('ellipse', 'END', '#7f0000'),
+    insert: 'end ',
+    svgFn: () => mkSvg(`
+      <style>
+        @keyframes ivx-enstep{0%,8%,100%{opacity:0}16%,92%{opacity:1}}
+        @keyframes ivx-enhit{0%,50%,100%{opacity:0}60%,92%{opacity:1}}
+        @keyframes ivx-enshake{0%,60%,100%{transform:translateX(0)}63%{transform:translateX(-4px)}66%{transform:translateX(4px)}69%{transform:translateX(-3px)}72%{transform:translateX(0)}}
+        .ivx-enstep{animation:ivx-enstep 8s ease infinite}
+        .ivx-enhit{animation:ivx-enhit 8s ease infinite}
+        .ivx-enshake{animation:ivx-enshake 8s ease infinite;transform-origin:455px 170px}
+      </style>
+      ${codePanel(330, 240)}
+      ${codeLine(36, 82,  [['make', DC.K], [' nums ', DC.V], ['[3, 7, 2, 9, 1]', DC.M]])}
+      ${codeLine(36, 108, [['for', DC.K], [' num ', DC.V], ['in', DC.K], [' nums', DC.V]])}
+      ${codeLine(50, 132, [['if', '#89b4fa'], [' num ', DC.V], ['= 9', '#89b4fa']])}
+      ${codeLine(64, 156, [['end', '#f87171'], [' say', DC.K], [' "found \u007bnum\u007d!"', DC.S]])}
+      ${codeLine(50, 180, [['print', DC.K], [' num', DC.V]])}
+      ${termPanel(370, 20, 190, 260)}
+      <text x="384" y="76"  font-family="monospace" font-size="13" fill="#ED8936" class="ivx-enstep">3</text>
+      <text x="384" y="100" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-enstep">7</text>
+      <text x="384" y="124" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-enstep">2</text>
+      <g class="ivx-enshake">
+        <rect x="372" y="138" width="180" height="30" rx="3" fill="#f87171" fill-opacity=".1" stroke="#f87171" stroke-opacity=".5" class="ivx-enhit"/>
+        <text x="384" y="158" font-family="monospace" font-size="13" fill="#f87171" font-weight="bold" class="ivx-enhit">found 9!</text>
+      </g>
+      <text x="384" y="202" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-enhit">loop stopped —</text>
+      <text x="384" y="216" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-enhit">1 never visited</text>
+    `),
+  },
+  {
+    id: 'fun', label: 'fun', color: DC.F,
+    tagline: 'Define a reusable function',
+    node: () => nodeShape('ellipse', 'greet(name)', '#92700a'),
+    insert: 'fun ',
+    svgFn: () => mkSvg(`
+      <style>
+        @keyframes ivx-fncall{0%,15%,100%{opacity:0}25%,92%{opacity:1}}
+        @keyframes ivx-fnr1{0%,30%,100%{opacity:0}42%,92%{opacity:1}}
+        @keyframes ivx-fnr2{0%,52%,100%{opacity:0}62%,92%{opacity:1}}
+        .ivx-fncall{animation:ivx-fncall 8s ease infinite}
+        .ivx-fnr1{animation:ivx-fnr1 8s ease infinite}
+        .ivx-fnr2{animation:ivx-fnr2 8s ease infinite}
+      </style>
+      ${codePanel(330, 260)}
+      <rect x="28" y="58" width="314" height="92" rx="4" fill="${DC.F}" fill-opacity=".05" stroke="${DC.F}" stroke-opacity=".2"/>
+      ${codeLine(36, 78,  [['fun', DC.F], [' greet', DC.F], ['(name, greeting', DC.D], ['? ', DC.K], ['"Hi"', DC.S], [')', DC.D]])}
+      ${codeLine(50, 104, [['give', DC.K], [' "\u007bgreeting\u007d, \u007bname\u007d!"', DC.S]])}
+      ${codeLine(50, 128, [['note greeting defaults to "Hi"', DC.M]])}
+      ${codeLine(36, 172, [['print', DC.K], [' greet', DC.F], ['("Alice")', DC.D]])}
+      ${codeLine(36, 198, [['print', DC.K], [' greet', DC.F], ['("Bob", "Hey")', DC.D]])}
+      ${termPanel(370, 20, 190, 260)}
+      <text x="384" y="110" font-family="monospace" font-size="17" fill="#ED8936" font-weight="bold" class="ivx-fnr1">Hi, Alice!</text>
+      <text x="384" y="170" font-family="monospace" font-size="17" fill="#ED8936" font-weight="bold" class="ivx-fnr2">Hey, Bob!</text>
+      <text x="384" y="210" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-fnr2">greeting overridden</text>
+    `),
+  },
+  {
+    id: 'class', label: 'class', color: DC.C,
+    tagline: 'Define a blueprint for objects',
+    node: () => nodeShape('ellipse', 'Counter', '#92700a'),
+    insert: 'class ',
+    svgFn: () => mkSvg(`
+      <style>
+        @keyframes ivx-clinst{0%,18%,100%{opacity:0}28%,92%{opacity:1}}
+        @keyframes ivx-clcall{0%,45%,100%{opacity:0}55%,92%{opacity:1}}
+        @keyframes ivx-clout{0%,62%,100%{opacity:0}72%,92%{opacity:1}}
+        .ivx-clinst{animation:ivx-clinst 8s ease infinite}
+        .ivx-clcall{animation:ivx-clcall 8s ease infinite}
+        .ivx-clout{animation:ivx-clout 8s ease infinite}
+      </style>
+      ${codePanel(310, 260)}
+      <rect x="28" y="58" width="294" height="182" rx="4" fill="${DC.C}" fill-opacity=".04" stroke="${DC.C}" stroke-opacity=".15"/>
+      ${codeLine(36, 78,  [['class', DC.C], [' Counter', DC.D]])}
+      ${codeLine(50, 100, [['init', DC.F], ['(start', DC.D], ['? ', DC.K], ['0', DC.N], [')', DC.D]])}
+      ${codeLine(50, 122, [['fun', DC.F], [' bump', DC.F], ['()', DC.D]])}
+      ${codeLine(64, 144, [['make', DC.K], [' self', DC.C], ['.', DC.D], ['start ', DC.V], ['+ 1', DC.K]])}
+      ${codeLine(50, 166, [['fun', DC.F], [' value', DC.F], ['()', DC.D]])}
+      ${codeLine(64, 188, [['give', DC.K], [' self', DC.C], ['.', DC.D], ['start', DC.V]])}
+      ${termPanel(330, 20, 240, 260)}
+      <text x="344" y="72"  font-family="monospace" font-size="11" fill="${DC.M}">make c Counter(10)</text>
+      <rect x="336" y="80" width="224" height="54" rx="4" fill="#1a1a2e" stroke="#3a3a5c"/>
+      <text x="348" y="100" font-family="monospace" font-size="11" fill="${DC.M}">start = 10</text>
+      <text x="348" y="120" font-family="monospace" font-size="10" fill="#4b5563">methods: bump, value</text>
+      <text x="344" y="160" font-family="monospace" font-size="11" fill="${DC.M}">c.bump()  c.bump()</text>
+      <text x="344" y="178" font-family="monospace" font-size="11" fill="${DC.M}">say c.value()</text>
+      <text x="344" y="224" font-family="monospace" font-size="28" fill="#ED8936" font-weight="bold">12</text>
+      <text x="344" y="248" font-family="monospace" font-size="10" fill="${DC.M}">10 + 1 + 1 = 12</text>
+    `),
+  },
+  {
+    id: 'try', label: 'try / err', color: '#f59e0b',
+    tagline: 'Catch and handle runtime errors',
+    node: () => nodeShape('rect', 'try', '#1e2d3e', '#f59e0b'),
+    insert: 'try\n  \nerr e\n  ',
+    svgFn: () => mkSvg(`
+      <style>
+        @keyframes ivx-tryok{0%,8%,55%,100%{opacity:0}18%,50%{opacity:1}}
+        @keyframes ivx-tryerr{0%,58%,100%{opacity:0}68%,94%{opacity:1}}
+        @keyframes ivx-trycont{0%,30%,100%{opacity:0}40%,92%{opacity:1}}
+        @keyframes ivx-trycont2{0%,80%,100%{opacity:0}88%,94%{opacity:1}}
+        @keyframes ivx-tryshake{0%,68%,100%{transform:translateX(0)}71%{transform:translateX(-4px)}74%{transform:translateX(4px)}77%{transform:translateX(-3px)}80%{transform:translateX(0)}}
+        .ivx-tryok{animation:ivx-tryok 9s ease infinite}
+        .ivx-tryerr{animation:ivx-tryerr 9s ease infinite}
+        .ivx-trycont{animation:ivx-trycont 9s ease infinite}
+        .ivx-trycont2{animation:ivx-trycont2 9s ease infinite}
+        .ivx-tryshake{animation:ivx-tryshake 9s ease infinite;transform-origin:455px 180px}
+      </style>
+      ${codePanel(330, 260)}
+      <rect x="28" y="58" width="6" height="76" rx="3" fill="#f59e0b" fill-opacity=".5"/>
+      ${codeLine(36, 78,  [['try', '#f59e0b']])}
+      ${codeLine(50, 104, [['make', DC.K], [' data ', DC.V], ['https://api.x.com', '#56b6c2']])}
+      ${codeLine(50, 128, [['print', DC.K], [' data', DC.V]])}
+      <rect x="28" y="140" width="6" height="64" rx="3" fill="#f87171" fill-opacity=".5"/>
+      ${codeLine(36, 160, [['err', '#f87171'], [' msg', DC.V]])}
+      ${codeLine(50, 184, [['print', DC.K], [' "Failed: ', DC.S], ['\u007bmsg\u007d', DC.V], ['"', DC.S]])}
+      ${codeLine(36, 224, [['print', DC.K], [' "done"', DC.S]])}
+      ${termPanel(370, 20, 190, 260)}
+      <text x="384" y="72"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-tryok">✓ fetch ok</text>
+      <text x="384" y="90"  font-family="monospace" font-size="11" fill="#ED8936" class="ivx-tryok">{ status: 200 }</text>
+      <text x="384" y="118" font-family="monospace" font-size="11" fill="#ED8936" class="ivx-trycont">done</text>
+      <g class="ivx-tryshake">
+        <rect x="372" y="140" width="180" height="28" rx="3" fill="#f87171" fill-opacity=".1" stroke="#f87171" stroke-opacity=".5" class="ivx-tryerr"/>
+        <text x="384" y="158" font-family="monospace" font-size="11" fill="#f87171" class="ivx-tryerr">Failed: network error</text>
+      </g>
+      <text x="384" y="196" font-family="monospace" font-size="11" fill="#ED8936" class="ivx-trycont2">done</text>
+      <text x="384" y="214" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-trycont2">always runs ↑</text>
+    `),
+  },
+  {
+    id: 'dot', label: 'dot', color: '#9ca3af',
+    tagline: 'Explicit connector — merge branches in the flowchart',
+    node: () => nodeShape('circle', '', '#bbb'),
+    insert: 'dot\n',
+    svgFn: () => mkSvg(`
+      <style>
+        @keyframes ivx-dtflow{from{stroke-dashoffset:120}60%,100%{stroke-dashoffset:0}}
+        @keyframes ivx-dtpulse{0%,100%{r:7;opacity:.6}50%{r:10;opacity:1}}
+        .ivx-dtflow{stroke-dasharray:120;animation:ivx-dtflow 3s ease infinite}
+        .ivx-dtpulse{animation:ivx-dtpulse 1.5s ease infinite}
+      </style>
+      ${codePanel(280, 260)}
+      ${codeLine(36, 82,  [['if', '#89b4fa'], [' x ', DC.V], ['> 10', '#89b4fa']])}
+      ${codeLine(50, 106, [['print', DC.K], [' "big"', DC.S]])}
+      ${codeLine(36, 130, [['else', '#89b4fa']])}
+      ${codeLine(50, 154, [['print', DC.K], [' "small"', DC.S]])}
+      <line x1="28" y1="166" x2="264" y2="166" stroke="#2a2a3e"/>
+      ${codeLine(36, 186, [['dot', '#9ca3af']])}
+      ${codeLine(36, 210, [['print', DC.K], [' "either way, done"', DC.S]])}
+      <g transform="translate(296,20)">
+        <rect width="264" height="260" rx="6" fill="#0d0d12" stroke="#2a2a40"/>
+        <text x="14" y="23" font-family="monospace" font-size="9" fill="#4b5563" letter-spacing="1">FLOWCHART</text>
+        <line x1="0" y1="30" x2="264" y2="30" stroke="#1e1e2e"/>
+        <polygon points="132,48 172,78 132,108 92,78" fill="#004b8d" stroke="#4a9eff" stroke-width="1.5"/>
+        <text x="132" y="82" font-family="monospace" font-size="9" fill="#fff" text-anchor="middle">x &gt; 10</text>
+        <path d="M 92 78 L 52 138" stroke="#4ade80" stroke-width="1.5" fill="none" class="ivx-dtflow"/>
+        <rect x="14" y="138" width="74" height="22" rx="3" fill="#1e2d3e" stroke="#4ade80" stroke-opacity=".5"/>
+        <text x="51" y="153" font-family="monospace" font-size="9" fill="${DC.D}" text-anchor="middle">"big"</text>
+        <path d="M 172 78 L 212 138" stroke="#f87171" stroke-width="1.5" fill="none" class="ivx-dtflow"/>
+        <rect x="176" y="138" width="74" height="22" rx="3" fill="#1e2d3e" stroke="#f87171" stroke-opacity=".5"/>
+        <text x="213" y="153" font-family="monospace" font-size="9" fill="${DC.D}" text-anchor="middle">"small"</text>
+        <path d="M 51 160 Q 51 200 132 200" stroke="#9ca3af" stroke-width="1.5" fill="none" class="ivx-dtflow"/>
+        <path d="M 213 160 Q 213 200 132 200" stroke="#9ca3af" stroke-width="1.5" fill="none" class="ivx-dtflow"/>
+        <circle cx="132" cy="200" class="ivx-dtpulse" fill="#bbb"/>
+        <text x="132" y="234" font-family="monospace" font-size="9" fill="#6b7280" text-anchor="middle">dot — merge point</text>
+      </g>
+    `),
+  },
+  {
+    id: 'wait', label: 'wait', color: DC.G,
+    tagline: 'Pause or block until a trigger fires',
+    node: () => nodeShape('ellipse', 'wait email', '#7c4d00'),
+    insert: 'wait ',
+    svgFn: () => mkSvg(`
+      <style>
+        @keyframes ivx-wtidle{0%,8%,100%{opacity:0}16%,52%{opacity:1}58%{opacity:0}}
+        @keyframes ivx-wtfire{0%,55%,100%{opacity:0}65%,92%{opacity:1}}
+        @keyframes ivx-wtrow{0%,55%,100%{fill:#1a1a26}65%,92%{fill:rgba(74,222,128,0.18)}}
+        @keyframes ivx-wtreply{0%,72%,100%{opacity:0}80%,92%{opacity:1}}
+        .ivx-wtidle{animation:ivx-wtidle 9s ease infinite}
+        .ivx-wtfire{animation:ivx-wtfire 9s ease infinite}
+        .ivx-wtrow{animation:ivx-wtrow 9s ease infinite}
+        .ivx-wtreply{animation:ivx-wtreply 9s ease infinite}
+      </style>
+      ${codePanel(310, 250)}
+      ${codeLine(36, 82,  [['wait every', DC.G], [' email', DC.D]])}
+      ${codeLine(50, 104, [['by', DC.K], [' "boss@example.com"', DC.S]])}
+      ${codeLine(50, 128, [['make', DC.K], [' subj ', DC.V], ['request', DC.D], ['["subject"]', DC.M]])}
+      ${codeLine(50, 152, [['email', DC.G], [' "boss@example.com"', DC.S]])}
+      ${codeLine(64, 174, [['subject', DC.M], [' "Re: \u007bsubj\u007d"', DC.S]])}
+      ${codeLine(64, 196, [['body', DC.M], [' "On it!"', DC.S]])}
+      ${termPanel(330, 20, 240, 260, 'INBOX')}
+      <text x="344" y="76"  font-family="monospace" font-size="11" fill="${DC.M}">⏳ waiting for email…</text>
+      <rect x="338" y="88"  width="224" height="42" rx="3"/>
+      <text x="350" y="106" font-family="monospace" font-size="10" fill="${DC.G}" font-weight="bold">From: boss@example.com</text>
+      <text x="350" y="122" font-family="monospace" font-size="10" fill="${DC.D}">Subject: deploy today?</text>
+      <rect x="338" y="152" width="224" height="42" rx="3" fill="#1a2e1a" stroke="${DC.G}" stroke-opacity=".5"/>
+      <text x="350" y="170" font-family="monospace" font-size="10" fill="${DC.G}" font-weight="bold">Auto-reply sent ✓</text>
+      <text x="350" y="186" font-family="monospace" font-size="10" fill="${DC.M}">Re: deploy today? → "On it!"</text>
+    `),
+  },
+  {
+    id: 'ask', label: 'ask', color: DC.A,
+    tagline: 'Call an AI model and get a response',
+    node: () => nodeShape('rect', 'ask gemini', '#1e2d3e'),
+    insert: 'ask gemini ',
+    svgFn: () => mkSvg(`
+      <style>
+        @keyframes ivx-aksend{0%,10%,100%{opacity:0}20%,45%{opacity:1}55%{opacity:0}}
+        @keyframes ivx-akd1{0%,25%,100%{opacity:0}35%{opacity:1}50%{opacity:0}}
+        @keyframes ivx-akd2{0%,30%,100%{opacity:0}40%{opacity:1}55%{opacity:0}}
+        @keyframes ivx-akd3{0%,35%,100%{opacity:0}45%{opacity:1}60%{opacity:0}}
+        @keyframes ivx-akresp{0%,55%,100%{opacity:0}65%,92%{opacity:1}}
+        .ivx-aksend{animation:ivx-aksend 8s ease infinite}
+        .ivx-akd1{animation:ivx-akd1 8s ease infinite}
+        .ivx-akd2{animation:ivx-akd2 8s ease infinite}
+        .ivx-akd3{animation:ivx-akd3 8s ease infinite}
+        .ivx-akresp{animation:ivx-akresp 8s ease infinite}
+      </style>
+      ${codePanel(310, 200)}
+      ${codeLine(36, 82,  [['key', DC.K], [' "my-gemini-key"', DC.S]])}
+      ${codeLine(36, 108, [['make', DC.K], [' result ', DC.V], ['ask', DC.A], [' gemini', DC.D]])}
+      ${codeLine(50, 132, [['"Summarise computing history"', DC.S]])}
+      ${codeLine(36, 158, [['print', DC.K], [' result', DC.V]])}
+      ${termPanel(330, 20, 240, 270)}
+      <rect x="342" y="62" width="214" height="24" rx="4" fill="${DC.A}" fill-opacity=".12" stroke="${DC.A}" stroke-opacity=".4"/>
+      <text x="352" y="77" font-family="monospace" font-size="10" fill="${DC.A}">Summarise computing history</text>
+      <circle cx="360" cy="108" r="5" fill="${DC.A}" class="ivx-akd1"/>
+      <circle cx="378" cy="108" r="5" fill="${DC.A}" class="ivx-akd2"/>
+      <circle cx="396" cy="108" r="5" fill="${DC.A}" class="ivx-akd3"/>
+      <rect x="342" y="68" width="214" height="118" rx="4" fill="#1a1a2e" stroke="#3a3a5c"/>
+      <text x="352" y="88"  font-family="monospace" font-size="10" fill="${DC.D}">Computing began with</text>
+      <text x="352" y="104" font-family="monospace" font-size="10" fill="${DC.D}">Babbage's Analytical</text>
+      <text x="352" y="120" font-family="monospace" font-size="10" fill="${DC.D}">Engine in the 1830s.</text>
+      <text x="352" y="136" font-family="monospace" font-size="10" fill="${DC.D}">ENIAC (1945) was the</text>
+      <text x="352" y="152" font-family="monospace" font-size="10" fill="${DC.D}">first electronic computer.</text>
+      <text x="352" y="168" font-family="monospace" font-size="10" fill="${DC.D}">Silicon chips followed…</text>
+    `),
+  },
+  {
+    id: 'email', label: 'email', color: DC.G,
+    tagline: 'Send an email via Gmail',
+    node: () => nodeShape('rect', 'email to', '#1e2d3e'),
+    insert: 'email "" subject "" body ',
+    svgFn: () => mkSvg(`
+      <style>
+        @keyframes ivx-emup{0%,15%{opacity:0;transform:translateY(0)}25%{opacity:1;transform:translateY(0)}55%{opacity:1;transform:translateY(-50px)}65%{opacity:0}}
+        @keyframes ivx-eminbox{0%,60%,100%{opacity:0}70%,92%{opacity:1}}
+        .ivx-emup{animation:ivx-emup 7s ease infinite}
+        .ivx-eminbox{animation:ivx-eminbox 7s ease infinite}
+      </style>
+      ${codePanel(310, 220)}
+      ${codeLine(36, 82,  [['make', DC.K], [' to ', DC.V], ['"alice@example.com"', DC.S]])}
+      ${codeLine(36, 108, [['email', DC.G], [' to', DC.V]])}
+      ${codeLine(50, 132, [['subject', DC.M], [' "Welcome!"', DC.S]])}
+      ${codeLine(50, 156, [['body', DC.M], [' "Thanks for joining us."', DC.S]])}
+      <g class="ivx-emup">
+        <rect x="115" y="178" width="150" height="40" rx="4" fill="#1a2e1a" stroke="${DC.G}" stroke-width="1.5"/>
+        <text x="126" y="195" font-family="monospace" font-size="10" fill="${DC.G}" font-weight="bold">Welcome!</text>
+        <text x="126" y="210" font-family="monospace" font-size="9"  fill="${DC.M}">Thanks for joining us.</text>
+      </g>
+      ${termPanel(330, 20, 240, 260, 'INBOX · alice@…')}
+      <rect x="338" y="68" width="224" height="50" rx="4" fill="#1a2e1a" stroke="${DC.G}" stroke-opacity=".6"/>
+      <text x="350" y="88"  font-family="monospace" font-size="11" fill="${DC.G}" font-weight="bold">Welcome! ✓</text>
+      <text x="350" y="106" font-family="monospace" font-size="10" fill="${DC.M}">Thanks for joining us.</text>
+    `),
+  },
+  {
+    id: 'sheets', label: 'sheets', color: DC.G,
+    tagline: 'Read and write Google Sheets',
+    node: () => nodeShape('rect', 'sheets', '#1e2d3e'),
+    insert: 'sheets ',
+    svgFn: () => mkSvg(`
+      <style>
+        @keyframes ivx-shread{0%,8%,100%{opacity:0}18%,92%{opacity:1}}
+        @keyframes ivx-shappend{0%,55%,100%{fill:#1a1a26}65%,90%{fill:rgba(74,222,128,0.18)}}
+        @keyframes ivx-shapptext{0%,58%,100%{opacity:0}68%,90%{opacity:1}}
+        .ivx-shread{animation:ivx-shread 8s ease infinite}
+        .ivx-shappend{animation:ivx-shappend 8s ease infinite}
+        .ivx-shapptext{animation:ivx-shapptext 8s ease infinite}
+      </style>
+      ${codePanel(300, 240)}
+      ${codeLine(36, 82,  [['make', DC.K], [' s ', DC.V], ['sheets', DC.G], [' "Sales"', DC.S]])}
+      ${codeLine(36, 106, [['make', DC.K], [' data ', DC.V], ['s', DC.V], ['.read', DC.F], ['("A1:C5")', DC.D]])}
+      ${codeLine(36, 130, [['for', DC.K], [' row ', DC.V], ['in', DC.K], [' data', DC.V]])}
+      ${codeLine(50, 154, [['print', DC.K], [' row', DC.V], ['[0]', DC.M]])}
+      ${codeLine(36, 178, [['s', DC.V], ['.append', DC.F], ['(["Eve", 99, "West"])', DC.D]])}
+      <g transform="translate(316,20)">
+        <rect width="244" height="260" rx="6" fill="#0d0d12" stroke="#2a2a40"/>
+        <text x="14" y="23" font-family="monospace" font-size="9" fill="${DC.G}" letter-spacing="1">Sales</text>
+        <line x1="0" y1="30" x2="244" y2="30" stroke="#1e1e2e"/>
+        <rect x="8" y="36" width="228" height="20" rx="2" fill="#1e3a1e"/>
+        <text x="16" y="50" font-family="monospace" font-size="9" fill="${DC.G}">Name</text>
+        <text x="76" y="50" font-family="monospace" font-size="9" fill="${DC.G}">Sales</text>
+        <text x="126" y="50" font-family="monospace" font-size="9" fill="${DC.G}">Region</text>
+        <rect x="8" y="60" width="228" height="20" rx="2" fill="#1a1a26"/>
+        <text x="16" y="74" font-family="monospace" font-size="9" fill="${DC.D}">Alice</text>
+        <text x="76" y="74" font-family="monospace" font-size="9" fill="${DC.N}">1200</text>
+        <text x="126" y="74" font-family="monospace" font-size="9" fill="${DC.D}">West</text>
+        <rect x="8" y="82" width="228" height="20" rx="2" fill="#1a1a26"/>
+        <text x="16" y="96" font-family="monospace" font-size="9" fill="${DC.D}">Bob</text>
+        <text x="76" y="96" font-family="monospace" font-size="9" fill="${DC.N}">980</text>
+        <text x="126" y="96" font-family="monospace" font-size="9" fill="${DC.D}">East</text>
+        <rect x="8" y="104" width="228" height="20" rx="2" fill="#1a1a26"/>
+        <text x="16" y="118" font-family="monospace" font-size="9" fill="${DC.D}">Carol</text>
+        <text x="76" y="118" font-family="monospace" font-size="9" fill="${DC.N}">1450</text>
+        <text x="126" y="118" font-family="monospace" font-size="9" fill="${DC.D}">West</text>
+        <rect x="8" y="126" width="228" height="20" rx="2"/>
+        <text x="16"  y="140" font-family="monospace" font-size="9" fill="${DC.G}">Eve</text>
+        <text x="76"  y="140" font-family="monospace" font-size="9" fill="${DC.G}">99</text>
+        <text x="126" y="140" font-family="monospace" font-size="9" fill="${DC.G}">West ← new</text>
+      </g>
+    `),
+  },
+  {
+    id: 'key', label: 'key', color: DC.K,
+    tagline: 'Set a global API credential',
+    node: () => nodeShape('rect', 'key', '#1e2d3e'),
+    insert: 'key ',
+    svgFn: () => mkSvg(`
+      <style>
+        @keyframes ivx-keyr1{0%,20%,100%{opacity:0}30%,92%{opacity:1}}
+        @keyframes ivx-keyr2{0%,50%,100%{opacity:0}60%,92%{opacity:1}}
+        .ivx-keyr1{animation:ivx-keyr1 7s ease infinite}
+        .ivx-keyr2{animation:ivx-keyr2 7s ease infinite}
+      </style>
+      ${codePanel(330, 200)}
+      ${codeLine(36, 82,  [['key', DC.K], [' "my-gemini-api-key"', DC.S]])}
+      ${codeLine(36, 108, [['make', DC.K], [' r1 ', DC.V], ['ask', DC.A], [' gemini ', DC.D], ['"Hello!"', DC.S]])}
+      ${codeLine(36, 134, [['make', DC.K], [' r2 ', DC.V], ['ask', DC.A], [' gemini ', DC.D], ['"Goodbye!"', DC.S]])}
+      ${termPanel(370, 20, 190, 260)}
+      <text x="384" y="68"  font-family="monospace" font-size="10" fill="${DC.M}">🔑 credential set</text>
+      <text x="384" y="100" font-family="monospace" font-size="12" fill="#ED8936" class="ivx-keyr1">Hello!</text>
+      <text x="384" y="130" font-family="monospace" font-size="12" fill="#ED8936" class="ivx-keyr2">Goodbye!</text>
+      <text x="384" y="170" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-keyr2">both calls used</text>
+      <text x="384" y="184" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-keyr2">the same key</text>
+    `),
+  },
+  {
+    id: 'from', label: 'from … use', color: DC.G,
+    tagline: 'Import and alias functions from a URL',
+    node: () => nodeShape('ellipse', 'from url', '#007f00'),
+    insert: 'from \n  use  as \n  use  as ',
+    svgFn: () => mkSvg(`
+      <style>
+        @keyframes ivx-fra{0%,8%,100%{opacity:0}18%,92%{opacity:1}}
+        @keyframes ivx-frb{0%,30%,100%{opacity:0}40%,92%{opacity:1}}
+        @keyframes ivx-frc{0%,52%,100%{opacity:0}62%,92%{opacity:1}}
+        @keyframes ivx-frd{0%,70%,100%{opacity:0}80%,92%{opacity:1}}
+        .ivx-fra{animation:ivx-fra 9s ease infinite}
+        .ivx-frb{animation:ivx-frb 9s ease infinite}
+        .ivx-frc{animation:ivx-frc 9s ease infinite}
+        .ivx-frd{animation:ivx-frd 9s ease infinite}
+      </style>
+      ${codePanel(370, 260)}
+      ${codeLine(36, 78,  [['from', DC.G], [' https://ivxs.tech/std/math', '#56b6c2']])}
+      ${codeLine(50, 102, [['use', DC.G], [' cosine ', DC.F], ['as', DC.K], [' c', DC.F]])}
+      ${codeLine(50, 126, [['use', DC.G], [' sine ', DC.F], ['as', DC.K], [' s', DC.F]])}
+      ${codeLine(50, 150, [['use', DC.G], [' fibonacci ', DC.F], ['as', DC.K], [' fib', DC.F]])}
+      ${codeLine(36, 186, [['print', DC.K], [' c', DC.F], ['(0)', DC.D]])}
+      ${codeLine(36, 210, [['print', DC.K], [' s', DC.F], ['(0)', DC.D]])}
+      ${codeLine(36, 234, [['print', DC.K], [' fib', DC.F], ['(10)', DC.D]])}
+      ${termPanel(390, 20, 170, 260)}
+      <text x="404" y="100" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-fra">1.0</text>
+      <text x="404" y="118" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-fra">cosine(0)</text>
+      <text x="404" y="148" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-frb">0.0</text>
+      <text x="404" y="166" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-frb">sine(0)</text>
+      <text x="404" y="196" font-family="monospace" font-size="13" fill="#ED8936" class="ivx-frc">55</text>
+      <text x="404" y="214" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-frc">fibonacci(10)</text>
+      <text x="404" y="244" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-frd">c, s, fib — all</text>
+      <text x="404" y="258" font-family="monospace" font-size="10" fill="${DC.M}" class="ivx-frd">local aliases</text>
+    `, 580, 300),
+  },
+
+  // ── type-string ─────────────────────────────────────────────────────────────
+  {
+    id: 'type-string', label: 'string', color: '#ce9178',
+    tagline: 'Text in double quotes — supports interpolation with {var}',
+    node: () => nodeShape('rect', '"Hello"', '#1e2d3e'),
+    insert: '"" ',
+    svgFn: () => {
+      const body = `
+      ${codePanel(310, 280)}
+      ${codeLine(36, 78,  [['make ', DC.K], ['a ', DC.V], ['"Hello"', DC.S]])}
+      ${codeLine(36, 100, [['make ', DC.K], ['b ', DC.V], ['"World"', DC.S]])}
+      ${codeLine(36, 122, [['make ', DC.K], ['c ', DC.V], ['"\\u007ba\\u007d, \\u007bb\\u007d!"', DC.S]])}
+      ${codeLine(36, 152, [['print ', DC.K], ['size', DC.F], ['(a)', DC.D]])}
+      ${codeLine(36, 174, [['print ', DC.K], ['upper', DC.F], ['(a)', DC.D]])}
+      ${codeLine(36, 196, [['print ', DC.K], ['a ', DC.V], ['+ " " + ', DC.K], ['b', DC.V]])}
+      ${codeLine(36, 218, [['print ', DC.K], ['a', DC.V], ['[0]', DC.M]])}
+      ${codeLine(36, 248, [['note + size() upper() lower()', DC.M]])}
+      ${codeLine(36, 262, [['note split() trim() replace()', DC.M]])}
+      ${termPanel(330, 20, 230, 280)}
+      <text x="344" y="78"  font-family="monospace" font-size="11" fill="${DC.M}">c =</text>
+      <text x="344" y="94"  font-family="monospace" font-size="13" fill="${DC.S}">"Hello, World!"</text>
+      <text x="344" y="122" font-family="monospace" font-size="11" fill="${DC.M}">size(a) =</text>
+      <text x="344" y="138" font-family="monospace" font-size="13" fill="${DC.N}">5</text>
+      <text x="344" y="166" font-family="monospace" font-size="13" fill="${DC.S}">"HELLO"</text>
+      <text x="344" y="194" font-family="monospace" font-size="13" fill="${DC.S}">"Hello World"</text>
+      <text x="344" y="222" font-family="monospace" font-size="13" fill="${DC.S}">"H"</text>
+      `;
+      return mkSvg(body, 580, 300);
+    },
+  },
+
+  // ── type-integer ────────────────────────────────────────────────────────────
+  {
+    id: 'type-integer', label: 'integer', color: '#b5cea8',
+    tagline: 'Whole numbers — + - * // % ^ and comparisons',
+    node: () => nodeShape('rect', '42', '#1e2d3e'),
+    insert: '0',
+    svgFn: () => {
+      const body = `
+      ${codePanel(310, 260)}
+      ${codeLine(36, 78,  [['make ', DC.K], ['a ', DC.V], ['17', DC.N]])}
+      ${codeLine(36, 100, [['make ', DC.K], ['b ', DC.V], ['5', DC.N]])}
+      ${codeLine(36, 130, [['print ', DC.K], ['a ', DC.V], ['+ b', DC.K]])}
+      ${codeLine(36, 152, [['print ', DC.K], ['a ', DC.V], ['// b', DC.K]])}
+      ${codeLine(36, 174, [['print ', DC.K], ['a ', DC.V], ['% b', DC.K]])}
+      ${codeLine(36, 196, [['print ', DC.K], ['a ', DC.V], ['^ 2', DC.K]])}
+      ${codeLine(36, 226, [['note // is floor division', DC.M]])}
+      ${codeLine(36, 240, [['note ^ is exponent', DC.M]])}
+      ${termPanel(330, 20, 230, 260)}
+      <text x="344" y="100" font-family="monospace" font-size="13" fill="${DC.N}">22</text>
+      <text x="344" y="120" font-family="monospace" font-size="11" fill="${DC.M}">a + b</text>
+      <text x="344" y="148" font-family="monospace" font-size="13" fill="${DC.N}">3</text>
+      <text x="344" y="168" font-family="monospace" font-size="11" fill="${DC.M}">floor div</text>
+      <text x="344" y="196" font-family="monospace" font-size="13" fill="${DC.N}">2</text>
+      <text x="344" y="216" font-family="monospace" font-size="11" fill="${DC.M}">remainder</text>
+      <text x="344" y="244" font-family="monospace" font-size="13" fill="${DC.N}">289</text>
+      `;
+      return mkSvg(body, 580, 280);
+    },
+  },
+
+  // ── type-float ──────────────────────────────────────────────────────────────
+  {
+    id: 'type-float', label: 'float', color: '#14b8a6',
+    tagline: 'Decimal numbers — use flt() to convert, / always gives float',
+    node: () => nodeShape('rect', '3.14', '#1e2d3e'),
+    insert: '0.0',
+    svgFn: () => {
+      const body = `
+      ${codePanel(310, 240)}
+      ${codeLine(36, 78,  [['make ', DC.K], ['x ', DC.V], ['3.14', DC.N]])}
+      ${codeLine(36, 100, [['make ', DC.K], ['y ', DC.V], ['flt', DC.F], ['(2)', DC.D]])}
+      ${codeLine(36, 130, [['print ', DC.K], ['x ', DC.V], ['* 2', DC.K]])}
+      ${codeLine(36, 152, [['print ', DC.K], ['round', DC.F], ['(x, 1)', DC.D]])}
+      ${codeLine(36, 174, [['print ', DC.K], ['int', DC.F], ['(x)', DC.D]])}
+      ${codeLine(36, 196, [['print ', DC.K], ['7 / 2', DC.K]])}
+      ${codeLine(36, 222, [['note / always gives float', DC.M]])}
+      ${codeLine(36, 236, [['note // always gives integer', DC.M]])}
+      ${termPanel(330, 20, 230, 240)}
+      <text x="344" y="100" font-family="monospace" font-size="13" fill="#14b8a6">6.28</text>
+      <text x="344" y="128" font-family="monospace" font-size="13" fill="#14b8a6">3.1</text>
+      <text x="344" y="156" font-family="monospace" font-size="13" fill="${DC.N}">3</text>
+      <text x="344" y="184" font-family="monospace" font-size="13" fill="#14b8a6">3.5</text>
+      `;
+      return mkSvg(body, 580, 260);
+    },
+  },
+
+  // ── type-boolean ────────────────────────────────────────────────────────────
+  {
+    id: 'type-boolean', label: 'boolean', color: '#4a7fff',
+    tagline: 'yes or no — combine with and, or, not',
+    node: () => nodeShape('rect', 'yes / no', '#1e2d3e'),
+    insert: 'yes',
+    svgFn: () => {
+      const body = `
+      ${codePanel(310, 260)}
+      ${codeLine(36, 78,  [['make ', DC.K], ['a ', DC.V], ['yes', DC.B]])}
+      ${codeLine(36, 100, [['make ', DC.K], ['b ', DC.V], ['no', DC.B]])}
+      ${codeLine(36, 130, [['print ', DC.K], ['a ', DC.V], ['and ', DC.K], ['b', DC.V]])}
+      ${codeLine(36, 152, [['print ', DC.K], ['a ', DC.V], ['or ', DC.K], ['b', DC.V]])}
+      ${codeLine(36, 174, [['print ', DC.K], ['not ', DC.K], ['a', DC.V]])}
+      ${codeLine(36, 196, [['print ', DC.K], ['10 > 5', DC.K]])}
+      ${codeLine(36, 218, [['print ', DC.K], ['"x" ', DC.S], ['in ', DC.K], ['"text"', DC.S]])}
+      ${termPanel(330, 20, 230, 260)}
+      <text x="344" y="100" font-family="monospace" font-size="13" fill="${DC.B}">no</text>
+      <text x="344" y="128" font-family="monospace" font-size="13" fill="${DC.B}">yes</text>
+      <text x="344" y="156" font-family="monospace" font-size="13" fill="${DC.B}">no</text>
+      <text x="344" y="184" font-family="monospace" font-size="13" fill="${DC.B}">yes</text>
+      <text x="344" y="212" font-family="monospace" font-size="13" fill="${DC.B}">yes</text>
+      `;
+      return mkSvg(body, 580, 280);
+    },
+  },
+
+  // ── type-none ───────────────────────────────────────────────────────────────
+  {
+    id: 'type-none', label: 'none', color: '#ef4444',
+    tagline: 'The absence of a value — test with = none',
+    node: () => nodeShape('rect', 'none', '#1e2d3e'),
+    insert: 'none',
+    svgFn: () => {
+      const body = `
+      ${codePanel(310, 220)}
+      ${codeLine(36, 78,  [['make ', DC.K], ['x ', DC.V], ['none', DC.M]])}
+      ${codeLine(36, 108, [['if ', DC.K], ['x ', DC.V], ['= none', DC.K]])}
+      ${codeLine(50, 130, [['print ', DC.K], ['"nothing here"', DC.S]])}
+      ${codeLine(36, 158, [['make ', DC.K], ['x ', DC.V], ['42', DC.N]])}
+      ${codeLine(36, 180, [['if ', DC.K], ['x ', DC.V], ['!= none', DC.K]])}
+      ${codeLine(50, 202, [['print ', DC.K], ['"got a value"', DC.S]])}
+      ${termPanel(330, 20, 230, 220)}
+      <text x="344" y="96"  font-family="monospace" font-size="13" fill="#ef4444">none</text>
+      <text x="344" y="124" font-family="monospace" font-size="13" fill="${DC.S}">"nothing here"</text>
+      <text x="344" y="168" font-family="monospace" font-size="13" fill="${DC.N}">42</text>
+      <text x="344" y="196" font-family="monospace" font-size="13" fill="${DC.S}">"got a value"</text>
+      `;
+      return mkSvg(body, 580, 240);
+    },
+  },
+
+  // ── type-list ───────────────────────────────────────────────────────────────
+  {
+    id: 'type-list', label: 'list', color: '#9ca3af',
+    tagline: 'Ordered collection — index with [n], iterate with for',
+    node: () => nodeShape('rect', '[1, 2, 3]', '#1e2d3e'),
+    insert: '[]',
+    svgFn: () => {
+      const body = `
+      ${codePanel(310, 260)}
+      ${codeLine(36, 78,  [['make ', DC.K], ['nums ', DC.V], ['[10, 20, 30]', DC.M]])}
+      ${codeLine(36, 100, [['print ', DC.K], ['nums', DC.V], ['[0]', DC.M]])}
+      ${codeLine(36, 122, [['print ', DC.K], ['size', DC.F], ['(nums)', DC.D]])}
+      ${codeLine(36, 144, [['push', DC.F], ['(nums, 40)', DC.D]])}
+      ${codeLine(36, 166, [['print ', DC.K], ['nums', DC.V]])}
+      ${codeLine(36, 188, [['print ', DC.K], ['nums', DC.V], ['[1:3]', DC.M]])}
+      ${codeLine(36, 218, [['note push pop head drop reverse', DC.M]])}
+      ${termPanel(330, 20, 230, 260)}
+      <text x="344" y="100" font-family="monospace" font-size="13" fill="#9ca3af">10</text>
+      <text x="344" y="128" font-family="monospace" font-size="13" fill="${DC.N}">3</text>
+      <text x="344" y="168" font-family="monospace" font-size="12" fill="#9ca3af">[10, 20, 30, 40]</text>
+      <text x="344" y="196" font-family="monospace" font-size="13" fill="#9ca3af">[20, 30]</text>
+      `;
+      return mkSvg(body, 580, 280);
+    },
+  },
+
+  // ── type-dict ───────────────────────────────────────────────────────────────
+  {
+    id: 'type-dict', label: 'dict', color: '#7a4d2e',
+    tagline: 'Key-value pairs — access with ["key"], check with in',
+    node: () => nodeShape('rect', '{key: val}', '#1e2d3e'),
+    insert: '{}',
+    svgFn: () => {
+      const pairs = '{"name": "Alice", "age": 30}';
+      const body = `
+      ${codePanel(310, 240)}
+      ${codeLine(36, 78,  [['make ', DC.K], ['p ', DC.V], [pairs, DC.M]])}
+      ${codeLine(36, 100, [['print ', DC.K], ['p', DC.V], ['["name"]', DC.M]])}
+      ${codeLine(36, 122, [['make ', DC.K], ['p', DC.V], ['["age"] ', DC.K], ['31', DC.N]])}
+      ${codeLine(36, 144, [['print ', DC.K], ['"age" ', DC.S], ['in ', DC.K], ['p', DC.V]])}
+      ${codeLine(36, 166, [['print ', DC.K], ['keys', DC.F], ['(p)', DC.D]])}
+      ${codeLine(36, 188, [['print ', DC.K], ['size', DC.F], ['(p)', DC.D]])}
+      ${codeLine(36, 214, [['note keys() values() size() in', DC.M]])}
+      ${termPanel(330, 20, 230, 240)}
+      <text x="344" y="100" font-family="monospace" font-size="13" fill="${DC.S}">"Alice"</text>
+      <text x="344" y="144" font-family="monospace" font-size="13" fill="${DC.B}">yes</text>
+      <text x="344" y="172" font-family="monospace" font-size="12" fill="#9ca3af">["name", "age"]</text>
+      <text x="344" y="200" font-family="monospace" font-size="13" fill="${DC.N}">2</text>
+      `;
+      return mkSvg(body, 580, 260);
+    },
+  },
+
+  // ── cf-arrows ────────────────────────────────────────────────────────────────
+  {
+    id: 'cf-arrows', label: 'Arrows & Boxes', color: '#a78bfa',
+    tagline: 'Nodes hide complexity. Arrows show direction over time.',
+    node: () => nodeShape('rect', 'scan barcode', '#1e2d3e'),
+    insert: '',
+    svgFn: () => {
+      const body = `
+      <rect x="10" y="10" width="560" height="260" rx="6" fill="#0d0d12" stroke="#1e1e2e"/>
+
+      <!-- Box 1: scan barcode -->
+      <rect x="40" y="100" width="140" height="80" rx="6" fill="#1e2d3e" stroke="#4a9eff" stroke-width="1.5"/>
+      <text x="110" y="138" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="13" fill="#cdd6f4">scan barcode</text>
+      <text x="110" y="80" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">we don't need to</text>
+      <text x="110" y="93" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">know how it works</text>
+
+      <!-- Arrow -->
+      <line x1="180" y1="140" x2="240" y2="140" stroke="#4a9eff" stroke-width="2"/>
+      <polygon points="240,134 252,140 240,146" fill="#4a9eff"/>
+      <text x="213" y="130" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">direction</text>
+      <text x="213" y="160" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">= time</text>
+
+      <!-- Box 2: lookup price -->
+      <rect x="252" y="100" width="140" height="80" rx="6" fill="#1e2d3e" stroke="#4a9eff" stroke-width="1.5"/>
+      <text x="322" y="138" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="13" fill="#cdd6f4">lookup price</text>
+
+      <!-- Arrow -->
+      <line x1="392" y1="140" x2="452" y2="140" stroke="#4a9eff" stroke-width="2"/>
+      <polygon points="452,134 464,140 452,146" fill="#4a9eff"/>
+
+      <!-- Box 3: charge customer -->
+      <rect x="364" y="100" width="150" height="80" rx="6" fill="#1e2d3e" stroke="#4a9eff" stroke-width="1.5"/>
+      <text x="439" y="138" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="12" fill="#cdd6f4">charge customer</text>
+
+      <text x="290" y="230" text-anchor="middle" font-family="monospace" font-size="11" fill="#4a9eff">boxes = abstractions  •  arrows = time</text>
+      `;
+      return mkSvg(body, 580, 280);
+    },
+  },
+
+  // ── cf-steps ─────────────────────────────────────────────────────────────────
+  {
+    id: 'cf-steps', label: 'One Step at a Time', color: '#a78bfa',
+    tagline: 'Start → Process → Process → End. One in, one out.',
+    node: () => nodeShape('rect', 'buy groceries', '#1e2d3e'),
+    insert: '',
+    svgFn: () => {
+      const body = `
+      <rect x="10" y="10" width="560" height="280" rx="6" fill="#0d0d12" stroke="#1e1e2e"/>
+
+      <!-- Start -->
+      <ellipse cx="80" cy="100" rx="50" ry="22" fill="#007f00" stroke="#4ade80" stroke-width="1.5"/>
+      <text x="80" y="104" text-anchor="middle" dominant-baseline="middle" font-family="system-ui" font-size="12" fill="white">START</text>
+      <text x="80" y="134" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">0 in, 1 out</text>
+
+      <line x1="130" y1="100" x2="158" y2="100" stroke="#4a9eff" stroke-width="1.5"/>
+      <polygon points="158,95 168,100 158,105" fill="#4a9eff"/>
+
+      <!-- Step 1 -->
+      <rect x="168" y="80" width="110" height="40" rx="4" fill="#1e2d3e" stroke="#4a9eff" stroke-width="1.5"/>
+      <text x="223" y="100" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="11" fill="#cdd6f4">walk to store</text>
+      <text x="223" y="132" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">1 in, 1 out</text>
+
+      <line x1="278" y1="100" x2="306" y2="100" stroke="#4a9eff" stroke-width="1.5"/>
+      <polygon points="306,95 316,100 306,105" fill="#4a9eff"/>
+
+      <!-- Step 2 -->
+      <rect x="316" y="80" width="110" height="40" rx="4" fill="#1e2d3e" stroke="#4a9eff" stroke-width="1.5"/>
+      <text x="371" y="100" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="11" fill="#cdd6f4">buy groceries</text>
+
+      <line x1="426" y1="100" x2="454" y2="100" stroke="#4a9eff" stroke-width="1.5"/>
+      <polygon points="454,95 464,100 454,105" fill="#4a9eff"/>
+
+      <!-- End -->
+      <ellipse cx="510" cy="100" rx="50" ry="22" fill="#7f0000" stroke="#f87171" stroke-width="1.5"/>
+      <text x="510" y="104" text-anchor="middle" dominant-baseline="middle" font-family="system-ui" font-size="12" fill="white">END</text>
+      <text x="510" y="134" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">1 in, 0 out</text>
+
+      <!-- Legend -->
+      <text x="290" y="185" text-anchor="middle" font-family="monospace" font-size="11" fill="#6b7280">Node types, defined by their arrows:</text>
+      <ellipse cx="100" cy="225" rx="38" ry="16" fill="#007f00" stroke="#4ade80" stroke-width="1"/>
+      <text x="100" y="229" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="10" fill="white">Start</text>
+      <text x="100" y="250" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">0 in  1 out</text>
+
+      <rect x="208" y="210" width="90" height="30" rx="4" fill="#1e2d3e" stroke="#4a9eff" stroke-width="1.5"/>
+      <text x="253" y="228" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="10" fill="#cdd6f4">Process</text>
+      <text x="253" y="250" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">1 in  1 out</text>
+
+      <ellipse cx="420" cy="225" rx="38" ry="16" fill="#7f0000" stroke="#f87171" stroke-width="1"/>
+      <text x="420" y="229" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="10" fill="white">End</text>
+      <text x="420" y="250" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">1 in  0 out</text>
+      `;
+      return mkSvg(body, 580, 290);
+    },
+  },
+
+  // ── cf-fork ──────────────────────────────────────────────────────────────────
+  {
+    id: 'cf-fork', label: 'Forks in the Road', color: '#a78bfa',
+    tagline: 'Decision nodes have 2+ outgoing arrows — one per condition.',
+    node: () => nodeShape('diamond', 'in stock?', '#004b8d'),
+    insert: 'if ',
+    svgFn: () => {
+      const body = `
+      <rect x="10" y="10" width="560" height="270" rx="6" fill="#0d0d12" stroke="#1e1e2e"/>
+
+      <!-- Decision diamond -->
+      <polygon points="230,50 310,100 230,150 150,100" fill="#004b8d" stroke="#4a9eff" stroke-width="1.5"/>
+      <text x="230" y="104" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="12" fill="white">in stock?</text>
+      <text x="230" y="30" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">1 in,  2+ out</text>
+
+      <!-- Yes arrow → right -->
+      <line x1="310" y1="100" x2="380" y2="100" stroke="#4ade80" stroke-width="1.5"/>
+      <polygon points="380,95 392,100 380,105" fill="#4ade80"/>
+      <text x="343" y="90" text-anchor="middle" font-family="monospace" font-size="10" fill="#4ade80">yes</text>
+
+      <!-- Yes branch: ship it -->
+      <rect x="392" y="80" width="110" height="40" rx="4" fill="#1e2d3e" stroke="#4ade80" stroke-width="1.5"/>
+      <text x="447" y="100" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="11" fill="#cdd6f4">ship it</text>
+
+      <!-- No arrow → down -->
+      <line x1="230" y1="150" x2="230" y2="200" stroke="#f87171" stroke-width="1.5"/>
+      <polygon points="225,200 230,212 235,200" fill="#f87171"/>
+      <text x="248" y="182" font-family="monospace" font-size="10" fill="#f87171">no</text>
+
+      <!-- No branch: back order -->
+      <rect x="163" y="212" width="134" height="40" rx="4" fill="#1e2d3e" stroke="#f87171" stroke-width="1.5"/>
+      <text x="230" y="232" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="11" fill="#cdd6f4">back order</text>
+
+      <text x="80" y="100" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">incoming</text>
+      <line x1="50" y1="100" x2="148" y2="100" stroke="#4a9eff" stroke-width="1.5"/>
+      <polygon points="148,95 160,100 148,105" fill="#4a9eff"/>
+      `;
+      return mkSvg(body, 580, 280);
+    },
+  },
+
+  // ── cf-connector ─────────────────────────────────────────────────────────────
+  {
+    id: 'cf-connector', label: 'Connecting with Dots', color: '#a78bfa',
+    tagline: 'Connectors merge branches back together. Many in, one out.',
+    node: () => nodeShape('circle', '', '#bbb'),
+    insert: 'dot',
+    svgFn: () => {
+      const body = `
+      <rect x="10" y="10" width="560" height="290" rx="6" fill="#0d0d12" stroke="#1e1e2e"/>
+
+      <!-- Decision -->
+      <polygon points="130,80 190,120 130,160 70,120" fill="#004b8d" stroke="#4a9eff" stroke-width="1.5"/>
+      <text x="130" y="124" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="11" fill="white">paid?</text>
+
+      <!-- Yes branch -->
+      <line x1="190" y1="120" x2="240" y2="80" stroke="#4ade80" stroke-width="1.5"/>
+      <polygon points="236,74 248,78 242,88" fill="#4ade80"/>
+      <text x="207" y="90" font-family="monospace" font-size="9" fill="#4ade80">yes</text>
+      <rect x="248" y="58" width="100" height="36" rx="4" fill="#1e2d3e" stroke="#4ade80" stroke-width="1.5"/>
+      <text x="298" y="76" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="11" fill="#cdd6f4">ship order</text>
+
+      <!-- No branch -->
+      <line x1="190" y1="120" x2="240" y2="165" stroke="#f87171" stroke-width="1.5"/>
+      <polygon points="236,160 248,166 240,175" fill="#f87171"/>
+      <text x="207" y="158" font-family="monospace" font-size="9" fill="#f87171">no</text>
+      <rect x="248" y="148" width="100" height="36" rx="4" fill="#1e2d3e" stroke="#f87171" stroke-width="1.5"/>
+      <text x="298" y="166" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="11" fill="#cdd6f4">send invoice</text>
+
+      <!-- Arrows into connector -->
+      <line x1="348" y1="76" x2="400" y2="120" stroke="#4a9eff" stroke-width="1.5"/>
+      <line x1="348" y1="166" x2="400" y2="120" stroke="#4a9eff" stroke-width="1.5"/>
+
+      <!-- Connector dot -->
+      <circle cx="408" cy="120" r="10" fill="#bbb" stroke="#ccc" stroke-width="1.5"/>
+      <text x="408" y="148" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">many in</text>
+      <text x="408" y="160" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">one out</text>
+
+      <!-- Arrow out of connector -->
+      <line x1="418" y1="120" x2="478" y2="120" stroke="#4a9eff" stroke-width="1.5"/>
+      <polygon points="478,115 490,120 478,125" fill="#4a9eff"/>
+
+      <!-- Next step -->
+      <rect x="490" y="100" width="60" height="40" rx="4" fill="#1e2d3e" stroke="#4a9eff" stroke-width="1.5"/>
+      <text x="520" y="120" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="10" fill="#cdd6f4">update</text>
+      <text x="520" y="133" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="10" fill="#cdd6f4">records</text>
+
+      <text x="290" y="235" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">no condition needed — time only flows one way</text>
+      <text x="290" y="252" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">you never need more than 1 out because you can always</text>
+      <text x="290" y="266" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">split a multi-out node into decisions + connectors</text>
+      `;
+      return mkSvg(body, 580, 290);
+    },
+  },
+
+  // ── bc-yesno ─────────────────────────────────────────────────────────────────
+  {
+    id: 'bc-yesno', label: 'Yes and No', color: '#34d399',
+    tagline: 'Everything in a computer is a yes or no. That is all there is.',
+    node: () => nodeShape('diamond', 'on?', '#004b8d'),
+    insert: '',
+    svgFn: () => {
+      const body = `
+      <rect x="10" y="10" width="560" height="280" rx="6" fill="#0d0d12" stroke="#1e1e2e"/>
+
+      <!-- Title -->
+      <text x="290" y="42" text-anchor="middle" font-family="monospace" font-size="13" fill="#e2e8f0">one bit  =  one question  =  one answer</text>
+
+      <!-- OFF switch -->
+      <rect x="60" y="68" width="180" height="160" rx="8" fill="#12121a" stroke="#2a2a40" stroke-width="1.5"/>
+      <text x="150" y="96" text-anchor="middle" font-family="monospace" font-size="11" fill="#6b7280">OFF  /  NO  /  0  /  false</text>
+      <rect x="115" y="106" width="70" height="36" rx="18" fill="#1e1e2e" stroke="#374151" stroke-width="1.5"/>
+      <circle cx="125" cy="124" r="14" fill="#374151"/>
+      <text x="150" y="166" text-anchor="middle" font-family="monospace" font-size="22" fill="#374151">0</text>
+      <text x="150" y="210" text-anchor="middle" font-family="monospace" font-size="11" fill="#6b7280">the light is off</text>
+
+      <!-- ON switch -->
+      <rect x="320" y="68" width="180" height="160" rx="8" fill="#12121a" stroke="#34d399" stroke-width="1.5"/>
+      <text x="410" y="96" text-anchor="middle" font-family="monospace" font-size="11" fill="#34d399">ON  /  YES  /  1  /  true</text>
+      <rect x="375" y="106" width="70" height="36" rx="18" fill="#064e3b" stroke="#34d399" stroke-width="1.5"/>
+      <circle cx="435" cy="124" r="14" fill="#34d399"/>
+      <text x="410" y="166" text-anchor="middle" font-family="monospace" font-size="22" fill="#34d399">1</text>
+      <text x="410" y="210" text-anchor="middle" font-family="monospace" font-size="11" fill="#34d399">the light is on</text>
+
+      <text x="290" y="257" text-anchor="middle" font-family="monospace" font-size="11" fill="#6b7280">every number, letter, image, and program</text>
+      <text x="290" y="272" text-anchor="middle" font-family="monospace" font-size="11" fill="#6b7280">is made of nothing but these two states</text>
+      `;
+      return mkSvg(body, 580, 295);
+    },
+  },
+
+  // ── bc-bytes ─────────────────────────────────────────────────────────────────
+  {
+    id: 'bc-bytes', label: 'Bytes and Encoding', color: '#34d399',
+    tagline: '8 yes/no questions. 256 possible answers. That is a byte.',
+    node: () => nodeShape('rect', '8 bits', '#1e2d3e'),
+    insert: '',
+    svgFn: () => {
+      const attrs  = ['hat?', 'glasses?', 'beard?', 'smiling?', 'red?', 'female?', 'freckles?', 'dark hair?'];
+      const values = [1, 0, 0, 1, 0, 1, 0, 1];  // encodes one specific character
+      const bits   = values.map((v, i) => {
+        const x = 36 + i * 63;
+        const on = v === 1;
+        const col = on ? '#34d399' : '#374151';
+        const bg  = on ? '#064e3b' : '#12121a';
+        const border = on ? '#34d399' : '#2a2a40';
+        return `
+        <rect x="${x}" y="54" width="54" height="80" rx="6" fill="${bg}" stroke="${border}" stroke-width="1.5"/>
+        <text x="${x+27}" y="76" text-anchor="middle" font-family="monospace" font-size="9" fill="${on ? '#6ee7b7' : '#6b7280'}">${attrs[i]}</text>
+        <text x="${x+27}" y="108" text-anchor="middle" font-family="monospace" font-size="24" font-weight="bold" fill="${col}">${v}</text>
+        <text x="${x+27}" y="126" text-anchor="middle" font-family="monospace" font-size="9" fill="${col}">${on ? 'YES' : 'NO'}</text>`;
+      });
+
+      const byteVal = values.reduce((acc, b) => acc * 2 + b, 0);
+
+      const body = `
+      <rect x="10" y="10" width="560" height="280" rx="6" fill="#0d0d12" stroke="#1e1e2e"/>
+      <text x="290" y="38" text-anchor="middle" font-family="monospace" font-size="12" fill="#e2e8f0">Guess Who — which character am I?</text>
+      ${bits.join('')}
+      <text x="290" y="158" text-anchor="middle" font-family="monospace" font-size="11" fill="#6b7280">8 bits  =  1 byte  =  ${byteVal} in decimal  =  one specific character</text>
+      <text x="290" y="185" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">with 8 yes/no questions you can describe 2 × 2 × 2 × 2 × 2 × 2 × 2 × 2  =  256 different things</text>
+
+      <!-- Bit pattern display -->
+      <rect x="140" y="200" width="300" height="32" rx="4" fill="#12121a" stroke="#2a2a40"/>
+      <text x="290" y="220" text-anchor="middle" font-family="monospace" font-size="16" letter-spacing="6" fill="#34d399">${values.join(' ')}</text>
+      <text x="290" y="252" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">= ${byteVal}  — one value out of 256 possible</text>
+      <text x="290" y="270" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">add more bits → more possibilities: 16 bits = 65,536   32 bits = 4 billion</text>
+      `;
+      return mkSvg(body, 580, 285);
+    },
+  },
+
+  // ── bc-types ─────────────────────────────────────────────────────────────────
+  {
+    id: 'bc-types', label: 'Ordering Info into Types', color: '#34d399',
+    tagline: 'Same bits, different meaning. The type decides the interpretation.',
+    node: () => nodeShape('rect', 'type', '#1e2d3e'),
+    insert: '',
+    svgFn: () => {
+      const bits = [0,1,0,0,0,0,0,1];
+      const bitStr = bits.join(' ');
+      const val = bits.reduce((a,b) => a*2+b, 0); // 65
+
+      const interpretations = [
+        { label: 'integer',  value: `${val}`,        color: '#b5cea8', desc: 'the number sixty-five' },
+        { label: 'string',   value: '"A"',            color: '#ce9178', desc: 'the letter A  (ASCII 65)' },
+        { label: 'boolean',  value: 'yes  (nonzero)', color: '#4a7fff', desc: 'truthy — not zero' },
+      ];
+
+      const rows = interpretations.map((t, i) => {
+        const y = 162 + i * 52;
+        return `
+        <rect x="36" y="${y}" width="508" height="40" rx="5" fill="#12121a" stroke="#2a2a40" stroke-width="1"/>
+        <rect x="36" y="${y}" width="90" height="40" rx="5" fill="#1a1a26" stroke="#2a2a40" stroke-width="1"/>
+        <text x="81" y="${y+24}" text-anchor="middle" font-family="monospace" font-size="10" fill="${t.color}">${t.label}</text>
+        <text x="200" y="${y+24}" text-anchor="middle" font-family="monospace" font-size="14" fill="${t.color}">${t.value}</text>
+        <text x="390" y="${y+24}" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">${t.desc}</text>`;
+      });
+
+      const body = `
+      <rect x="10" y="10" width="560" height="335" rx="6" fill="#0d0d12" stroke="#1e1e2e"/>
+      <text x="290" y="38" text-anchor="middle" font-family="monospace" font-size="12" fill="#e2e8f0">the same 8 bits can mean completely different things</text>
+
+      <!-- The byte -->
+      <rect x="140" y="52" width="300" height="40" rx="5" fill="#12121a" stroke="#34d399" stroke-width="1.5"/>
+      <text x="290" y="76" text-anchor="middle" font-family="monospace" font-size="18" letter-spacing="8" fill="#34d399">${bitStr}</text>
+      <text x="290" y="110" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b7280">one byte  —  decimal ${val}  —  the same sequence of bits in every row below</text>
+
+      <!-- Arrow down -->
+      <line x1="290" y1="118" x2="290" y2="148" stroke="#2a2a40" stroke-width="1.5"/>
+      <polygon points="285,148 290,158 295,148" fill="#2a2a40"/>
+      <text x="290" y="142" text-anchor="middle" font-family="monospace" font-size="10" fill="#4b5563">interpreted as...</text>
+
+      ${rows.join('')}
+
+      <text x="290" y="310" text-anchor="middle" font-family="monospace" font-size="11" fill="#6b7280">the bits do not change  —  only the lens changes</text>
+      <text x="290" y="326" text-anchor="middle" font-family="monospace" font-size="11" fill="#4a7fff">that lens is what we call a type</text>
+      `;
+      return mkSvg(body, 580, 340);
+    },
+  },
+];
+
+// ── Demo index ────────────────────────────────────────────────────────────────
+const IVX_DEMO_MAP = Object.fromEntries(IVX_DEMOS.filter(d => d && d.id).map(d => [d.id, d]));
+
+const IVX_DEMO_SECTIONS = [
+  { label: 'Data',         ids: ['make', 'print', 'say', 'take'] },
+  { label: 'Control Flow', ids: ['if', 'else', 'loop', 'for', 'end', 'dot', 'try'] },
+  { label: 'Functions',    ids: ['give', 'fun', 'class'] },
+  { label: 'Network & AI', ids: ['ask', 'wait', 'email', 'sheets', 'key', 'from'] },
+  { label: 'Types',        ids: ['type-string', 'type-integer', 'type-float', 'type-boolean', 'type-none', 'type-list', 'type-dict'] },
+  { label: 'How Flowcharts Work',    ids: ['cf-arrows', 'cf-steps', 'cf-fork', 'cf-connector'] },
+  { label: 'Binary Categorization',  ids: ['bc-yesno', 'bc-bytes', 'bc-types'] },
+];
+
+let _demoPanel = null;
+let _currentDemoId = 'make';
+
+function _buildDemoPanel() {
+  const panel = document.createElement('div');
+  panel.id = 'ivx-demo-panel';
+
+  const sidebar = document.createElement('div');
+  sidebar.id = 'ivx-demo-sidebar';
+
+  IVX_DEMO_SECTIONS.forEach(sec => {
+    const secEl = document.createElement('div');
+    secEl.className = 'ivx-demo-section';
+    const lbl = document.createElement('div');
+    lbl.className = 'ivx-demo-section-label';
+    lbl.textContent = sec.label;
+    secEl.appendChild(lbl);
+    sec.ids.forEach(id => {
+      const demo = IVX_DEMO_MAP[id];
+      if (!demo) return;
+      const btn = document.createElement('button');
+      btn.className = 'ivx-demo-kw-btn';
+      btn.dataset.demoId = id;
+      btn.textContent = demo.label;
+      btn.addEventListener('click', () => _selectDemo(id));
+      secEl.appendChild(btn);
+    });
+    sidebar.appendChild(secEl);
+  });
+
+  const main = document.createElement('div');
+  main.id = 'ivx-demo-main';
+
+  const hdr = document.createElement('div');
+  hdr.id = 'ivx-demo-hdr';
+
+  const titleEl = document.createElement('span');
+  titleEl.id = 'ivx-demo-title';
+  const sep = document.createElement('span');
+  sep.id = 'ivx-demo-sep';
+  const taglineEl = document.createElement('span');
+  taglineEl.id = 'ivx-demo-tagline';
+
+  const replayBtn = document.createElement('button');
+  replayBtn.id = 'ivx-demo-replay';
+  replayBtn.textContent = '↺ replay';
+  replayBtn.addEventListener('click', () => _replayDemo());
+
+  const insertBtn = document.createElement('button');
+  insertBtn.id = 'ivx-demo-insert';
+  insertBtn.textContent = '← insert';
+  insertBtn.addEventListener('click', () => _insertDemo());
+
+  hdr.append(titleEl, sep, taglineEl, replayBtn, insertBtn);
+
+  const nodeStrip = document.createElement('div');
+  nodeStrip.id = 'ivx-demo-node-strip';
+
+  const nodeLabel = document.createElement('div');
+  nodeLabel.id = 'ivx-demo-node-label';
+  nodeLabel.textContent = 'flowchart node';
+
+  const nodeEl = document.createElement('div');
+  nodeEl.id = 'ivx-demo-node';
+
+  nodeStrip.append(nodeLabel, nodeEl);
+
+  const viewport = document.createElement('div');
+  viewport.id = 'ivx-demo-viewport';
+
+  main.append(hdr, nodeStrip, viewport);
+  panel.append(sidebar, main);
+  return panel;
+}
+
+function _renderDemo(id) {
+  const demo = IVX_DEMO_MAP[id];
+  if (!demo) return;
+  _currentDemoId = id;
+
+  const titleEl   = document.getElementById('ivx-demo-title');
+  const taglineEl = document.getElementById('ivx-demo-tagline');
+  if (titleEl)   { titleEl.textContent = demo.label; titleEl.style.color = demo.color; }
+  if (taglineEl)   taglineEl.textContent = demo.tagline;
+
+  // Node shape preview
+  const nodeEl = document.getElementById('ivx-demo-node');
+  if (nodeEl && demo.node) {
+    nodeEl.innerHTML = demo.node();
+  } else if (nodeEl) {
+    nodeEl.innerHTML = '';
+  }
+
+  const viewport = document.getElementById('ivx-demo-viewport');
+  if (!viewport) return;
+  viewport.innerHTML = demo.svgFn();
+
+  document.querySelectorAll('.ivx-demo-kw-btn').forEach(btn => {
+    const active = btn.dataset.demoId === id;
+    btn.classList.toggle('ivx-demo-kw-btn--active', active);
+    btn.style.color           = active ? demo.color : '';
+    btn.style.borderLeftColor = active ? demo.color : '';
+    btn.style.background      = active ? `${demo.color}18` : '';
+  });
+}
+
+function _selectDemo(id) { _renderDemo(id); }
+function _replayDemo()   { _renderDemo(_currentDemoId); }
+
+function _insertDemo() {
+  const demo = IVX_DEMO_MAP[_currentDemoId];
+  if (!demo || typeof srcEl === 'undefined') return;
+  const s = srcEl.selectionStart, e = srcEl.selectionEnd;
+  srcEl.value = srcEl.value.slice(0, s) + demo.insert + srcEl.value.slice(e);
+  srcEl.selectionStart = srcEl.selectionEnd = s + demo.insert.length;
+  srcEl.focus();
+  if (typeof updateHighlight === 'function') updateHighlight();
+  if (typeof scheduleRender  === 'function') scheduleRender();
+  _closePanel();
+}
+
+function _openPanel() {
+  if (!_demoPanel) {
+    _demoPanel = _buildDemoPanel();
+    document.getElementById('ep').appendChild(_demoPanel);
+  }
+  _demoPanel.style.display = 'flex';
+  _renderDemo(_currentDemoId);
+}
+
+function _closePanel() {
+  if (_demoPanel) _demoPanel.style.display = 'none';
+}
+
+function _togglePanel() {
+  if (!_demoPanel || _demoPanel.style.display === 'none') _openPanel();
+  else _closePanel();
+}
+
+// ── Wire up the Keywords button ───────────────────────────────────────────────
+window.addEventListener('load', function initDemoPanel() {
+  // Clear any stale cached panel so section layout always reflects current code
+  const stale = document.getElementById('ivx-demo-panel');
+  if (stale) stale.remove();
+  _demoPanel = null;
+
+  const btn = document.getElementById('help-menu-btn');
+  const oldMenu = document.getElementById('help-menu');
+  if (!btn) return;
+
+  if (oldMenu) oldMenu.remove();
+
+  // Clone to strip any lingering listeners
+  const fresh = btn.cloneNode(true);
+  btn.parentNode.replaceChild(fresh, btn);
+
+  fresh.textContent = 'Keywords';
+
+  fresh.addEventListener('click', e => {
+    e.stopPropagation();
+    _togglePanel();
+    fresh.classList.toggle('on', _demoPanel?.style.display !== 'none');
+  });
+
+  document.addEventListener('click', e => {
+    if (_demoPanel && _demoPanel.style.display !== 'none') {
+      if (!_demoPanel.contains(e.target) && e.target !== fresh) {
+        _closePanel();
+        fresh.classList.remove('on');
+      }
+    }
+  });
+});

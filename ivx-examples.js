@@ -34,7 +34,7 @@ const PROGRAMS = [
         ivxcode: `take file.csv
 make filtered where(file, "status", "=", "active")
 for row in filtered
-  text "{row["name"]} — {row["email"]}"`
+  print "{row["name"]} — {row["email"]}"`
       },
       {
         name: "Merge two spreadsheets by a shared key",
@@ -49,7 +49,7 @@ make customers s1.read("A1:C200")
 make orders s2.read("A1:D500")
 make merged join(customers, orders, "id", "customer_id")
 for row in merged
-  text "{row["name"]}: {row["total"]}"`
+  print "{row["name"]}: {row["total"]}"`
       },
       {
         name: "Watch a sheet for new rows and send welcome email",
@@ -90,7 +90,7 @@ make files s.read("A1:B100")
 for file in files
   make oldname file[0]
   make newname lower(replace(oldname, " ", "_"))
-  text "Rename: {oldname} → {newname}"
+  print "Rename: {oldname} → {newname}"
   s.append([oldname, newname, "done"])`
       },
       {
@@ -130,7 +130,7 @@ make dst sheets "Destination"
 make data src.read("A1:Z500")
 for row in data
   dst.append(row)
-text "Synced {size(data)} rows"`
+print "Synced {size(data)} rows"`
       },
       {
         name: "Clean and deduplicate a contact list",
@@ -146,7 +146,7 @@ for contact in file
   make name trim(contact["name"])
   push(cleaned, {"name": name, "email": email})
 make deduped unique(cleaned)
-text "Cleaned: {size(deduped)} contacts"
+print "Cleaned: {size(deduped)} contacts"
 download deduped as contacts_clean.csv`
       },
 
@@ -160,9 +160,9 @@ download deduped as contacts_clean.csv`
         caveats: null,
         ivxcode: `loop n? < 100
   make n + 1
-  if n % 15 = 0 then text "FizzBuzz"
-  else if n % 3 = 0 then text "Fizz"
-  else if n % 5 = 0 then text "Buzz"
+  if n % 15 = 0 then print "FizzBuzz"
+  else if n % 3 = 0 then print "Fizz"
+  else if n % 5 = 0 then print "Buzz"
   else say n`
       },
       {
@@ -176,7 +176,7 @@ download deduped as contacts_clean.csv`
 make a 0
 make b 1
 loop n? < limit
-  text a
+  print a
   make temp b
   make b a + b
   make a temp
@@ -202,7 +202,7 @@ loop i <= limit
       make sieve[j - 2] no
       make j + i
   make i + 1
-  text i`
+  print i`
       },
       {
         name: "Calculate compound interest",
@@ -215,8 +215,8 @@ loop i <= limit
 take flt(rate)
 take int(years)
 make amount principal * (1 + rate / 100) ^ years
-text "Principal: {principal}"
-text "After {years} years at {rate}%: {amount}"`
+print "Principal: {principal}"
+print "After {years} years at {rate}%: {amount}"`
       },
       {
         name: "Compute a running average",
@@ -230,7 +230,7 @@ make total 0
 for num in nums
   make total total + num
   make avg total / ii + 1
-  text "After {ii + 1} values: avg = {avg}"`
+  print "After {ii + 1} values: avg = {avg}"`
       },
       {
         name: "Find duplicates in a list",
@@ -246,7 +246,7 @@ for n in nums
   if n in seen then push(dupes, n)
   else push(seen, n)
 make dupes unique(dupes)
-text "Duplicates: {dupes}"`
+print "Duplicates: {dupes}"`
       },
       {
         name: "Count word frequencies in text",
@@ -264,7 +264,7 @@ for word in words
     make freq[word] freq[word] + 1
   else
     make freq[word] 1
-text freq`
+print freq`
       },
       {
         name: "Sort a list of dicts by multiple keys",
@@ -283,7 +283,7 @@ fun sortKey(a, b)
   give a["age"] > b["age"]
 make sorted sort(people, sortKey)
 for person in sorted
-  text "{person["name"]} — {person["city"]}, {person["age"]}"`
+  print "{person["name"]} — {person["city"]}, {person["age"]}"`
       },
       {
         name: "Group and aggregate sales data",
@@ -296,7 +296,7 @@ for person in sorted
 make grouped group(file, "region")
 make totals agg(grouped, "revenue", "sum", "total")
 for row in totals
-  text "{row["region"]}: {row["total"]}"`
+  print "{row["region"]}: {row["total"]}"`
       },
       {
         name: "Pivot a table by column value",
@@ -314,7 +314,7 @@ for g in grouped
   for row in g["rows"]
     make total total + flt(row["sales"])
   make pivot[product] total
-text pivot`
+print pivot`
       },
 
       // ── Algorithms ──────────────────────────────────────────────────────
@@ -338,7 +338,7 @@ text pivot`
 make nums [1, 3, 5, 7, 9, 11, 13, 15]
 take int(target)
 make idx binarySearch(nums, target)
-if idx >= 0 then text "Found at index {idx}"
+if idx >= 0 then print "Found at index {idx}"
 else say "Not found"`
       },
       {
@@ -362,7 +362,7 @@ else say "Not found"`
   give arr
 
 make nums [64, 34, 25, 12, 22, 11, 90]
-text bubbleSort(nums)`
+print bubbleSort(nums)`
       },
       {
         name: "Merge sort",
@@ -398,7 +398,7 @@ fun mergeSort(arr)
   give merge(left, right)
 
 make nums [38, 27, 43, 3, 9, 82, 10]
-text mergeSort(nums)`
+print mergeSort(nums)`
       },
       {
         name: "Quicksort",
@@ -416,7 +416,7 @@ text mergeSort(nums)`
   give quickSort(left) + mid + quickSort(right)
 
 make nums [3, 6, 8, 10, 1, 2, 1]
-text quickSort(nums)`
+print quickSort(nums)`
       },
       {
         name: "Breadth-first graph search",
@@ -445,7 +445,7 @@ fun bfs(graph, start)
         push(queue, neighbor)
   give visited
 
-text bfs(graph, "A")`
+print bfs(graph, "A")`
       },
       {
         name: "Depth-first graph search",
@@ -470,7 +470,7 @@ fun dfs(graph, node)
     dfs(graph, neighbor)
 
 dfs(graph, "A")
-text visited`
+print visited`
       },
       {
         name: "Dijkstra shortest path",
@@ -496,7 +496,7 @@ fun dijkstra(graph, start)
       if alt < dist[v] then make dist[v] alt
   give dist
 
-text dijkstra(graph, "A")`
+print dijkstra(graph, "A")`
       },
       {
         name: "Detect a cycle in a list",
@@ -517,7 +517,7 @@ fun hasCycle(nodes)
     if slow = fast then give yes
   give no
 
-text hasCycle(nodes)`
+print hasCycle(nodes)`
       },
       {
         name: "Reverse a linked list (concept)",
@@ -529,7 +529,7 @@ text hasCycle(nodes)`
         ivxcode: `note In IVX, linked lists are arrays. Reversal is one builtin.
 make linked [1, 2, 3, 4, 5]
 make reversed reverse(linked)
-text reversed
+print reversed
 
 note For dict-based nodes:
 make head {"val": 1, "next": {"val": 2, "next": {"val": 3, "next": none}}}
@@ -538,7 +538,7 @@ make cur head
 loop cur != none
   push(result, cur["val"])
   make cur cur["next"]
-text reverse(result)`
+print reverse(result)`
       },
       {
         name: "Longest common subsequence",
@@ -570,7 +570,7 @@ text reverse(result)`
     make i + 1
   give dp[m][n]
 
-text lcs("ABCBDAB", "BDCAB")`
+print lcs("ABCBDAB", "BDCAB")`
       },
 
       // ── String processing ───────────────────────────────────────────────
@@ -583,7 +583,7 @@ text lcs("ABCBDAB", "BDCAB")`
         caveats: null,
         ivxcode: `take text
 make vowels filter(chars(lower(text)), fun(c) then give c in "aeiou")
-text "Vowels: {size(vowels)}"`
+print "Vowels: {size(vowels)}"`
       },
       {
         name: "Check if string is a palindrome",
@@ -595,7 +595,7 @@ text "Vowels: {size(vowels)}"`
         ivxcode: `take text
 make clean lower(replace(text, " ", ""))
 make rev join(reverse(chars(clean)), "")
-if clean = rev then text "{text} is a palindrome"
+if clean = rev then print "{text} is a palindrome"
 else say "{text} is not a palindrome"`
       },
       {
@@ -618,7 +618,7 @@ loop i < size(text)
   else
     make result "{result}{ch}"
   make i i + count
-text result`
+print result`
       },
       {
         name: "Parse a CSV line respecting quoted fields",
@@ -643,7 +643,7 @@ text result`
   give fields
 
 take line
-text parseCSVLine(line)`
+print parseCSVLine(line)`
       },
       {
         name: "Extract all URLs from text",
@@ -654,9 +654,9 @@ text parseCSVLine(line)`
         caveats: null,
         ivxcode: `take text
 make urls findall(text, "https?://[^\s]+")
-text "Found {size(urls)} URLs:"
+print "Found {size(urls)} URLs:"
 for url in urls
-  text url`
+  print url`
       },
       {
         name: "Convert camelCase to snake_case",
@@ -671,7 +671,7 @@ for url in urls
   give lower(step2)
 
 take name
-text camelToSnake(name)`
+print camelToSnake(name)`
       },
       {
         name: "Generate a random password",
@@ -686,7 +686,7 @@ make password ""
 loop i? < length
   make password "{password}{chars[randint(0, size(chars) - 1)]}"
   make i + 1
-text password`
+print password`
       },
       {
         name: "Validate an email address format",
@@ -699,7 +699,7 @@ text password`
   give match(addr, "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 take email
-if validEmail(email) then text "{email} is valid"
+if validEmail(email) then print "{email} is valid"
 else say "{email} is invalid"`
       },
       {
@@ -713,9 +713,9 @@ else say "{email} is invalid"`
 take int(n)
 make words split(text, " ")
 if size(words) > n
-  text join(head(words, n), " ") + "..."
+  print join(head(words, n), " ") + "..."
 else
-  text text`
+  print text`
       },
       {
         name: "Slugify a title for a URL",
@@ -732,7 +732,7 @@ else
   give trim(s)
 
 take title
-text slugify(title)`
+print slugify(title)`
       },
 
       // ── Math & statistics ───────────────────────────────────────────────
@@ -753,7 +753,7 @@ for x in nums
   if x in freq then make freq[x] freq[x] + 1
   else make freq[x] 1
 make mode first(sort(keys(freq), fun(a, b) then give freq[a] < freq[b]))
-text "Mean: {mean}, Median: {median}, Mode: {mode}"`
+print "Mean: {mean}, Median: {median}, Mode: {mode}"`
       },
       {
         name: "Standard deviation of a dataset",
@@ -768,7 +768,7 @@ make mean reduce(nums, fun(a, b) then give a + b, 0) / n
 make diffs map(nums, fun(x) then give (x - mean) ^ 2)
 make variance reduce(diffs, fun(a, b) then give a + b, 0) / n
 make stddev sqrt(variance)
-text "Mean: {mean}, Std dev: {stddev}"`
+print "Mean: {mean}, Std dev: {stddev}"`
       },
       {
         name: "Linear regression (slope & intercept)",
@@ -786,7 +786,7 @@ make sumXY reduce(range(n), fun(a, i) then give a + xs[i] * ys[i], 0)
 make sumX2 reduce(xs, fun(a, b) then give a + b ^ 2, 0)
 make slope (n * sumXY - sumX * sumY) / (n * sumX2 - sumX ^ 2)
 make intercept (sumY - slope * sumX) / n
-text "y = {slope}x + {intercept}"`
+print "y = {slope}x + {intercept}"`
       },
       {
         name: "Matrix multiplication",
@@ -815,7 +815,7 @@ text "y = {slope}x + {intercept}"`
 
 make a [1, 2; 3, 4]
 make b [5, 6; 7, 8]
-text matMul(a, b)`
+print matMul(a, b)`
       },
       {
         name: "Factorial (recursive)",
@@ -829,7 +829,7 @@ text matMul(a, b)`
   give n * factorial(n - 1)
 
 take int(n)
-text factorial(n)`
+print factorial(n)`
       },
       {
         name: "Power set of a list",
@@ -847,7 +847,7 @@ text factorial(n)`
   give subsets + withFirst
 
 make items [1, 2, 3]
-text powerSet(items)`
+print powerSet(items)`
       },
       {
         name: "GCD and LCM",
@@ -858,8 +858,8 @@ text powerSet(items)`
         caveats: null,
         ivxcode: `take int(a)
 take int(b)
-text "GCD of {a} and {b}: {gcd(a, b)}"
-text "LCM of {a} and {b}: {lcm(a, b)}"`
+print "GCD of {a} and {b}: {gcd(a, b)}"
+print "LCM of {a} and {b}: {lcm(a, b)}"`
       },
       {
         name: "Roman numeral to integer",
@@ -881,7 +881,7 @@ loop i < size(roman)
   else
     make result result + cur
   make i + 1
-text result`
+print result`
       },
       {
         name: "Integer to Roman numeral",
@@ -901,7 +901,7 @@ for pair in pairs
   loop num >= pair[0]
     make result "{result}{pair[1]}"
     make num num - pair[0]
-text result`
+print result`
       },
       {
         name: "Collatz conjecture steps",
@@ -916,7 +916,7 @@ loop n != 1
   if n % 2 = 0 then make n n // 2
   else make n n * 3 + 1
   make steps + 1
-text "Reached 1 in {steps} steps"`
+print "Reached 1 in {steps} steps"`
       },
 
       // ── OOP & design patterns ───────────────────────────────────────────
@@ -932,14 +932,14 @@ text "Reached 1 in {steps} steps"`
 
   fun deposit(amount)
     make self.balance + amount
-    text "{self.owner} deposited {amount}. Balance: {self.balance}"
+    print "{self.owner} deposited {amount}. Balance: {self.balance}"
 
   fun withdraw(amount)
     if amount > self.balance
-      text "Insufficient funds"
+      print "Insufficient funds"
     else
       make self.balance - amount
-      text "{self.owner} withdrew {amount}. Balance: {self.balance}"
+      print "{self.owner} withdrew {amount}. Balance: {self.balance}"
 
 make acc BankAccount("Alice", 500)
 acc.deposit(200)
@@ -972,8 +972,8 @@ make s Stack()
 s.push(1)
 s.push(2)
 s.push(3)
-text s.pop()
-text s.peek()`
+print s.pop()
+print s.peek()`
       },
       {
         name: "Queue data structure",
@@ -1000,8 +1000,8 @@ make q Queue()
 q.enqueue("first")
 q.enqueue("second")
 q.enqueue("third")
-text q.dequeue()
-text q.size()`
+print q.dequeue()
+print q.size()`
       },
       {
         name: "Linked list with append/remove",
@@ -1038,7 +1038,7 @@ make ll LinkedList()
 ll.append(1)
 ll.append(2)
 ll.append(3)
-text ll.toList()`
+print ll.toList()`
       },
       {
         name: "Simple pub/sub event system",
@@ -1061,8 +1061,8 @@ text ll.toList()`
         handler(data)
 
 make bus EventBus()
-fun onLogin(user) then text "User logged in: {user}"
-fun onLogin2(user) then text "Sending welcome email to {user}"
+fun onLogin(user) then print "User logged in: {user}"
+fun onLogin2(user) then print "Sending welcome email to {user}"
 bus.on("login", onLogin)
 bus.on("login", onLogin2)
 bus.emit("login", "Alice")`
@@ -1086,10 +1086,10 @@ bus.emit("login", "Alice")`
       obs.update(self.state)
 
 class Logger
-  fun update(val) then text "LOG: state changed to {val}"
+  fun update(val) then print "LOG: state changed to {val}"
 
 class Display
-  fun update(val) then text "DISPLAY: showing {val}"
+  fun update(val) then print "DISPLAY: showing {val}"
 
 make s Subject()
 s.attach(Logger())
@@ -1116,12 +1116,12 @@ class Sorter
 make nums [3, 1, 4, 1, 5, 9, 2, 6]
 make s1 Sorter(ascendingStrategy)
 make s2 Sorter(descendingStrategy)
-text s1.sort(nums)
-text s2.sort(nums)
+print s1.sort(nums)
+print s2.sort(nums)
 
 make words ["banana", "fig", "apple", "kiwi"]
 make s3 Sorter(byLengthStrategy)
-text s3.sort(words)`
+print s3.sort(words)`
       },
       {
         name: "State machine for a traffic light",
@@ -1137,7 +1137,7 @@ text s3.sort(words)`
 }
 make state "red"
 loop i? < 6
-  text "Light is: {state}"
+  print "Light is: {state}"
   make state transitions[state]
   make i + 1`
       },
@@ -1172,7 +1172,7 @@ loop i? < 6
     give q
 
 make q QueryBuilder()
-text q.from("users").where("age > 18").where("active = 1").limitTo(10).build()`
+print q.from("users").where("age > 18").where("active = 1").limitTo(10).build()`
       },
       {
         name: "Command pattern with undo",
@@ -1192,13 +1192,13 @@ text q.from("users").where("age > 18").where("active = 1").limitTo(10).build()`
     if size(self.history) > 0
       make self.text last(self.history)
       make self.history drop(self.history, size(self.history) - 1)
-    text self.text
+    print self.text
 
 make ed TextEditor()
 ed.execute("Hello")
 ed.execute("Hello World")
 ed.execute("Hello World!")
-text ed.text
+print ed.text
 ed.undo()
 ed.undo()`
       },
@@ -1215,7 +1215,7 @@ ed.undo()`
 take city
 make url "https://api.openweathermap.org/data/2.5/weather?q={city}&appid={apiKey}&units=metric"
 make data fetch url
-text "{data["name"]}: {data["main"]["temp"]}°C, {data["weather"][0]["description"]}"`
+print "{data["name"]}: {data["main"]["temp"]}°C, {data["weather"][0]["description"]}"`
       },
       {
         name: "Look up a GitHub user profile",
@@ -1226,9 +1226,9 @@ text "{data["name"]}: {data["main"]["temp"]}°C, {data["weather"][0]["descriptio
         caveats: null,
         ivxcode: `take username
 make data fetch "https://api.github.com/users/{username}"
-text "{data["name"]} (@{data["login"]})"
-text "Repos: {data["public_repos"]}, Followers: {data["followers"]}"
-text "Bio: {data["bio"]}"`
+print "{data["name"]} (@{data["login"]})"
+print "Repos: {data["public_repos"]}, Followers: {data["followers"]}"
+print "Bio: {data["bio"]}"`
       },
       {
         name: "Post a message to a Slack webhook",
@@ -1240,7 +1240,7 @@ text "Bio: {data["bio"]}"`
         ivxcode: `make webhook "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
 take message
 post webhook {"text": message}
-text "Posted: {message}"`
+print "Posted: {message}"`
       },
       {
         name: "Send an SMS via Twilio-style API",
@@ -1256,7 +1256,7 @@ key token
 take to
 take message
 post url {"To": to, "From": "+15551234567", "Body": message}
-text "SMS sent to {to}"`
+print "SMS sent to {to}"`
       },
       {
         name: "Translate text via Google Translate API",
@@ -1270,7 +1270,7 @@ take text
 take targetLang
 make url "https://translation.googleapis.com/language/translate/v2?key={apiKey}"
 post url {"q": text, "target": targetLang} as response
-text response["data"]["translations"][0]["translatedText"]`
+print response["data"]["translations"][0]["translatedText"]`
       },
       {
         name: "Get current Bitcoin price",
@@ -1281,8 +1281,8 @@ text response["data"]["translations"][0]["translatedText"]`
         caveats: null,
         ivxcode: `make data fetch "https://api.coindesk.com/v1/bpi/currentprice.json"
 make price data["bpi"]["USD"]["rate"]
-text "Bitcoin: {price} USD"
-text "Updated: {data["time"]["updated"]}"`
+print "Bitcoin: {price} USD"
+print "Updated: {data["time"]["updated"]}"`
       },
       {
         name: "Fetch paginated results from an API",
@@ -1301,7 +1301,7 @@ loop yes
   for item in items
     push(allItems, item)
   make page + 1
-text "Total items: {size(allItems)}"`
+print "Total items: {size(allItems)}"`
       },
       {
         name: "Retry a failing API call with backoff",
@@ -1318,11 +1318,11 @@ loop attempt? < maxRetries
     make result fetch "https://api.unreliable.example.com/data"
     end say "Success: {result}"
   err e
-    text "Attempt {attempt + 1} failed: {e}. Retrying in {delay}s..."
+    print "Attempt {attempt + 1} failed: {e}. Retrying in {delay}s..."
     wait delay
     make delay delay * 2
   make attempt + 1
-text "All retries exhausted"`
+print "All retries exhausted"`
       },
       {
         name: "Cache API responses in a dict",
@@ -1335,16 +1335,16 @@ text "All retries exhausted"`
 
 fun fetchUser(id)
   if id in cache
-    text "Cache hit for {id}"
+    print "Cache hit for {id}"
     give cache[id]
   make url "https://api.example.com/users/{id}"
   make data url
   make cache[id] data
   give data
 
-text fetchUser(1)
-text fetchUser(2)
-text fetchUser(1)  note cache hit`
+print fetchUser(1)
+print fetchUser(2)
+print fetchUser(1)  note cache hit`
       },
       {
         name: "Build a simple REST client",
@@ -1371,7 +1371,7 @@ text fetchUser(1)  note cache hit`
     give response
 
 make client RestClient("https://api.example.com", "my-token")
-text client.get("/users/1")
+print client.get("/users/1")
 client.post("/users", {"name": "Alice", "email": "alice@example.com"})`
       },
 
@@ -1386,7 +1386,7 @@ client.post("/users", {"name": "Alice", "email": "alice@example.com"})`
         ivxcode: `key "your-gemini-key"
 take file.txt
 make summary ask gemini "Summarise this document in 3 bullet points:\n\n{file}"
-text summary`
+print summary`
       },
       {
         name: "Classify support tickets by category",
@@ -1403,7 +1403,7 @@ for ticket in tickets
   make text ticket[1]
   make category ask gemini "Classify this support ticket into one of: billing, technical, general. Reply with just the category.\n\nTicket: {text}"
   s.append([id, text, category])
-text "Done classifying {size(tickets)} tickets"`
+print "Done classifying {size(tickets)} tickets"`
       },
       {
         name: "Generate product descriptions from names",
@@ -1416,8 +1416,8 @@ text "Done classifying {size(tickets)} tickets"`
 make products ["Ergonomic Chair", "Standing Desk", "USB Hub", "Monitor Arm"]
 for product in products
   make desc ask gemini "Write a 2-sentence product description for: {product}"
-  text "=== {product} ==="
-  text desc`
+  print "=== {product} ==="
+  print desc`
       },
       {
         name: "Translate a list of strings to Spanish",
@@ -1430,7 +1430,7 @@ for product in products
 make phrases ["Good morning", "Thank you", "Where is the station?", "How much does this cost?"]
 for phrase in phrases
   make translated ask gemini "Translate to Spanish, reply only with the translation: {phrase}"
-  text "{phrase} → {translated}"`
+  print "{phrase} → {translated}"`
       },
       {
         name: "Extract entities from text",
@@ -1442,7 +1442,7 @@ for phrase in phrases
         ivxcode: `key "your-gemini-key"
 take text
 make result ask gemini "Extract all people, places, and organisations from this text. Format as JSON.\n\n{text}"
-text result`
+print result`
       },
       {
         name: "Answer questions about a CSV dataset",
@@ -1458,7 +1458,7 @@ loop question? != "quit"
   take question
   if question = "quit" then end
   make answer ask gemini "Answer this question about the dataset below.\n\nDataset:\n{context}\n\nQuestion: {question}"
-  text answer`
+  print answer`
       },
       {
         name: "Generate test data for a schema",
@@ -1470,7 +1470,7 @@ loop question? != "quit"
         ivxcode: `key "your-gemini-key"
 make schema "users: id (int), name (string), email (string), age (int), city (string)"
 make data ask gemini "Generate 20 rows of realistic test data for this schema. Return as JSON array.\n\n{schema}"
-text data
+print data
 download data as test_data.json`
       },
       {
@@ -1484,7 +1484,7 @@ download data as test_data.json`
 take text
 take level  note e.g. "5th grade", "academic", "simple"
 make rewritten ask gemini "Rewrite the following text for a {level} reading level. Keep the meaning identical.\n\n{text}"
-text rewritten`
+print rewritten`
       },
       {
         name: "Compare two texts for similarity",
@@ -1494,12 +1494,12 @@ text rewritten`
         analysis: "Two takes, one ask. IVX shines at sequential I/O → AI workflows.",
         caveats: null,
         ivxcode: `key "your-gemini-key"
-text "Enter first text:"
+print "Enter first text:"
 take text1
-text "Enter second text:"
+print "Enter second text:"
 take text2
 make analysis ask gemini "Compare these two texts for semantic similarity. Score 0-100 and explain.\n\nText 1: {text1}\n\nText 2: {text2}"
-text analysis`
+print analysis`
       },
       {
         name: "Auto-tag emails by topic",
@@ -1526,13 +1526,13 @@ wait every email by "inbox@example.com"
         analysis: "The canonical IVX example. Lazy declaration, loop, implicit subject in conditions.",
         caveats: null,
         ivxcode: `make secret randint(1, 100)
-text "Guess a number between 1 and 100!"
+print "Guess a number between 1 and 100!"
 loop guess? != secret
   take int(guess)
   make tries? + 1
-  if guess < secret then text "Too low!"
-  else if guess > secret then text "Too high!"
-text "Correct in {tries} tries!"`
+  if guess < secret then print "Too low!"
+  else if guess > secret then print "Too high!"
+print "Correct in {tries} tries!"`
       },
       {
         name: "Rock paper scissors vs computer",
@@ -1547,9 +1547,9 @@ loop yes
   take player
   if player = "quit" then end
   make computer options[randint(0, 2)]
-  text "Computer chose: {computer}"
-  if player = computer then text "Draw!"
-  else if wins[player] = computer then text "You win!"
+  print "Computer chose: {computer}"
+  if player = computer then print "Draw!"
+  else if wins[player] = computer then print "You win!"
   else say "Computer wins!"`
       },
       {
@@ -1567,14 +1567,14 @@ loop yes
 ]
 make score 0
 for q in questions
-  text q["q"]
+  print q["q"]
   take answer
   if lower(answer) = q["a"]
-    text "Correct!"
+    print "Correct!"
     make score + 1
   else
-    text "Wrong! Answer: {q["a"]}"
-text "Score: {score}/{size(questions)}"`
+    print "Wrong! Answer: {q["a"]}"
+print "Score: {score}/{size(questions)}"`
       },
       {
         name: "Hangman game",
@@ -1591,19 +1591,19 @@ loop lives > 0
   for ch in chars(word)
     if ch in guessed then make display "{display}{ch}"
     else make display "{display}_"
-  text display
+  print display
   if not ("_" in display) then end say "You win!"
-  text "Lives: {lives} | Guessed: {guessed}"
+  print "Lives: {lives} | Guessed: {guessed}"
   take letter
-  if letter in guessed then text "Already guessed!"
+  if letter in guessed then print "Already guessed!"
   else if letter in word
     push(guessed, letter)
-    text "Correct!"
+    print "Correct!"
   else
     push(guessed, letter)
     make lives - 1
-    text "Wrong!"
-text "Game over! Word was: {word}"`
+    print "Wrong!"
+print "Game over! Word was: {word}"`
       },
       {
         name: "Blackjack hand evaluator",
@@ -1625,9 +1625,9 @@ fun handValue(hand)
   give total
 
 make hand ["A", "K"]
-text "Hand: {hand} = {handValue(hand)}"
+print "Hand: {hand} = {handValue(hand)}"
 make hand2 ["A", "A", "9"]
-text "Hand: {hand2} = {handValue(hand2)}"`
+print "Hand: {hand2} = {handValue(hand2)}"`
       },
       {
         name: "Conway Game of Life (step)",
@@ -1663,7 +1663,7 @@ text "Hand: {hand2} = {handValue(hand2)}"`
   give next
 
 make grid [0,1,0; 0,0,1; 1,1,1]
-text step(grid)`
+print step(grid)`
       },
       {
         name: "Simulate a dice rolling experiment",
@@ -1680,7 +1680,7 @@ loop i? < rolls
   make i + 1
 for face in [1, 2, 3, 4, 5, 6]
   make pct round(freq[face] / rolls * 100)
-  text "{face}: {freq[face]} rolls ({pct}%)"`
+  print "{face}: {freq[face]} rolls ({pct}%)"`
       },
       {
         name: "Monte Carlo pi estimation",
@@ -1698,7 +1698,7 @@ loop i? < samples
     make inside + 1
   make i + 1
 make pi 4 * inside / samples
-text "Estimated π: {pi}"`
+print "Estimated π: {pi}"`
       },
       {
         name: "Random walk simulation",
@@ -1717,7 +1717,7 @@ loop i? < steps
   make y y + d[1]
   make i + 1
 make dist sqrt(x ^ 2 + y ^ 2)
-text "End: ({x}, {y}), distance from origin: {dist}"`
+print "End: ({x}, {y}), distance from origin: {dist}"`
       },
       {
         name: "Simulate a queue of customers",
@@ -1739,8 +1739,8 @@ loop time < 100
     make totalWait totalWait + wait
     make served + 1
   make time + 1
-text "Served: {served}"
-text "Avg wait: {totalWait / served} ticks"`
+print "Served: {served}"
+print "Avg wait: {totalWait / served} ticks"`
       },
 
       // ── Practical tools ─────────────────────────────────────────────────
@@ -1762,11 +1762,11 @@ text "Avg wait: {totalWait / served} ticks"`
 take flt(value)
 take conversion
 if conversion = "c_to_f"
-  text "{value}°C = {value * 9/5 + 32}°F"
+  print "{value}°C = {value * 9/5 + 32}°F"
 else if conversion = "f_to_c"
-  text "{value}°F = {(value - 32) * 5/9}°C"
+  print "{value}°F = {(value - 32) * 5/9}°C"
 else
-  text "{value} {conversion} = {value * conversions[conversion]}"`
+  print "{value} {conversion} = {value * conversions[conversion]}"`
       },
       {
         name: "BMI calculator",
@@ -1782,7 +1782,7 @@ make category "Normal"
 if bmi < 18.5 then make category "Underweight"
 else if bmi >= 25 and < 30 then make category "Overweight"
 else if bmi >= 30 then make category "Obese"
-text "BMI: {round(bmi)} — {category}"`
+print "BMI: {round(bmi)} — {category}"`
       },
       {
         name: "Loan repayment schedule",
@@ -1802,7 +1802,7 @@ loop i? < months
   make principalPart payment - interest
   make balance balance - principalPart
   make i + 1
-  text "Month {i}: payment {round(payment)}, interest {round(interest)}, balance {round(balance)}"`
+  print "Month {i}: payment {round(payment)}, interest {round(interest)}, balance {round(balance)}"`
       },
       {
         name: "Tax bracket calculator",
@@ -1855,8 +1855,8 @@ else push(feedback, "Add numbers")
 if match(password, "[^a-zA-Z0-9]") then make score + 1
 else push(feedback, "Add special characters")
 make strength ["Weak","Fair","Good","Strong","Very Strong"][score - 1]
-text "Strength: {strength}"
-for tip in feedback then text "  → {tip}"`
+print "Strength: {strength}"
+for tip in feedback then print "  → {tip}"`
       },
       {
         name: "To-do list (add/complete/delete)",
@@ -1868,7 +1868,7 @@ for tip in feedback then text "  → {tip}"`
         ivxcode: `make todos []
 make nextId 1
 loop yes
-  text "Commands: add, complete, delete, list, quit"
+  print "Commands: add, complete, delete, list, quit"
   take cmd
   if cmd = "quit" then end
   if cmd = "add"
@@ -1886,7 +1886,7 @@ loop yes
     for todo in todos
       make mark "[ ]"
       if todo["done"] then make mark "[x]"
-      text "{mark} {todo["id"]}. {todo["task"]}"`
+      print "{mark} {todo["id"]}. {todo["task"]}"`
       },
       {
         name: "Budget tracker (income/expense/balance)",
@@ -1898,7 +1898,7 @@ loop yes
         ivxcode: `make transactions []
 make balance 0
 loop yes
-  text "Balance: {balance} | Commands: income, expense, history, quit"
+  print "Balance: {balance} | Commands: income, expense, history, quit"
   take cmd
   if cmd = "quit" then end
   if cmd = "income" or cmd = "expense"
@@ -1912,7 +1912,7 @@ loop yes
       push(transactions, {"-": amount, "desc": desc})
   else if cmd = "history"
     for t in transactions
-      if "+" in t then text "+ {t["+"]}: {t["desc"]}"
+      if "+" in t then print "+ {t["+"]}: {t["desc"]}"
       else say "- {t["-"]}: {t["desc"]}"`
       },
       {
@@ -1929,7 +1929,7 @@ if avg >= 90 then make letter "A"
 else if avg >= 80 then make letter "B"
 else if avg >= 70 then make letter "C"
 else if avg >= 60 then make letter "D"
-text "Average: {round(avg)}% — Grade: {letter}"`
+print "Average: {round(avg)}% — Grade: {letter}"`
       },
       {
         name: "Celsius to Fahrenheit table",
@@ -1938,11 +1938,11 @@ text "Average: {round(avg)}% — Grade: {letter}"`
         savings: { python: 63, javascript: 59, typescript: 55, java: 70 },
         analysis: "A loop with inline arithmetic and string interpolation. Canonical IVX.",
         caveats: null,
-        ivxcode: `text "°C\t°F"
-text "─────────"
+        ivxcode: `print "°C\t°F"
+print "─────────"
 loop c? <= 100
   make f c * 9 / 5 + 32
-  text "{c}°C\t{f}°F"
+  print "{c}°C\t{f}°F"
   make c + 10`
       },
       {
@@ -1957,11 +1957,11 @@ make today now()
 make days datediff(today, targetDate, "days")
 make hours datediff(today, targetDate, "hours")
 if days > 0
-  text "{days} days ({hours} hours) until {targetDate}"
+  print "{days} days ({hours} hours) until {targetDate}"
 else if days = 0
-  text "Today is the day!"
+  print "Today is the day!"
 else
-  text "{targetDate} was {abs(days)} days ago"`
+  print "{targetDate} was {abs(days)} days ago"`
       }
     ];
 // ── Category definitions ──────────────────────────────────────────────────────
