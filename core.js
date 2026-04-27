@@ -62,8 +62,7 @@ const KEYWORDS = new Set([
   // OOP
   'super',
   // Data
-  'make', 'del', 'take', 'say', 'print', 'save', 'download',
-  // Navigation / graph
+  'make', 'del', 'take', 'say', 'print', 'save', 'download',  // Navigation / graph
   'dot', 'fork', 'prev', 'next', 'from',
   // Logic / literals
   'not', 'and', 'or', 'same', 'is', 'yes', 'no', 'none',
@@ -475,7 +474,7 @@ class Parser {
       say: () => this.parseSay(),
       take: () => this.parseTake(),
       save: () => this.parseSave(),
-      local: () => this.parseLocal(),
+      download: () => this.parseDownload(),
       give: () => this.parseGive(),
       wait: () => this.parseWait(),
       ask: () => this.parseExprStatement(), // ask is an expression
@@ -545,7 +544,7 @@ class Parser {
   // A block is INDENT [statements] DEDENT
   parseBlock() {
     if (!this.eat(T.INDENT)) {
-      this.error('expected an indented block here');
+      this.error('Expected indented block');
       return [];
     }
     const stmts = [];
@@ -590,7 +589,7 @@ class Parser {
     // Handle lazy declaration: make name? + expr
     const isLazy = nameTok.type === T.LAZY;
     if (nameTok.type !== T.IDENTIFIER && !isLazy) {
-      this.error("make needs a variable name here", nameTok);
+      this.error("Expected variable name after 'make'", nameTok);
       return null;
     }
 
@@ -599,7 +598,7 @@ class Parser {
       const dot = this.advance();
       const fieldTok = this.peek();
       if (fieldTok.type !== T.IDENTIFIER) {
-        this.error("expected a field name after the dot", fieldTok);
+        this.error("Expected field name after '.'", fieldTok);
         break;
       }
       this.advance();
@@ -629,7 +628,7 @@ class Parser {
     const tok = this.advance(); // eat 'del'
     const nameTok = this.peek();
     if (nameTok.type !== T.IDENTIFIER) {
-      this.error("del needs a variable name here", nameTok);
+      this.error("Expected variable name after 'del'", nameTok);
       return null;
     }
     const name = this.advance().value;
@@ -676,7 +675,7 @@ class Parser {
 
     // Plain take user — or take file.csv (dot = file)
     if (nameTok.type !== T.IDENTIFIER) {
-      this.error("take needs a variable name here", nameTok);
+      this.error("Expected variable name after 'take'", nameTok);
       return null;
     }
     const name = this.advance().value;
@@ -821,13 +820,13 @@ class Parser {
 
   _parseSavePayload(target, line, col) {
     if (this.check(T.NEWLINE) || this.check(T.EOF) || this.check(T.DEDENT)) {
-      this.error("save needs a value or filename here", this.peek());
+      this.error("Expected value or filename after 'save'", this.peek());
       return null;
     }
 
     const first = this.parseExpr();
     if (!first) {
-      this.error("save needs a value or filename here", this.peek());
+      this.error("Expected value or filename after 'save'", this.peek());
       return null;
     }
 
@@ -867,7 +866,7 @@ class Parser {
     let valueExpr = first;
     const filenameExpr = this._parseSaveFilenameExpr();
     if (!filenameExpr) {
-      this.error("save needs a filename after the value", this.peek());
+      this.error("Expected filename after value in 'save'", this.peek());
       return null;
     }
 
@@ -889,7 +888,7 @@ class Parser {
       if ([T.IDENTIFIER, T.KEYWORD, T.NUMBER].includes(part.type)) {
         name += '.' + String(this.advance().value ?? '');
       } else {
-        this.error("expected a filename part after the dot", part);
+        this.error("Expected filename segment after '.'", part);
         return null;
       }
     }
@@ -911,14 +910,8 @@ class Parser {
   }
 
   // ── local save <filename> | local save <value> <filename> ────────────────
-  parseLocal() {
-    const tok = this.advance(); // eat 'local'
-    if (!this.checkKw('save')) {
-      this.error("local needs to be followed by save", this.peek());
-      this.eatNewline();
-      return null;
-    }
-    this.advance(); // eat 'save'
+  parseDownload() {
+    const tok = this.advance(); // eat 'download'
     return this._parseSavePayload('local', tok.line, tok.col);
   }
 
@@ -994,7 +987,7 @@ class Parser {
         target = null; // signal that targetExpr should be used
       }
     } else {
-      this.error("for needs a variable name here", targetTok);
+      this.error("Expected iterable after 'for'", targetTok);
       return null;
     }
 
@@ -1013,7 +1006,7 @@ class Parser {
           target = null;
         }
       } else {
-        this.error("in needs something to loop over here", realTarget);
+        this.error("Expected iterable after 'in'", realTarget);
         return null;
       }
     }
@@ -1046,7 +1039,7 @@ class Parser {
     const tok = this.advance(); // eat 'fun'
     const nameTok = this.peek();
     if (nameTok.type !== T.IDENTIFIER) {
-      this.error("fun needs a function name here", nameTok);
+      this.error("Expected function name after 'fun'", nameTok);
       return null;
     }
     const name = this.advance().value;
@@ -1063,7 +1056,7 @@ class Parser {
       while (!this.check(T.RPAREN) && !this.check(T.EOF)) {
         const p = this.peek();
         if (p.type !== T.IDENTIFIER && p.type !== T.LAZY) {
-          this.error('expected a parameter name here', p); break;
+          this.error('Expected parameter name', p); break;
         }
         const isLazy = p.type === T.LAZY;
         const paramName = this.advance().value;
@@ -1101,7 +1094,7 @@ class Parser {
         params.push({ name: paramName, lazy: isLazy, defaultExpr, transformOp, transformRight });
         if (!this.eat(T.COMMA)) break;
       }
-      this.expect(T.RPAREN, undefined, "missing ) after the parameters");
+      this.expect(T.RPAREN, undefined, "Expected ')' after parameters");
     }
 
     this.eatNewline();
@@ -1145,7 +1138,7 @@ class Parser {
       while (!this.check(T.RPAREN) && !this.check(T.EOF)) {
         const p = this.peek();
         if (p.type !== T.IDENTIFIER && p.type !== T.LAZY) {
-          this.error('expected a parameter name here', p); break;
+          this.error('Expected parameter name', p); break;
         }
         const isLazy = p.type === T.LAZY;
         const paramName = this.advance().value;
@@ -1175,7 +1168,7 @@ class Parser {
         params.push({ name: paramName, lazy: isLazy, defaultExpr, transformOp, transformRight });
         if (!this.eat(T.COMMA)) break;
       }
-      this.expect(T.RPAREN, undefined, "missing ) after the init parameters");
+      this.expect(T.RPAREN, undefined, "Expected ')' after init params");
     }
     this.eatNewline();
     // init never has a body — implicit self-assignment handles everything
@@ -1188,7 +1181,7 @@ class Parser {
     const tok = this.advance(); // eat 'class'
     const nameTok = this.peek();
     if (nameTok.type !== T.IDENTIFIER) {
-      this.error("class needs a name here", nameTok);
+      this.error("Expected class name after 'class'", nameTok);
       return null;
     }
     const name = this.advance().value;
@@ -1198,12 +1191,12 @@ class Parser {
       if (!this.check(T.RPAREN) && !this.check(T.EOF)) {
         const superTok = this.peek();
         if (superTok.type !== T.IDENTIFIER) {
-          this.error("expected the parent class name inside the parentheses", superTok);
+          this.error("Expected superclass name inside class parentheses", superTok);
         } else {
           superclass = { name: this.advance().value, line: superTok.line, col: superTok.col };
         }
       }
-      this.expect(T.RPAREN, undefined, "missing ) after the class header");
+      this.expect(T.RPAREN, undefined, "Expected ')' after class header");
     }
 
     this.eatNewline();
@@ -1436,7 +1429,7 @@ class Parser {
         const dot = this.advance();
         const fieldTok = this.peek();
         if (fieldTok.type !== T.IDENTIFIER) {
-          this.error("expected a field name after the dot", fieldTok);
+          this.error("Expected field name after '.'", fieldTok);
           break;
         }
         this.advance();
@@ -2253,7 +2246,7 @@ class TypeChecker {
 
       case 'Super': {
         if (!env.lookup('super')) {
-          this.err(`super can only be used inside a subclass method`, node);
+          this.err(`'super' is only available inside a subclass method`, node);
         }
         return TYPE.UNKNOWN;
       }
@@ -2313,7 +2306,7 @@ class TypeChecker {
         const t = this.checkExpr(node.operand, env);
         if (node.op === 'not') {
           if (t !== TYPE.BOOLEAN && t !== TYPE.UNKNOWN && t !== TYPE.NONE) {
-            this.err(`not works on yes/no values — this isn't one, got ${t}`, node);
+            this.err(`'not' requires boolean operand, got ${t}`, node);
           }
           return TYPE.BOOLEAN;
         }

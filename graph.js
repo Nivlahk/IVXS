@@ -52,7 +52,7 @@ const INCOMING_KEYWORDS = ['then', 'else']; // 'then' is accepted but has no eff
 // in NODE_KEYWORDS, otherwise parseLine sets nodeKey='note' and the main loop's
 // else-branch silently creates a spurious Process node for every standalone
 // 'note ...' line, and KIND_TO_KEY has no entry for it so round-trips break.
-const NODE_KEYWORDS = ['if', 'fork', 'loop', 'dot', 'take', 'say', 'print', 'give', 'fun', 'end', 'from', 'wait', 'try'];
+const NODE_KEYWORDS = ['if', 'fork', 'loop', 'dot', 'take', 'say', 'print', 'give', 'fun', 'end', 'from', 'wait', 'every', 'try'];
 const OUTGOING_KEYWORDS = ['prev', 'next'];
 const NODE_KEYS = new Set(NODE_KEYWORDS);
 const IN_KEYS = new Set(INCOMING_KEYWORDS);
@@ -137,7 +137,7 @@ function parseivx(source) {
     }
 
     // Wait block tracking — detect wait with a trigger keyword after it
-    const isWaitBlock = pl.nodeKey === 'wait' &&
+    const isWaitBlock = (pl.nodeKey === 'wait' || pl.nodeKey === 'every') &&
       /^(email|sheets|time|http)\b/.test(pl.content);
     if (isWaitBlock) {
       lastWait = i;
@@ -512,7 +512,7 @@ function parseivx(source) {
                 continue;
             }
             else if (nodeKey === 'fork') {
-                node = addNode('Fork', lineNum, content || 'fork', 'fork');
+                node = addNode('Decision', lineNum, content || 'fork', 'fork');
                 flushUntil(indent, node);
               const parentBranchDc = ctx.decStack[ctx.decStack.length - 1] ?? null;
               const wiredAsBranch = tryWireAsBranch(node);
@@ -611,10 +611,10 @@ function parseivx(source) {
                 ctx = makeCtx(indent, node, savedBeforeFun);
                 continue;
             }
-            else if (nodeKey === 'wait' && /^(email|sheets|time|http)\b/.test(content)) {
+            else if ((nodeKey === 'wait' || nodeKey === 'every') && /^(email|sheets|time|http)\b/.test(content)) {
                 // Wait block — like fun, sits outside sequential flow
                 // Build a display label: "wait email by addr" etc.
-                node = addNode('WaitBlock', lineNum, `wait ${content}`, 'wait-header');
+                node = addNode('WaitBlock', lineNum, `${nodeKey} ${content}`, 'wait-header');
                 const savedBeforeWait = getLastExec();
                 flushUntil(indent, null);
                 ctxStack.push(ctx);

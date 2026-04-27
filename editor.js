@@ -269,7 +269,7 @@ function escHtml(s) {
 }
 
 // Keyword sets for the tokenizing highlighter
-const _KW_NODE     = new Set(['if','fork','loop','dot','con','take','say','print','give','fun','class','init','end','from','make','note','for','in','wait','del','ask','post','use','key','sheets','email','by','try','err']);
+const _KW_NODE     = new Set(['if','fork','loop','dot','con','take','say','print','give','fun','class','init','end','from','make','note','for','in','wait','download','del','ask','post','use','key','sheets','email','by','try','err']);
 const _KW_FLOW     = new Set(['so','then','else']);
 const _KW_OUTGOING = new Set(['prev','next']);
 const _KW_LOGIC    = new Set(['not','and','or','same','is','yes','no','none']);
@@ -277,7 +277,7 @@ const _KW_LOGIC    = new Set(['not','and','or','same','is','yes','no','none']);
 // Tokenize a raw source line into typed spans, then emit HTML.
 // Handles strings, numbers, lists, dicts, keywords — all before HTML escaping
 // so bracket/quote characters are never corrupted by &amp; etc.
-function highlightLine(line, allVars = new Set(), allClasses = new Set(), lineError = null) {
+function highlightLine(line, allVars = new Set(), allClasses = new Set()) {
   // Split off trailing 'note ...' comment first
   const noteMatch = line.match(/^(.*?)\b(note\s.*)$/);
   const code = noteMatch ? noteMatch[1] : line;
@@ -420,40 +420,23 @@ function highlightLine(line, allVars = new Set(), allClasses = new Set(), lineEr
   }).join('');
 
   if (note) html += `<span class="kw-note">${escHtml(note)}</span>`;
-
-  // Yellow wavy underline at the error column
-  if (lineError) {
-    const col = (lineError.col ?? 1) - 1; // 0-based
-    // Rebuild html with underline span wrapping the token at col
-    // Simpler approach: overlay a positioned underline on the whole line
-    // We use a ::after-style wrapper that marks the error column range
-    const before = escHtml(line.slice(0, col));
-    // Find end of the token at col (next whitespace or end)
-    let end = col;
-    while (end < line.length && !/\s/.test(line[end])) end++;
-    if (end === col) end = col + 1; // at least one char
-    const token = escHtml(line.slice(col, end));
-    const after  = escHtml(line.slice(end));
-    const msg    = escHtml(lineError.message ?? '');
-    html = (before ? `<span>${before}</span>` : '') +
-           `<span class="kh-err-squig" title="${msg}">${token}</span>` +
-           (after ? `<span>${after}</span>` : '');
-    if (note) html += `<span class="kw-note">${escHtml(note)}</span>`;
-  }
-
   return html;
 }
 
 function highlightSource(src) {
   // Pre-scan entire source for all make-declared variable names
+  // so every occurrence gets colored, not just the token after 'make'
   const allVars = new Set();
   const makeMatches = src.match(/\bmake\s+([A-Za-z_]\w*)/g);
   if (makeMatches) makeMatches.forEach(m => { const v = m.match(/make\s+(\w+)/); if (v) allVars.add(v[1]); });
   const takeMatches = src.match(/\btake\s+(?:(?:int|flt|str|bin|list|dict)\s*\(\s*)?([A-Za-z_]\w*)/g);
   if (takeMatches) takeMatches.forEach(m => { const v = m.match(/([A-Za-z_]\w*)(?:\s*\))?$/); if (v) allVars.add(v[1]); });
+  // Also collect lazy-declared variables (name?) so they color as vars
   const lazyMatches = src.match(/\b([A-Za-z_]\w*)\?/g);
   if (lazyMatches) lazyMatches.forEach(m => { allVars.add(m.slice(0, -1)); });
+  // Loop iterators always color as variables — they act like variables
   ['i','ii','iii','j','jj','jjj','k','kk','kkk'].forEach(v => allVars.add(v));
+  // Function parameters color as variables (handles name, name?, name * 3, name? 100)
   const funMatches = src.match(/\b(?:fun\s+\w+|init)\s*\(([^)]+)\)/g);
   if (funMatches) funMatches.forEach(m => {
     const inner = m.match(/\(([^)]+)\)/);
@@ -462,12 +445,14 @@ function highlightSource(src) {
       if (v) allVars.add(v[1]);
     });
   });
+
+  // Collect declared class names so both declarations and constructor calls
+  // share one visual identity.
   const allClasses = new Set();
   const classMatches = src.match(/\bclass\s+([A-Za-z_]\w*)/g);
   if (classMatches) classMatches.forEach(m => { const c = m.match(/class\s+([A-Za-z_]\w*)/); if (c) allClasses.add(c[1]); });
 
-  const errorMap = window._khErrorMap ?? {};
-  return src.split('\n').map((line, idx) => highlightLine(line, allVars, allClasses, errorMap[idx + 1])).join('\n');
+  return src.split('\n').map(line => highlightLine(line, allVars, allClasses)).join('\n');
 }
 
 function updateHighlight() {
@@ -475,7 +460,7 @@ function updateHighlight() {
   const lines = src.split('\n');
   const count = lines.length;
 
-  // Fast path — just syntax colouring, no parsing
+  // Update highlight layer
   hlEl.innerHTML = highlightSource(src) + '\n';
 
   // Update line number gutter
@@ -484,37 +469,15 @@ function updateHighlight() {
   gutterEl.textContent = gutter;
 
   // Size the highlight and textarea to content so scroll container works
-  const lineH    = 13 * 1.7;
-  const padV     = 10 * 2;
-  const minH     = scrollEl.clientHeight || 300;
+  const lineH   = 13 * 1.7; // font-size * line-height
+  const padV    = 10 * 2;   // top + bottom padding
+  const minH    = scrollEl.clientHeight || 300;
   const contentH = Math.max(minH, count * lineH + padV);
-  hlEl.style.height  = contentH + 'px';
-  srcEl.style.height = contentH + 'px';
+  hlEl.style.height    = contentH + 'px';
+  srcEl.style.height   = contentH + 'px';
 
   // Sync gutter scroll position with scroll container
   gutterEl.style.top = -scrollEl.scrollTop + 'px';
-}
-
-// Debounced squiggle — parse only after 600ms idle, then re-render with errors
-let _squigTimer = null;
-function scheduleSquiggle() {
-  clearTimeout(_squigTimer);
-  _squigTimer = setTimeout(() => {
-    const src = srcEl.value;
-    const newMap = {};
-    try {
-      const parsed = parse(src);
-      if (parsed.errors?.length) {
-        for (const e of parsed.errors) {
-          if (e.line != null)
-            newMap[e.line] = { col: e.col ?? 1, message: e.message };
-        }
-      }
-    } catch (_) {}
-    window._khErrorMap = newMap;
-    // Only re-render if there are errors to show (or were before)
-    hlEl.innerHTML = highlightSource(src) + '\n';
-  }, 600);
 }
 
 // Sync scroll: when src-scroll scrolls, move gutter too
@@ -525,21 +488,6 @@ scrollEl.addEventListener('scroll', () => {
 // Textarea scroll should be ignored — scrollEl handles it
 srcEl.addEventListener('scroll', () => { srcEl.scrollTop = 0; srcEl.scrollLeft = 0; });
 
-// Allow runtime to add error underlines for runtime errors
-window._khMarkError = (line, col, message) => {
-  if (line == null) return;
-  window._khErrorMap = window._khErrorMap ?? {};
-  window._khErrorMap[line] = { col: col ?? 1, message };
-  hlEl.innerHTML = highlightSource(srcEl.value) + '\n';
-};
-window._khClearErrors = () => {
-  window._khErrorMap = {};
-  hlEl.innerHTML = highlightSource(srcEl.value) + '\n';
-};
-srcEl.addEventListener('input', () => {
-  window._khErrorMap = {};  // clear stale squiggles immediately on typing
-  updateHighlight();
-  scheduleSquiggle();       // re-parse after 600ms idle
-});
+srcEl.addEventListener('input', updateHighlight);
 updateHighlight();
 
