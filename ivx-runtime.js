@@ -1531,7 +1531,7 @@ function inferImmutables(ast) {
     if (node.type === 'Fun')  { scanBlock(node.body); return; }
     if (node.type === 'Class') { scanBlock(node.body); return; }
     if (node.type === 'Try')  { scanBlock(node.body); scanBlock(node.errBody); return; }
-    if (node.type === 'Print' || node.type === 'Give') { scanExpr(node.expr); return; }
+    if (node.type === 'Text' || node.type === 'Give') { scanExpr(node.expr); return; }
     if (node.type === 'ExprStatement') { scanExpr(node.expr); return; }
   }
 
@@ -1657,7 +1657,7 @@ class Interpreter {
         break;
       }
 
-      case 'Print': {
+      case 'Text': {
         const value = await this.evalExpr(node.expr, env);
         await this.onOutput(value);
         break;
@@ -2427,6 +2427,16 @@ class Interpreter {
       if (isTruthy(l)) return true;
       return isTruthy(await this.evalExpr(node.right, env));
     }
+    if (node.op === 'nand') {
+      const l = await this.evalExpr(node.left, env);
+      if (!isTruthy(l)) return true;  // short-circuit: false and _ → nand = true
+      return !isTruthy(await this.evalExpr(node.right, env));
+    }
+    if (node.op === 'nor') {
+      const l = await this.evalExpr(node.left, env);
+      if (isTruthy(l)) return false;  // short-circuit: true or _ → nor = false
+      return !isTruthy(await this.evalExpr(node.right, env));
+    }
 
     const left  = await this.evalExpr(node.left,  env);
     const right = await this.evalExpr(node.right, env);
@@ -2484,10 +2494,13 @@ class Interpreter {
       case '>':   return left > right;
       case '<=':  return left <= right;
       case '>=':  return left >= right;
-      case 'is':  return ivxEqual(left, right);
-      case 'in':  return ivxIn(left, right, node);
-      case 'xor': return isTruthy(left) !== isTruthy(right);
-      default:    throw new RuntimeError(`Unknown operator '${node.op}'`, node.line);
+      case 'is':   return ivxEqual(left, right);
+      case 'in':   return ivxIn(left, right, node);
+      case 'same': return isTruthy(left) === isTruthy(right);   // XNOR
+      case 'xor':  return isTruthy(left) !== isTruthy(right);   // not same
+      case 'nand': return !(isTruthy(left) && isTruthy(right));
+      case 'nor':  return !(isTruthy(left) || isTruthy(right));
+      default:     throw new RuntimeError(`Unknown operator '${node.op}'`, node.line);
     }
   }
 

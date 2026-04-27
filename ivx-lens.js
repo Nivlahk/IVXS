@@ -913,7 +913,8 @@ function exprText(node) {
       const OPS = {
         '+':'add','-':'sub','*':'mul','/':'div','//':'idiv','%':'rem','^':'pow',
         '=':'eq','!=':'ne','<':'lt','>':'gt','<=':'le','>=':'ge',
-        'and':'and','or':'or','xor':'xor','in':'in','is':'is',
+        'and':'and','or':'or','same':'same','xor':'xor',
+        'nand':'nand','nor':'nor','in':'in','is':'is',
       };
       return `(${exprText(node.left)} ${OPS[node.op]??node.op} ${exprText(node.right)})`;
     }
@@ -1006,12 +1007,14 @@ function loadExpr(node, em, dst) {
       loadExpr(node.left,  em, 'R2');
       loadExpr(node.right, em, 'R3');
       const opMap = {
-        '+':   '5C', '-':   '5D', '*':  '5E', '/':  '5F',
-        '=':   '50', '!=':  '51',
-        '<':   '5B', '>':   '5B',
-        '<=':  '5B', '>=':  '57',
-        'and': '52', 'or':  '54', 'xor': '56',
-        'mod': '60', '%':   '60',
+        '+':    '5C', '-':   '5D', '*':  '5E', '/':  '5F',
+        '=':    '50', '!=':  '51',
+        '<':    '5B', '>':   '5B',   // > swaps operands below
+        '<=':   '5B', '>=':  '58',
+        'and':  '52', 'nand':'53',
+        'or':   '54', 'nor': '55',
+        'xor':  '56', 'same':'57',   // same = XNOR
+        'mod':  '60', '%':   '60',
       };
       const op = opMap[node.op] ?? '5C';
       // > needs operands swapped (slt R0, R3, R2 = R3 < R2 = left > right)
@@ -1068,6 +1071,7 @@ function compileStmt(node, em) {
       break;
     }
 
+    case 'Print':
     case 'Speak':
     case 'Say':
     case 'Text': {
@@ -1814,6 +1818,8 @@ const LensTranspiler = (() => {
         const target = node.target ? E(node.target) : node.name;
         return lang.assign(target, E(node.expr), node.lazy);
       }
+      case 'Print':
+      case 'Speak':
       case 'Say':
         return lang.say(E(node.expr));
       case 'Take':

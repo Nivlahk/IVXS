@@ -68,11 +68,11 @@ const KEYWORDS = new Set([
   // OOP
   'extends', 'super',
   // Data
-  'make', 'del', 'take', 'say', 'print', 'save', 'local',
+  'make', 'del', 'take', 'say', 'text', 'save', 'local',
   // Navigation / graph
   'dot', 'fork', 'prev', 'next', 'from',
   // Logic / literals
-  'not', 'and', 'or', 'xor', 'is', 'yes', 'no', 'none',
+  'not', 'and', 'or', 'same', 'is', 'yes', 'no', 'none',
   // Iteration
   'in',
   // Other
@@ -447,7 +447,7 @@ const ARITH_OPS = new Set(['+','-','*','/','//','%','^']);
 
 // ── Operator precedence ───────────────────────────────────────────────────────
 const PREC = {
-  'or': 1, 'xor': 1,
+  'or': 1, 'same': 1,
   'and': 2,
   'not': 3, // unary, handled separately
   '=': 4, '!=': 4, '<': 4, '>': 4, '<=': 4, '>=': 4, 'is': 4,
@@ -477,7 +477,7 @@ class Parser {
     this._statementParsers = {
       make: () => this.parseMake(),
       del:  () => this.parseDel(),
-      print: () => this.parseText(),
+      text: () => this.parseText(),
       say:  () => this.parseSay(),
       take: () => this.parseTake(),
       save: () => this.parseSave(),
@@ -645,10 +645,10 @@ class Parser {
 
   // ── give <expr> ────────────────────────────────────────────────────────────
   parseText() {
-    const tok = this.advance(); // eat 'print'
+    const tok = this.advance(); // eat 'text'
     const expr = this.parseExpr();
     this.eatNewline();
-    return Node('Print', { expr, line: tok.line, col: tok.col });
+    return Node('Text', { expr, line: tok.line, col: tok.col });
   }
 
   // ── say <expr> — speak text aloud via browser speech synthesis ───────────
@@ -1291,21 +1291,43 @@ class Parser {
   parseConditionExpr() {
     let left = this.parseConditionClause();
 
-    while (this.checkKw('and') || this.checkKw('or') || this.checkKw('xor')) {
-      const op  = this.advance().value;
-      const right = this.parseConditionClause();
-      left = Node('BinOp', { op, left, right, line: left?.line });
+    while (true) {
+      // Check for compound 'not and', 'not or', 'not same'
+      if (this.checkKw('not')) {
+        const next = this.peek(1);
+        if (next && next.type === T.KEYWORD && ['and','or','same'].includes(next.value)) {
+          this.advance(); // eat 'not'
+          const binOp = this.advance().value; // eat 'and'/'or'/'same'
+          // Map to compound op: 'not and'→'nand', 'not or'→'nor', 'not same'→'xor'
+          const op = binOp === 'and' ? 'nand' : binOp === 'or' ? 'nor' : 'xor';
+          const right = this.parseConditionClause();
+          left = Node('BinOp', { op, left, right, line: left?.line });
+          continue;
+        }
+      }
+      if (this.checkKw('and') || this.checkKw('or') || this.checkKw('same')) {
+        const op  = this.advance().value;
+        const right = this.parseConditionClause();
+        left = Node('BinOp', { op, left, right, line: left?.line });
+        continue;
+      }
+      break;
     }
     return left;
   }
 
   // A single clause, possibly with implicit subject/operator
   parseConditionClause() {
-    // 'not' prefix
+    // 'not' prefix — but 'not and'/'not or'/'not same' are compound binary ops
+    // handled in parseConditionExpr; here only plain 'not <value>' is unary
     if (this.checkKw('not')) {
-      const tok = this.advance();
-      const operand = this.parseConditionClause();
-      return Node('UnaryOp', { op: 'not', operand, line: tok.line, col: tok.col });
+      const next = this.peek(1);
+      const isCompound = next && next.type === T.KEYWORD && ['and','or','same'].includes(next.value);
+      if (!isCompound) {
+        const tok = this.advance();
+        const operand = this.parseConditionClause();
+        return Node('UnaryOp', { op: 'not', operand, line: tok.line, col: tok.col });
+      }
     }
 
     // Peek: do we have a subject (identifier/literal) followed by an operator?
@@ -1743,7 +1765,7 @@ function opResultType(op, left, right) {
     return null;
   }
   // Logical operators — operands should be boolean, result is boolean
-  if (['and','or','xor'].includes(op)) {
+  if (['and','or','same','nand','nor','xor'].includes(op)) {
     return TYPE.BOOLEAN;
   }
   // 'in' — check membership, returns boolean

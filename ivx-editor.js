@@ -272,7 +272,7 @@ function escHtml(s) {
 const _KW_NODE     = new Set(['if','fork','loop','dot','con','take','say','print','give','fun','class','init','end','from','make','note','for','in','wait','del','ask','post','use','key','sheets','email','by','try','err']);
 const _KW_FLOW     = new Set(['so','then','else']);
 const _KW_OUTGOING = new Set(['prev','next']);
-const _KW_LOGIC    = new Set(['not','and','or','xor','is','yes','no','none']);
+const _KW_LOGIC    = new Set(['not','and','or','same','is','yes','no','none']);
 
 // Tokenize a raw source line into typed spans, then emit HTML.
 // Handles strings, numbers, lists, dicts, keywords — all before HTML escaping
