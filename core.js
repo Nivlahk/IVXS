@@ -114,8 +114,6 @@ class Lexer {
     this.line = 1;
     this.col = 1;
     this.tokens = [];
-
-    // Indentation stack — starts at column 0
     this.indentStack = [0];
 
     // After emitting NEWLINE we process indentation on the next non-empty line
