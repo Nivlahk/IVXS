@@ -517,6 +517,16 @@ path[data-edge-from]:hover{filter:drop-shadow(0 0 4px #89b4fa);stroke:#89b4fa !i
 .drive-btn-primary.drive-btn-hdr:hover { background: #1e5a8a; }
 .drive-btn-muted.drive-btn-hdr { color: #6b7280; }
 .drive-btn-muted.drive-btn-hdr:hover { color: #f87171; border-color: #f87171; }
+.drive-btn-download.drive-btn-hdr {
+  background: #1a2e2e;
+  border-color: #4ec9b0;
+  color: #4ec9b0;
+}
+.drive-btn-download.drive-btn-hdr:hover {
+  background: #1e3a3a;
+  border-color: #6aee90;
+  color: #6aee90;
+}
 
 /* Files dropdown */
 #drive-file-dropdown-wrap {
