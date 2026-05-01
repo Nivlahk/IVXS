@@ -7,10 +7,10 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build:mac": "electron-builder --mac",
-    "build:win": "electron-builder --win",
-    "build:linux": "electron-builder --linux",
-    "build:all": "electron-builder --mac --win --linux"
+    "build:mac": "electron-builder --mac --publish always",
+    "build:win": "electron-builder --win --publish always",
+    "build:linux": "electron-builder --linux --publish always",
+    "build:all": "electron-builder --mac --win --linux --publish always"
   },
   "build": {
     "appId": "tech.ivxs.desktop",
