@@ -2,6 +2,8 @@
   "name": "ivxs-desktop",
   "version": "1.0.0",
   "description": "IVX — Visual Programming Language",
+  "author": "Nivlahk",
+  "repository": "https://github.com/Nivlahk/IVXS",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
