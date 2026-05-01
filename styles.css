@@ -326,6 +326,10 @@ path[data-edge-from]:hover{filter:drop-shadow(0 0 4px #89b4fa);stroke:#89b4fa !i
 #gp.collapsed { grid-column: 2; flex: 0 0 32px; min-width: 32px; max-width: 32px; }
 #ep.collapsed #ep-body,
 #gp.collapsed #gp-body { display: none; }
+#ep.collapsed .panel-hdr > *:not(.panel-minimize-btn),
+#gp.collapsed .panel-hdr > *:not(.panel-minimize-btn) { display: none !important; }
+#ep.collapsed .panel-hdr,
+#gp.collapsed .panel-hdr { padding: 0; justify-content: center; }
 
 /* When one panel collapses, the other takes the full width */
 #main-layout:has(#ep.collapsed) {

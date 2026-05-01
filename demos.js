@@ -88,6 +88,41 @@ function nodeShape(kind, label, fill, stroke = '#ccc') {
 
 const IVX_DEMOS = [
   {
+    id: 'intro-cmd', label: 'The Language of Command', color: '#e2e8f0',
+    tagline: 'Programming is not math. It is the act of imposing your will on a machine.',
+    insert: '',
+    svgFn: () => {
+      const body = `
+      <rect x="10" y="10" width="560" height="280" rx="6" fill="#0d0d12" stroke="#1e1e2e"/>
+      <text x="290" y="40" text-anchor="middle" font-family="monospace" font-size="14" fill="#e2e8f0" font-weight="bold">The Language of Command</text>
+      
+      <text x="290" y="70" text-anchor="middle" font-family="monospace" font-size="11" fill="#9ca3af">When you code, you are not a surveyor—you are an architect.</text>
+      <text x="290" y="86" text-anchor="middle" font-family="monospace" font-size="11" fill="#9ca3af">You aren't "solving problems"; you are giving orders.</text>
+      
+      <rect x="50" y="110" width="140" height="80" rx="6" fill="#12121a" stroke="#4a9eff" stroke-width="1.5"/>
+      <text x="120" y="135" text-anchor="middle" font-family="monospace" font-size="12" fill="#4a9eff" font-weight="bold">Dictate Reality</text>
+      <text x="120" y="155" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">Define information</text>
+      <text x="120" y="170" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">and how it behaves.</text>
+
+      <rect x="220" y="110" width="140" height="80" rx="6" fill="#12121a" stroke="#34d399" stroke-width="1.5"/>
+      <text x="290" y="135" text-anchor="middle" font-family="monospace" font-size="12" fill="#34d399" font-weight="bold">Establish Law</text>
+      <text x="290" y="155" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">Create strict logic</text>
+      <text x="290" y="170" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">machines must follow.</text>
+
+      <rect x="390" y="110" width="140" height="80" rx="6" fill="#12121a" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="460" y="135" text-anchor="middle" font-family="monospace" font-size="12" fill="#a78bfa" font-weight="bold">Scale Your Will</text>
+      <text x="460" y="155" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">Turn one instruction</text>
+      <text x="460" y="170" text-anchor="middle" font-family="monospace" font-size="9" fill="#6b7280">into a billion actions.</text>
+
+      <text x="290" y="230" text-anchor="middle" font-family="monospace" font-size="11" fill="#e2e8f0">In the age of AI, syntax is secondary.</text>
+      <text x="290" y="246" text-anchor="middle" font-family="monospace" font-size="11" fill="#e2e8f0">The real power lies in the ability to structure a command.</text>
+
+      <text x="290" y="270" text-anchor="middle" font-family="monospace" font-size="12" fill="#cba6f7" font-weight="bold">Welcome to Knowledge Hybrid. Let's start giving orders.</text>
+      `;
+      return mkSvg(body, 580, 300);
+    },
+  },
+  {
     id: 'make', label: 'make', color: DC.K,
     tagline: 'Assign a value to a variable',
     node: () => `<svg viewBox="0 0 160 64" xmlns="http://www.w3.org/2000/svg" style="width:160px;height:64px;display:block">
@@ -1392,6 +1427,7 @@ const IVX_DEMOS = [
 const IVX_DEMO_MAP = Object.fromEntries(IVX_DEMOS.filter(d => d && d.id).map(d => [d.id, d]));
 
 const IVX_DEMO_SECTIONS = [
+  { label: 'Introduction', ids: ['intro-cmd'] },
   { label: 'Data',         ids: ['make', 'print', 'say', 'take'] },
   { label: 'Control Flow', ids: ['if', 'else', 'loop', 'for', 'end', 'dot', 'try'] },
   { label: 'Functions',    ids: ['give', 'fun', 'class'] },
@@ -1488,11 +1524,14 @@ function _renderDemo(id) {
   if (taglineEl)   taglineEl.textContent = demo.tagline;
 
   // Node shape preview
+  const nodeStrip = document.getElementById('ivx-demo-node-strip');
   const nodeEl = document.getElementById('ivx-demo-node');
-  if (nodeEl && demo.node) {
-    nodeEl.innerHTML = demo.node();
-  } else if (nodeEl) {
-    nodeEl.innerHTML = '';
+  if (demo.node) {
+    if (nodeStrip) nodeStrip.style.display = 'flex';
+    if (nodeEl) nodeEl.innerHTML = demo.node();
+  } else {
+    if (nodeStrip) nodeStrip.style.display = 'none';
+    if (nodeEl) nodeEl.innerHTML = '';
   }
 
   const viewport = document.getElementById('ivx-demo-viewport');
@@ -1558,7 +1597,7 @@ window.addEventListener('load', function initDemoPanel() {
   const fresh = btn.cloneNode(true);
   btn.parentNode.replaceChild(fresh, btn);
 
-  fresh.textContent = 'Keywords';
+  fresh.textContent = 'Tutorial';
 
   fresh.addEventListener('click', e => {
     e.stopPropagation();
