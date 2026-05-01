@@ -29,6 +29,9 @@
     "win": {
       "artifactName": "${productName}-Setup-${version}.${ext}"
     },
+    "linux": {
+      "target": ["AppImage", "deb"]
+    },
     "publish": {
       "provider": "github"
     },
