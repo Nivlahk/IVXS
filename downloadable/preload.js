@@ -6,6 +6,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('ivxDesktop', {
   // ── File operations ─────────────────────────────────────────────────────
   openFile:    ()                    => ipcRenderer.invoke('dialog:openFile'),
+  openFileFromPath: (path)            => ipcRenderer.invoke('fs:read', path),
   saveFile:    (content, defaultName) => ipcRenderer.invoke('dialog:saveFile', { content, defaultName }),
   saveExport:  (content, defaultName, ext, mime) => ipcRenderer.invoke('dialog:saveExport', { content, defaultName, ext, mime }),
 

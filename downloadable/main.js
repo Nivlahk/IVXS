@@ -61,6 +61,11 @@ ipcMain.handle('dialog:openFile', async () => {
   return { path: filePaths[0], content: fs.readFileSync(filePaths[0], 'utf8') };
 });
 
+ipcMain.handle('fs:read', async (event, filePath) => {
+  try { return fs.readFileSync(filePath, 'utf8'); }
+  catch { return null; }
+});
+
 ipcMain.handle('dialog:saveFile', async (event, { content, defaultName }) => {
   const { canceled, filePath } = await dialog.showSaveDialog(win, {
     title:       'Save IVX File',

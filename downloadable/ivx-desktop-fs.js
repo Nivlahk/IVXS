@@ -16,6 +16,8 @@ let _unsaved        = false;
 let _autosaveTimer  = null;
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
+const filesBtn    = document.getElementById('desk-files-btn');
+const fileList     = document.getElementById('drive-file-list');
 const newBtn      = document.getElementById('desk-new-btn');
 const openBtn     = document.getElementById('desk-open-btn');
 const saveBtn     = document.getElementById('desk-save-btn');
@@ -55,7 +57,47 @@ function loadFile(filePath, content) {
   if (window.IVX && IVX.bus) IVX.bus.emit('code_update_requested', { newCode: content });
   updateHeader();
   desktop.addRecent(filePath);
+  listRecentFiles(); // refresh dropdown
 }
+
+// ── List Recent Files ─────────────────────────────────────────────────────────
+async function listRecentFiles() {
+  if (!fileList) return;
+  fileList.innerHTML = '<div class="drive-loading">Loading...</div>';
+  try {
+    const recent = await desktop.getRecent();
+    fileList.innerHTML = '';
+    if (!recent || recent.length === 0) {
+      fileList.innerHTML = '<div class="drive-empty">No recent files yet.</div>';
+      return;
+    }
+    for (const p of recent) {
+      const item = document.createElement('div');
+      item.className = 'drive-file-item' + (p === _currentPath ? ' active' : '');
+      const name = p.split(/[\\/]/).pop().replace(/\.ivx$/, '');
+      item.innerHTML = `<span class="drive-file-icon">◆</span><span class="drive-file-name">${name}</span><div class="drive-file-path">${p}</div>`;
+      item.addEventListener('click', async () => {
+        if (_unsaved && !confirm('Unsaved changes. Open this file anyway?')) return;
+        const content = await desktop.openFileFromPath(p);
+        if (content != null) loadFile(p, content);
+        fileList.style.display = 'none';
+      });
+      fileList.appendChild(item);
+    }
+  } catch(e) {
+    fileList.innerHTML = `<div class="drive-empty">Error: ${e.message}</div>`;
+  }
+}
+
+// Files dropdown toggle
+filesBtn?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const open = fileList.style.display === 'block';
+  fileList.style.display = open ? 'none' : 'block';
+  if (!open) listRecentFiles();
+});
+document.addEventListener('click', () => { if (fileList) fileList.style.display = 'none'; });
+fileList?.addEventListener('click', e => e.stopPropagation());
 
 // ── Save ──────────────────────────────────────────────────────────────────────
 async function fileSave() {
