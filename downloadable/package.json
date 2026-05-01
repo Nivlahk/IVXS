@@ -4,7 +4,7 @@
   "description": "IVX — Visual Programming Language",
   "author": "Nivlahk",
   "repository": "https://github.com/Nivlahk/IVXS",
-  "main": "src/main.js",
+  "main": "main.js",
   "scripts": {
     "start": "electron .",
     "build:mac": "electron-builder --mac",
@@ -16,24 +16,15 @@
     "appId": "tech.ivxs.desktop",
     "productName": "IVXS",
     "copyright": "Copyright © 2026 IVXS Tech",
-    "icon": "assets/icon",
-    "mac": {
-      "category": "public.app-category.developer-tools",
-      "icon": "assets/icon.icns",
-      "target": ["dmg", "zip"]
-    },
-    "win": {
-      "icon": "assets/icon.ico",
-      "target": ["nsis", "portable"]
-    },
-    "linux": {
-      "icon": "assets/icon.png",
-      "target": ["AppImage", "deb"],
-      "category": "Development"
-    },
     "files": [
-      "src/**/*",
-      "assets/**/*"
+      "*.js",
+      "*.html",
+      "*.css",
+      "*.png",
+      "*.svg",
+      "assets/**/*",
+      "!sync.ps1",
+      "!README.md"
     ],
     "directories": {
       "output": "dist"
