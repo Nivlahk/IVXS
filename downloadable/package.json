@@ -2,7 +2,7 @@
   "name": "ivxs-desktop",
   "version": "1.0.0",
   "description": "IVX — Visual Programming Language",
-  "author": "Nivlahk",
+  "author": "Nivlahk <yefoolfish@gmail.com>",
   "repository": "https://github.com/Nivlahk/IVXS",
   "main": "main.js",
   "scripts": {
@@ -30,7 +30,10 @@
       "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "linux": {
-      "target": ["AppImage", "deb"]
+      "target": [
+        "AppImage",
+        "deb"
+      ]
     },
     "publish": {
       "provider": "github"
