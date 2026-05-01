@@ -26,6 +26,9 @@
       "!sync.ps1",
       "!README.md"
     ],
+    "win": {
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
     "directories": {
       "output": "dist"
     }
