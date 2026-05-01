@@ -1720,9 +1720,7 @@ function _loadExample() {
   const prog = PROGRAMS[_exCurrentIdx];
   if (!prog || typeof srcEl === 'undefined') return;
   if (srcEl.value.trim() && !confirm('Replace current editor contents with this example?')) return;
-  srcEl.value = prog.ivxcode;
-  if (typeof updateHighlight === 'function') updateHighlight();
-  if (typeof scheduleRender  === 'function') scheduleRender();
+  if (window.IVX && IVX.bus) IVX.bus.emit('code_update_requested', { newCode: prog.ivxcode });
   _closeExPanel();
 }
 

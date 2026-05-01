@@ -123,6 +123,123 @@ const IVX_DEMOS = [
     },
   },
   {
+    id: 'intro-scope', label: 'Scope and Flow', color: '#e2e8f0',
+    tagline: 'Understand the constraints: finite boundaries, discrete logic, and two flows.',
+    insert: '',
+    svgFn: () => {
+      const body = `
+      <rect x="10" y="10" width="560" height="280" rx="6" fill="#0d0d12" stroke="#1e1e2e"/>
+      <text x="290" y="40" text-anchor="middle" font-family="monospace" font-size="14" fill="#e2e8f0" font-weight="bold">The Rules of Authority: Scope and Flow</text>
+      
+      <!-- 1. Finite Boundary -->
+      <rect x="40" y="65" width="480" height="55" rx="6" fill="#12121a" stroke="#f0a030" stroke-width="1.5"/>
+      <text x="60" y="88" font-family="monospace" font-size="12" fill="#f0a030" font-weight="bold">1. The Finite Boundary</text>
+      <text x="220" y="88" font-family="monospace" font-size="10" fill="#9ca3af">Commands aren't open-ended. You must</text>
+      <text x="220" y="104" font-family="monospace" font-size="10" fill="#9ca3af">define the start, the end, and every step.</text>
+
+      <!-- 2. Discrete Logic -->
+      <rect x="40" y="130" width="480" height="55" rx="6" fill="#12121a" stroke="#4a7fff" stroke-width="1.5"/>
+      <text x="60" y="153" font-family="monospace" font-size="12" fill="#4a7fff" font-weight="bold">2. The Discrete Logic</text>
+      <text x="220" y="153" font-family="monospace" font-size="10" fill="#9ca3af">No "maybe" or "sort of". Every action</text>
+      <text x="220" y="169" font-family="monospace" font-size="10" fill="#9ca3af">reduces to absolute clarity: Yes or No.</text>
+
+      <!-- 3. Two Flows -->
+      <rect x="40" y="195" width="480" height="75" rx="6" fill="#12121a" stroke="#cba6f7" stroke-width="1.5"/>
+      <text x="60" y="218" font-family="monospace" font-size="12" fill="#cba6f7" font-weight="bold">3. The Two Flows</text>
+      
+      <circle cx="230" cy="235" r="4" fill="#4a9eff"/>
+      <text x="240" y="238" font-family="monospace" font-size="10" fill="#cdd6f4"><tspan fill="#4a9eff" font-weight="bold">Control Flow:</tspan> The sequence ("path"). Which order comes next.</text>
+      
+      <circle cx="230" cy="255" r="4" fill="#4ade80"/>
+      <text x="240" y="258" font-family="monospace" font-size="10" fill="#cdd6f4"><tspan fill="#4ade80" font-weight="bold">Data Flow:</tspan> The information ("cargo"). Values created and moved.</text>
+      `;
+      return mkSvg(body, 580, 300);
+    },
+  },
+  {
+    id: 'intro-map', label: 'The Map of Command', color: '#e2e8f0',
+    tagline: 'To command effectively, you need a map. Nodes and Arrows.',
+    insert: '',
+    svgFn: () => {
+      const body = `
+      <rect x="10" y="10" width="740" height="460" rx="6" fill="#0d0d12" stroke="#1e1e2e"/>
+      
+      <!-- Text side -->
+      <text x="30" y="45" font-family="monospace" font-size="15" fill="#e2e8f0" font-weight="bold">The Map of Command: Control Flow</text>
+      <text x="30" y="70" font-family="monospace" font-size="11" fill="#9ca3af">To command effectively, you need a map.</text>
+      <text x="30" y="86" font-family="monospace" font-size="11" fill="#9ca3af">In Knowledge Hybrid, we build that map using Nodes and Arrows.</text>
+
+      <text x="30" y="125" font-family="monospace" font-size="13" fill="#4a9eff" font-weight="bold">1. Nodes: Encapsulated Power</text>
+      <text x="30" y="145" font-family="monospace" font-size="11" fill="#9ca3af">A node is an abstraction—a box that hides complexity. When you</text>
+      <text x="30" y="161" font-family="monospace" font-size="11" fill="#9ca3af">command "Scan Barcode," you don't need to understand the physics</text>
+      <text x="30" y="177" font-family="monospace" font-size="11" fill="#9ca3af">of the laser. You simply label the box and use it.</text>
+      <text x="30" y="193" font-family="monospace" font-size="11" fill="#cdd6f4" font-style="italic">The node holds the complexity; you hold the authority.</text>
+
+      <text x="30" y="235" font-family="monospace" font-size="13" fill="#34d399" font-weight="bold">2. Arrows: The Vector of Intent</text>
+      <text x="30" y="255" font-family="monospace" font-size="11" fill="#9ca3af">Arrows dictate the march of time. They define the sequence:</text>
+      <text x="30" y="277" font-family="monospace" font-size="11" fill="#cdd6f4"><tspan fill="#4a9eff" font-weight="bold">Linear Path:</tspan> One arrow in, one out. The checklist of your will.</text>
+      <text x="30" y="297" font-family="monospace" font-size="11" fill="#cdd6f4"><tspan fill="#f0a030" font-weight="bold">The Fork (Decision):</tspan> Multiple exits based on your condition.</text>
+      <text x="30" y="317" font-family="monospace" font-size="11" fill="#cdd6f4"><tspan fill="#a78bfa" font-weight="bold">The Merge (Connector):</tspan> Where branches reunite into one stream.</text>
+
+      <text x="30" y="360" font-family="monospace" font-size="13" fill="#f472b6" font-weight="bold">3. The Loop: Infinite Scale</text>
+      <text x="30" y="380" font-family="monospace" font-size="11" fill="#9ca3af">Repetition is the ultimate scale of power. By merging a path back</text>
+      <text x="30" y="396" font-family="monospace" font-size="11" fill="#9ca3af">to a previous point, you command the machine to repeat your</text>
+      <text x="30" y="412" font-family="monospace" font-size="11" fill="#9ca3af">instructions until your objective is achieved.</text>
+
+      <!-- Bottom Banner -->
+      <rect x="10" y="435" width="740" height="35" fill="#1a1a2e" rx="6"/>
+      <text x="380" y="457" text-anchor="middle" font-family="monospace" font-size="12" fill="#cba6f7" font-weight="bold">If you can map the flow, you can command the machine. Welcome to the architecture of logic.</text>
+
+      <!-- Flowchart Visuals -->
+      <g transform="translate(60, 20)">
+        <!-- Start Arrow -->
+        <line x1="560" y1="20" x2="560" y2="45" stroke="#4a9eff" stroke-width="2"/>
+        <polygon points="560,50 565,42 555,42" fill="#4a9eff"/>
+        
+        <!-- Merge Connector -->
+        <circle cx="560" cy="60" r="7" fill="#1e2d3e" stroke="#a78bfa" stroke-width="2"/>
+        <text x="545" y="63" text-anchor="end" font-family="monospace" font-size="11" fill="#a78bfa" font-weight="bold">Merge</text>
+        
+        <!-- Arrow to Process -->
+        <line x1="560" y1="67" x2="560" y2="95" stroke="#4a9eff" stroke-width="2"/>
+        <polygon points="560,100 565,92 555,92" fill="#4a9eff"/>
+        
+        <!-- Process Node -->
+        <rect x="500" y="100" width="120" height="40" rx="6" fill="#1e2d3e" stroke="#4a9eff" stroke-width="2"/>
+        <text x="560" y="121" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="12" fill="#cdd6f4">Scan Barcode</text>
+        <text x="490" y="121" text-anchor="end" dominant-baseline="middle" font-family="monospace" font-size="11" fill="#4a9eff" font-weight="bold">Linear Node</text>
+        
+        <!-- Arrow to Fork -->
+        <line x1="560" y1="140" x2="560" y2="175" stroke="#4a9eff" stroke-width="2"/>
+        <polygon points="560,180 565,172 555,172" fill="#4a9eff"/>
+        
+        <!-- Fork Node -->
+        <polygon points="560,180 620,215 560,250 500,215" fill="#004b8d" stroke="#f0a030" stroke-width="2"/>
+        <text x="560" y="218" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="12" fill="white">Done?</text>
+        <text x="490" y="218" text-anchor="end" dominant-baseline="middle" font-family="monospace" font-size="11" fill="#f0a030" font-weight="bold">Fork Node</text>
+        
+        <!-- Yes Branch -->
+        <line x1="560" y1="250" x2="560" y2="295" stroke="#4ade80" stroke-width="2"/>
+        <polygon points="560,300 565,292 555,292" fill="#4ade80"/>
+        <text x="575" y="275" font-family="monospace" font-size="11" fill="#4ade80" font-weight="bold">yes</text>
+        
+        <!-- End Process Node -->
+        <rect x="510" y="300" width="100" height="40" rx="6" fill="#1e2d3e" stroke="#4ade80" stroke-width="2"/>
+        <text x="560" y="321" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="12" fill="#cdd6f4">Print Receipt</text>
+        
+        <!-- No Branch (Loop) -->
+        <line x1="620" y1="215" x2="680" y2="215" stroke="#f472b6" stroke-width="2"/>
+        <text x="645" y="205" font-family="monospace" font-size="11" fill="#f472b6" font-weight="bold">no</text>
+        <line x1="680" y1="215" x2="680" y2="60" stroke="#f472b6" stroke-width="2"/>
+        <line x1="680" y1="60" x2="577" y2="60" stroke="#f472b6" stroke-width="2"/>
+        <polygon points="570,60 578,55 578,65" fill="#f472b6"/>
+        <text x="690" y="140" font-family="monospace" font-size="11" fill="#f472b6" font-weight="bold">The Loop</text>
+      </g>
+      `;
+      return mkSvg(body, 760, 480);
+    },
+  },
+  {
     id: 'make', label: 'make', color: DC.K,
     tagline: 'Assign a value to a variable',
     node: () => `<svg viewBox="0 0 160 64" xmlns="http://www.w3.org/2000/svg" style="width:160px;height:64px;display:block">
@@ -1427,7 +1544,7 @@ const IVX_DEMOS = [
 const IVX_DEMO_MAP = Object.fromEntries(IVX_DEMOS.filter(d => d && d.id).map(d => [d.id, d]));
 
 const IVX_DEMO_SECTIONS = [
-  { label: 'Introduction', ids: ['intro-cmd'] },
+  { label: 'Introduction', ids: ['intro-cmd', 'intro-scope', 'intro-map'] },
   { label: 'Data',         ids: ['make', 'print', 'say', 'take'] },
   { label: 'Control Flow', ids: ['if', 'else', 'loop', 'for', 'end', 'dot', 'try'] },
   { label: 'Functions',    ids: ['give', 'fun', 'class'] },
@@ -1554,11 +1671,15 @@ function _insertDemo() {
   const demo = IVX_DEMO_MAP[_currentDemoId];
   if (!demo || typeof srcEl === 'undefined') return;
   const s = srcEl.selectionStart, e = srcEl.selectionEnd;
-  srcEl.value = srcEl.value.slice(0, s) + demo.insert + srcEl.value.slice(e);
-  srcEl.selectionStart = srcEl.selectionEnd = s + demo.insert.length;
+  const newCode = srcEl.value.slice(0, s) + demo.insert + srcEl.value.slice(e);
+  if (window.IVX && IVX.bus) {
+    IVX.bus.emit('code_update_requested', { 
+      newCode, 
+      selectionStart: s + demo.insert.length, 
+      selectionEnd: s + demo.insert.length 
+    });
+  }
   srcEl.focus();
-  if (typeof updateHighlight === 'function') updateHighlight();
-  if (typeof scheduleRender  === 'function') scheduleRender();
   _closePanel();
 }
 

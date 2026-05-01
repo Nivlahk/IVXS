@@ -2817,9 +2817,7 @@ const ReverseTranspiler = (() => {
     const lines = lensCode._pendingLines;
     if (!lines) return;
     const ivxSource = lines.map(l => l.ivx).join('\n').trimEnd();
-    srcEl.value = ivxSource;
-    updateHighlight();
-    scheduleRender();
+    if (window.IVX && IVX.bus) IVX.bus.emit('code_update_requested', { newCode: ivxSource });
     lensConfirm.style.display = 'none';
     closeLens();
   });
@@ -2891,9 +2889,11 @@ const ReverseTranspiler = (() => {
   });
 
   // Re-render on IVX source change, but only if user hasn't manually edited the lens
-  srcEl.addEventListener('input', () => {
-    if (lensOpen && !lensEdited) renderLens();
-  });
+  if (window.IVX && IVX.bus) {
+    IVX.bus.on('src_changed', () => {
+      if (lensOpen && !lensEdited) renderLens();
+    });
+  }
 
   window._lensRender = renderLens;
   window._lensOpen   = () => lensOpen;

@@ -33,12 +33,10 @@ function updateHeader() {
 // ── New ───────────────────────────────────────────────────────────────────────
 async function fileNew() {
   if (_unsaved && !confirm('Unsaved changes. Start a new file?')) return;
-  srcEl.value = '';
   _currentPath = null;
   _currentName = 'untitled.ivx';
   _unsaved     = false;
-  updateHighlight();
-  scheduleRender();
+  if (window.IVX && IVX.bus) IVX.bus.emit('code_update_requested', { newCode: '' });
   updateHeader();
 }
 
@@ -51,12 +49,10 @@ async function fileOpen() {
 }
 
 function loadFile(filePath, content) {
-  srcEl.value  = content;
   _currentPath = filePath;
   _currentName = filePath.split(/[\\/]/).pop();
   _unsaved     = false;
-  updateHighlight();
-  scheduleRender();
+  if (window.IVX && IVX.bus) IVX.bus.emit('code_update_requested', { newCode: content });
   updateHeader();
   desktop.addRecent(filePath);
 }
@@ -144,10 +140,8 @@ window.addEventListener('load', async () => {
     const saved = await desktop?.autosaveRead();
     if (saved?.trim()) {
       if (confirm('Restore unsaved work from last session?')) {
-        srcEl.value = saved;
         _unsaved    = true;
-        updateHighlight();
-        scheduleRender();
+        if (window.IVX && IVX.bus) IVX.bus.emit('code_update_requested', { newCode: saved });
         updateHeader();
       }
     }

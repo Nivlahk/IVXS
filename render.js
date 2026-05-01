@@ -143,9 +143,8 @@ function commitNodeEditToSource(line, newText) {
 
   const parts = [...leadTokens, newText.trim(), ...trailTokens].filter(Boolean);
   rawLines[line] = prefix + parts.join(' ') + trailingNote;
-  srcEl.value = rawLines.join('\n');
-  if (typeof updateHighlight === 'function') updateHighlight();
-  scheduleRender();
+  const newCode = rawLines.join('\n');
+  if (window.IVX && IVX.bus) IVX.bus.emit('code_update_requested', { newCode });
 }
 
 function insertNodeOnEdgeInSource(fromNodeId, toNodeId, nodeKind) {
@@ -262,12 +261,10 @@ function insertNodeOnEdgeInSource(fromNodeId, toNodeId, nodeKind) {
       if (elseContent) {
         originalLines.splice(elseLineIdx + 1, 0, `${innerPfx}${elseContent}`);
       }
-      srcEl.value = originalLines.join('\n');
+      const newCode = originalLines.join('\n');
       _pendingInsertEditLine = elseLineIdx;
+      if (window.IVX && IVX.bus) IVX.bus.emit('code_update_requested', { newCode });
     }
-
-    if (typeof updateHighlight === 'function') updateHighlight();
-    scheduleRender();
     return;
   }
 
@@ -304,10 +301,9 @@ function insertNodeOnEdgeInSource(fromNodeId, toNodeId, nodeKind) {
       : `${prefix}${placeholder}`;
 
     originalLines.splice(insertAt, 0, newNodeContent);
-    srcEl.value = originalLines.join('\n');
+    const newCode = originalLines.join('\n');
     _pendingInsertEditLine = insertAt;
-    if (typeof updateHighlight === 'function') updateHighlight();
-    scheduleRender();
+    if (window.IVX && IVX.bus) IVX.bus.emit('code_update_requested', { newCode });
     return;
   }
 
@@ -385,10 +381,9 @@ function insertNodeOnEdgeInSource(fromNodeId, toNodeId, nodeKind) {
     : `${prefix}${placeholder}${outgoingSuffix}`;
 
   originalLines.splice(spliceAt, 0, newLine);
-  srcEl.value = originalLines.join('\n');
+  const newCode = originalLines.join('\n');
   _pendingInsertEditLine = spliceAt;
-  if (typeof updateHighlight === 'function') updateHighlight();
-  scheduleRender();
+  if (window.IVX && IVX.bus) IVX.bus.emit('code_update_requested', { newCode });
 }
 
 const sendMsg = (msg) => {
@@ -1998,12 +1993,11 @@ function _moveNodeToEdgeInSource(node, fromEdgeNodeId, toEdgeNodeId) {
     lines.splice(spliceAt, 0, newLine);
   }
 
-  srcEl.value = lines.join('\n');
+  const newCode = lines.join('\n');
   _dropHighlightFrom = null;
   _dropHighlightTo   = null;
   dragOffsets.clear();
-  if (typeof updateHighlight === 'function') updateHighlight();
-  scheduleRender();
+  if (window.IVX && IVX.bus) IVX.bus.emit('code_update_requested', { newCode });
 }
 
 function renderMinimap() {
@@ -2130,9 +2124,8 @@ function commitBlockDirectiveToSource(key, newLabel, newColor) {
   if (trimLabel) parts.push(trimLabel);
   originalLines[noteStart] = parts.join(' ');
 
-  srcEl.value = originalLines.join('\n');
-  updateHighlight();
-  scheduleRender();
+  const newCode = originalLines.join('\n');
+  if (window.IVX && IVX.bus) IVX.bus.emit('code_update_requested', { newCode });
 
   // Also update blockState so UI is instant
   const state = blockState.get(key);
@@ -2572,6 +2565,15 @@ const watchBtn = mkBtn('Watch',()=>sendMsg({type:'toggleWatchVariables'}));
 playVideoBtn = mkBtn('▶',toggleVideoDebug, 'background:#1f4d6e;border-color:#60a5fa;color:#60a5fa');
 ctrlRoot.append(stepIntoBtn, watchBtn, playVideoBtn, speedSel);
 
+
+if (window.IVX && IVX.bus) {
+  IVX.bus.on('ast_parsed', ({ graph }) => {
+    dragOffsets.clear();
+    blockOffsets.clear();
+    isFirstRender = !currentGraph;
+    renderGraph(graph);
+  });
+}
 
 window.addEventListener('load', () => { if(typeof _ivxInit==='function') _ivxInit(); });
 

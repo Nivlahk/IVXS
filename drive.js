@@ -141,9 +141,7 @@ async function driveOpenFile(id, name) {
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const text = await res.text();
-    srcEl.value = text;
-    updateHighlight();
-    scheduleRender();
+    if (window.IVX && IVX.bus) IVX.bus.emit('code_update_requested', { newCode: text });
     driveCurrentId   = id;
     driveCurrentName = name;
     driveUnsaved     = false;
@@ -196,9 +194,7 @@ async function driveNewFile() {
     driveCurrentId   = meta.id;
     driveCurrentName = name;
     driveUnsaved     = false;
-    srcEl.value      = '';
-    updateHighlight();
-    scheduleRender();
+    if (window.IVX && IVX.bus) IVX.bus.emit('code_update_requested', { newCode: '' });
     driveUpdateHeader();
     await driveListFiles();
   } catch(e) {

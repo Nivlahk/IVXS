@@ -30,56 +30,66 @@ srcEl.value = STARTER;
 // Bug 4 fix: line number of a newly-inserted node waiting for its edit overlay,
 let _pendingInsertEditLine = -1;
 
-let _dt;
-function scheduleRender() {
-  clearTimeout(_dt);
-  _dt = setTimeout(doRender, 150);
-}
-
-function doRender() {
-  const src = srcEl.value;
-  try {
-    const graph = parseivx(src);
-    const errs = graph.validationErrors || [];
-    if (errs.length) {
-      errEl.innerHTML = errs.map((e, i) => `<div>${e}</div>`).join('') + (errs.length > 1 ? `<div style=\"color:#888;font-size:10px;\">(${errs.length} errors)</div>` : '');
-      errEl.className = '';
-    } else {
-      errEl.textContent = `✓ ${graph.nodes.length} nodes, ${graph.edges.length} edges`;
-      errEl.className = 'ok';
+let _parseTimer;
+IVX.bus.on('src_changed', ({ source }) => {
+  clearTimeout(_parseTimer);
+  _parseTimer = setTimeout(() => {
+    try {
+      const graph = parseivx(source);
+      IVX.bus.emit('ast_parsed', { graph, errors: graph.validationErrors || [] });
+    } catch(err) {
+      IVX.bus.emit('ast_error', { message: err.message });
     }
-    _walkOrder = getWalkOrder(graph);
-    _walkIdx = 0;
-    // Feed directly into renderer (same script scope, so renderGraph is available)
-    dragOffsets.clear();
-    blockOffsets.clear();
-    isFirstRender = !currentGraph;
-    renderGraph(graph);
+  }, 150);
+});
 
-    // Bug 4 fix: open the inline editor for a newly inserted node now that the
-    // graph is guaranteed to be up to date, instead of relying on a fixed timeout.
-    if (_pendingInsertEditLine >= 0) {
-      const targetLine = _pendingInsertEditLine;
-      _pendingInsertEditLine = -1;
-      const inserted = graph.nodes.find(n => n.line === targetLine);
-      if (inserted) startNodeEditByLine({ line: targetLine, text: inserted.text || '' });
-    }
-  } catch(e) {
-    errEl.textContent = 'Parse error: ' + e.message;
+IVX.bus.on('ast_parsed', ({ graph, errors }) => {
+  if (errors.length) {
+    errEl.innerHTML = errors.map((e, i) => `<div>${e}</div>`).join('') + (errors.length > 1 ? `<div style=\"color:#888;font-size:10px;\">(${errors.length} errors)</div>` : '');
     errEl.className = '';
+  } else {
+    errEl.textContent = `✓ ${graph.nodes.length} nodes, ${graph.edges.length} edges`;
+    errEl.className = 'ok';
   }
-}
+  _walkOrder = getWalkOrder(graph);
+  _walkIdx = 0;
 
-srcEl.addEventListener('input', scheduleRender);
+  if (_pendingInsertEditLine >= 0) {
+    const targetLine = _pendingInsertEditLine;
+    _pendingInsertEditLine = -1;
+    const inserted = graph.nodes.find(n => n.line === targetLine);
+    if (inserted && typeof startNodeEditByLine === 'function') {
+      startNodeEditByLine({ line: targetLine, text: inserted.text || '' });
+    }
+  }
+});
+
+IVX.bus.on('ast_error', ({ message }) => {
+  errEl.textContent = 'Parse error: ' + message;
+  errEl.className = '';
+});
+
+IVX.bus.on('code_update_requested', ({ newCode, selectionStart, selectionEnd }) => {
+  srcEl.value = newCode;
+  if (selectionStart != null) srcEl.selectionStart = selectionStart;
+  if (selectionEnd != null) srcEl.selectionEnd = selectionEnd;
+  updateHighlight();
+  IVX.bus.emit('src_changed', { source: newCode });
+});
+
+srcEl.addEventListener('input', () => {
+  IVX.bus.emit('src_changed', { source: srcEl.value });
+});
 
 srcEl.addEventListener('keydown', e => {
   if (e.key === 'Tab') {
     e.preventDefault();
     const s = srcEl.selectionStart, end = srcEl.selectionEnd;
-    srcEl.value = srcEl.value.slice(0, s) + '  ' + srcEl.value.slice(end);
+    const newCode = srcEl.value.slice(0, s) + '  ' + srcEl.value.slice(end);
+    srcEl.value = newCode;
     srcEl.selectionStart = srcEl.selectionEnd = s + 2;
     updateHighlight();
-    scheduleRender();
+    IVX.bus.emit('src_changed', { source: newCode });
   }
 });
 
@@ -88,7 +98,7 @@ document.getElementById('clr').addEventListener('click', function handleClearCli
   srcEl.value = '';
   srcEl.focus();
   updateHighlight();
-  scheduleRender();
+  IVX.bus.emit('src_changed', { source: '' });
 });
 
 // ── Step controls ─────────────────────────────────────────────────────────────
@@ -143,7 +153,7 @@ document.getElementById('cmtbtn').addEventListener('click', function toggleComme
 
 // ── Called by renderer after load ─────────────────────────────────────────────
 function _ivxInit() {
-  doRender();
+  IVX.bus.emit('src_changed', { source: srcEl.value });
   // Dismiss loading screen
   const loader = document.getElementById('ivx-loader');
   const app    = document.getElementById('app');
