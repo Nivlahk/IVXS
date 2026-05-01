@@ -29,6 +29,9 @@
     "win": {
       "artifactName": "${productName}-Setup-${version}.${ext}"
     },
+    "publish": {
+      "provider": "github"
+    },
     "directories": {
       "output": "dist"
     }
