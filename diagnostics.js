@@ -93,13 +93,18 @@ const IVXDiagnostics = (() => {
     let keyword = tokens[0].toLowerCase();
     let shiftedTokens = tokens;
 
-    // Normalize incoming keys
+    // Detect inline `then` on the same line as a block keyword: "if x > 5 then print ..."
+    // In this case the block is satisfied inline — no indented block required.
+    const thenIdx = tokens.findIndex(t => t.toLowerCase() === 'then');
+    const inlineThen = thenIdx > 0; // `then` appears after the keyword, not at the start
+
+    // Normalize lines that START with then/else (else branch on its own line)
     if (['then', 'else'].includes(keyword)) {
       if (tokens.length > 1) {
         keyword = tokens[1].toLowerCase();
         shiftedTokens = tokens.slice(1);
       } else {
-        // standalone else/then
+        // standalone else/then — block follows on next indented line
         shiftedTokens = [];
       }
     }
@@ -109,6 +114,7 @@ const IVXDiagnostics = (() => {
       indent,
       tokens: shiftedTokens,
       keyword,
+      inlineThen,
       incoming: ['then', 'else'].includes(tokens[0].toLowerCase()) ? tokens[0].toLowerCase() : null,
       isEmpty: false
     };
@@ -160,7 +166,11 @@ const IVXDiagnostics = (() => {
       }
 
       // --- 3. Empty Block Check ---
-      if (BLOCK_INITIATORS.has(current.keyword)) {
+      // Skip if the block is satisfied inline via `then` (e.g. "if x > 5 then print 'hi'")
+      // Also skip if the line itself starts with else/then and has a body (shiftedTokens has content)
+      const satisfiedInline = current.inlineThen ||
+        (current.incoming != null && current.tokens.length > 0);
+      if (BLOCK_INITIATORS.has(current.keyword) && !satisfiedInline) {
         if (!next || next.indent <= current.indent) {
           diagnostics.push({ line: current.line, message: `Expected an indented block after '${current.keyword}'`, severity: SEVERITY.ERROR });
         }
