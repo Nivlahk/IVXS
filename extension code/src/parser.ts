@@ -68,7 +68,7 @@ const makeCtx = (baseIndent, firstLast, savedLast = null) => ({
   decStack: [], pendingElse: null, baseIndent, savedLastExec: savedLast,
 });
 
-export function parseivx(source) {
+export function parsekh(source) {
   const preprocessed = preprocessControlFlowSyntax(source);
   const rawLines = preprocessed.split('\n');
 
