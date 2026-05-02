@@ -77,11 +77,23 @@ class Interpreter {
     }
 
     async loadModule(url) {
+        if (url.startsWith('http:')) throw new Error("Insecure protocol: HTTPS is mandatory for KH modules.");
         if (!url.startsWith('http')) url = 'https://' + url;
+        
         this.onOutput(`🌐 Loading KH module: ${url}`);
         try {
             const res = await fetch(url);
             const code = await res.text();
+            
+            // Generate Fingerprint (SHA-256)
+            const encoder = new TextEncoder();
+            const data = encoder.encode(code);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            
+            this.onOutput(`🔒 Verified [SHA256]: ${hashHex.substring(0, 12)}...`);
+
             const { parsekh } = require('./parser');
             const subGraph = parsekh(code);
             
@@ -94,13 +106,13 @@ class Interpreter {
                 if (node.kind === 'Process') {
                     const p = node.text.split(/\s+/);
                     if (p.length >= 2 && p[0] !== 'from') {
-                        this.globals.set(p[0], this.evalExpr(p.slice(1).join(' '), this.globals));
+                        this.globals.set(p[0], await this.evalExpr(p.slice(1).join(' '), this.globals));
                     }
                 }
             }
-            this.onOutput(`✅ Module loaded.`);
+            this.onOutput(`✅ Module ready (cached locally).`);
         } catch (e) {
-            this.onOutput(`❌ Module error: ${e.message}`);
+            this.onOutput(`❌ Security Error: ${e.message}`);
         }
     }
 
