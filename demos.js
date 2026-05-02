@@ -1546,11 +1546,11 @@ const IVX_DEMO_MAP = Object.fromEntries(IVX_DEMOS.filter(d => d && d.id).map(d =
 const IVX_DEMO_SECTIONS = [
   { label: 'Introduction', ids: ['intro-cmd', 'intro-scope', 'intro-map'] },
   { label: 'Data',         ids: ['make', 'print', 'say', 'take'] },
+  { label: 'Types',        ids: ['type-string', 'type-integer', 'type-float', 'type-boolean', 'type-none', 'type-list', 'type-dict'] },
+  { label: 'Logic Operators', ids: ['logic-is', 'logic-not', 'logic-and', 'logic-or', 'logic-same'] },
   { label: 'Control Flow', ids: ['if', 'else', 'loop', 'for', 'end', 'dot', 'try'] },
   { label: 'Functions',    ids: ['give', 'fun', 'class'] },
   { label: 'Network & AI', ids: ['ask', 'wait', 'email', 'sheets', 'key', 'from'] },
-  { label: 'Types',        ids: ['type-string', 'type-integer', 'type-float', 'type-boolean', 'type-none', 'type-list', 'type-dict'] },
-  { label: 'Logic Operators', ids: ['logic-is', 'logic-not', 'logic-and', 'logic-or', 'logic-same'] },
   { label: 'How Flowcharts Work',    ids: ['cf-arrows', 'cf-steps', 'cf-fork', 'cf-connector'] },
   { label: 'Binary Categorization',  ids: ['bc-yesno', 'bc-bytes', 'bc-types'] },
 ];
