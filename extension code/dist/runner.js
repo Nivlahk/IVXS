@@ -38,20 +38,30 @@ class Interpreter {
             safetyCounter++;
             const text = (currentNode.text || "").trim();
             let nextLabel = undefined;
-
+            // 1. Handle Decisions (if/loop conditions)
             if (currentNode.kind === 'Decision') {
-                nextLabel = this.evalCondition(text, env) ? 'yes' : 'no';
+                const condition = text;
+                const result = await this.evalCondition(condition, env);
+                nextLabel = result ? 'yes' : 'no';
             } 
+            // 2. Handle Assignments
             else if (currentNode.kind === 'Process') {
                 const parts = text.split(/\s+/);
+                
+                // --- EXPERIMENTAL: from "url" use * ---
                 if (parts[0] === 'from' && parts[2] === 'use') {
                     await this.loadModule(parts[1].replace(/['"]/g, ''));
-                } else if (parts.length >= 2) {
-                    env.set(parts[0], this.evalExpr(parts.slice(1).join(' '), env));
+                }
+                
+                else if (parts.length >= 2) {
+                    const name = parts[0].trim();
+                    const valExpr = parts.slice(1).join(' ').trim();
+                    env.set(name, await this.evalExpr(valExpr, env));
                 }
             } 
+            // 3. Handle Output
             else if (currentNode.kind === 'Output') {
-                this.onOutput(this.evalExpr(text, env));
+                this.onOutput(await this.evalExpr(text, env));
             }
             else if (currentNode.kind === 'Function') {
                 const name = text.split('(')[0].replace('fun ', '').trim();
@@ -94,26 +104,40 @@ class Interpreter {
         }
     }
 
-    evalExpr(expr, env) {
+    async evalExpr(expr, env) {
         if (env.has(expr)) return env.get(expr);
         if (!isNaN(expr)) return Number(expr);
+        
+        // --- NEW: Function Calls ---
+        const callMatch = expr.match(/^([A-Za-z_]\w*)\((.*)\)$/);
+        if (callMatch) {
+            const name = callMatch[1];
+            const argsStr = callMatch[2];
+            if (this.functions.has(name)) {
+                const func = this.functions.get(name);
+                const subEnv = new Env(this.globals);
+                await this.run(func.nodes, func.edges, subEnv);
+                return subEnv.get('result') || 0;
+            }
+        }
+
         if (expr.includes('+')) {
             const p = expr.split('+');
-            return this.evalExpr(p[0].trim(), env) + this.evalExpr(p[1].trim(), env);
+            return (await this.evalExpr(p[0].trim(), env)) + (await this.evalExpr(p[1].trim(), env));
         }
         return expr.replace(/['"]/g, '');
     }
 
-    evalCondition(cond, env) {
+    async evalCondition(cond, env) {
         if (cond.includes('<')) {
             const p = cond.split('<');
-            return this.evalExpr(p[0].trim(), env) < this.evalExpr(p[1].trim(), env);
+            return (await this.evalExpr(p[0].trim(), env)) < (await this.evalExpr(p[1].trim(), env));
         }
         if (cond.includes('>')) {
             const p = cond.split('>');
-            return this.evalExpr(p[0].trim(), env) > this.evalExpr(p[1].trim(), env);
+            return (await this.evalExpr(p[0].trim(), env)) > (await this.evalExpr(p[1].trim(), env));
         }
-        return !!this.evalExpr(cond, env);
+        return !!(await this.evalExpr(cond, env));
     }
 }
 exports.Interpreter = Interpreter;
