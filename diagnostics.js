@@ -14,6 +14,9 @@ const IVXDiagnostics = (() => {
     INFO: 'info'
   };
 
+  // Block-initiating keywords that REQUIRE the next line to be indented further
+  const BLOCK_INITIATORS = new Set(['if', 'loop', 'fun', 'fork', 'try', 'err', 'every']);
+
   const RULES = {
     'make': {
       validate: (tokens) => {
@@ -75,62 +78,94 @@ const IVXDiagnostics = (() => {
   };
 
   /**
-   * Scans a single line of IVX code for syntax issues.
-   * @param {string} line - The raw line text.
-   * @returns {Object|null} Diagnostic object or null if valid.
+   * Helper to get indentation and tokens for a line.
    */
-  function validateLine(line, lineNum) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('note ')) return null;
+  function parseLineInfo(line, lineNum) {
+    const rawTrimmed = line.trimStart();
+    const indent = line.length - rawTrimmed.length;
+    
+    const commentIdx = rawTrimmed.indexOf('note ');
+    const trimmed = (commentIdx >= 0 ? rawTrimmed.slice(0, commentIdx) : rawTrimmed).trim();
+    
+    if (!trimmed) return { line: lineNum, indent, tokens: [], keyword: null, isEmpty: true };
 
-    // Tokenize roughly by whitespace (ignoring strings for now)
     const tokens = trimmed.split(/\s+/).filter(Boolean);
-    if (tokens.length === 0) return null;
-
-    // Identify the primary keyword (ignoring incoming markers for now)
     let keyword = tokens[0].toLowerCase();
     let shiftedTokens = tokens;
 
-    // Handle incoming keys (then, else) which might precede the node keyword
+    // Normalize incoming keys
     if (['then', 'else'].includes(keyword)) {
       if (tokens.length > 1) {
         keyword = tokens[1].toLowerCase();
         shiftedTokens = tokens.slice(1);
       } else {
-        // Just 'then' or 'else' on a line is structurally okay but needs context
-        return null; 
+        // standalone else/then
+        shiftedTokens = [];
       }
     }
 
-    const rule = RULES[keyword];
-    if (rule) {
-      const error = rule.validate(shiftedTokens);
-      if (error) {
-        return {
-          line: lineNum,
-          message: error,
-          severity: SEVERITY.ERROR,
-          keyword: keyword
-        };
-      }
-    }
-
-    return null;
+    return {
+      line: lineNum,
+      indent,
+      tokens: shiftedTokens,
+      keyword,
+      incoming: ['then', 'else'].includes(tokens[0].toLowerCase()) ? tokens[0].toLowerCase() : null,
+      isEmpty: false
+    };
   }
 
   /**
-   * Scans an entire source block.
+   * Scans an entire source block for both Syntax (Line) and Structure (Multi-line).
    * @param {string} code - The full source text.
    * @returns {Array} List of diagnostic objects.
    */
   function getDiagnostics(code) {
-    const lines = code.split('\n');
+    const rawLines = code.split('\n');
     const diagnostics = [];
+    
+    // Pass 1: Parse all lines into info objects
+    const lines = rawLines.map((l, i) => parseLineInfo(l, i + 1));
+    const activeLines = lines.filter(l => !l.isEmpty);
 
-    lines.forEach((line, i) => {
-      const diag = validateLine(line, i + 1);
-      if (diag) diagnostics.push(diag);
-    });
+    // Pass 2: Structural Analysis
+    const ifStack = new Map(); // Track last 'if' at each indent level
+
+    for (let i = 0; i < activeLines.length; i++) {
+      const current = activeLines[i];
+      const next = activeLines[i + 1];
+
+      // --- 1. Line Syntax Check ---
+      const rule = RULES[current.keyword];
+      if (rule) {
+        const error = rule.validate(current.tokens);
+        if (error) {
+          diagnostics.push({ line: current.line, message: error, severity: SEVERITY.ERROR });
+        }
+      }
+
+      // --- 2. Orphan Check (else) ---
+      if (current.incoming === 'else') {
+        const matchingIf = ifStack.get(current.indent);
+        if (!matchingIf) {
+          diagnostics.push({ line: current.line, message: "Orphaned 'else' - no matching 'if' found at this indentation level", severity: SEVERITY.ERROR });
+        }
+      }
+
+      // Update ifStack
+      if (current.keyword === 'if') {
+        ifStack.set(current.indent, current);
+      } else if (current.incoming !== 'else' && current.indent <= (ifStack.get(current.indent)?.indent ?? -1)) {
+        // If we dedented or stayed at same indent with a non-else, clear the 'if' for this level
+        ifStack.delete(current.indent);
+      }
+
+      // --- 3. Empty Block Check ---
+      if (BLOCK_INITIATORS.has(current.keyword)) {
+        if (!next || next.indent <= current.indent) {
+          diagnostics.push({ line: current.line, message: `Expected an indented block after '${current.keyword}'`, severity: SEVERITY.ERROR });
+        }
+      }
+    }
 
     return diagnostics;
   }
