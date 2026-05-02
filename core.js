@@ -68,13 +68,9 @@ const KEYWORDS = new Set([
   // Iteration
   'in', 'for',
   // Other
-  'wait', 'note', 'try', 'err',
+  'wait', 'note', 'try', 'err', 'by',
   // Network / AI
-  'ask', 'post', 'use', 'key',
-  // Google services
-  'sheets', 'email', 'to', 'subject', 'body',
-  // Wait block triggers and by keyword
-  'http', 'time', 'by',
+  'ask', 'use', 'key', 'get',
   // Implicit loop variables
   'i', 'ii', 'iii', 'j', 'jj', 'jjj', 'k', 'kk', 'kkk',
 ]);
@@ -477,11 +473,8 @@ class Parser {
       give: () => this.parseGive(),
       wait: () => this.parseWait(),
       ask: () => this.parseExprStatement(), // ask is an expression
-      post: () => this.parsePost(),
       key: () => this.parseKey(),
       use: () => this.parseUseImport(),
-      email: () => this.parseGmail(),
-      sheets: () => this.parseExprStatement(), // sheets is an expression
       class: () => this.parseClass(),
       if: () => this.parseIf(),
       for: () => this.parseFor(),
@@ -715,7 +708,7 @@ class Parser {
     }
 
     // wait [every] email by <addr>
-    if (next.type === T.KEYWORD && next.value === 'email') {
+    if ((next.type === T.KEYWORD || next.type === T.IDENTIFIER) && next.value === 'email') {
       this.advance();
       let source = null;
       if (this.checkKw('by')) { this.advance(); source = this.parseExpr(); }
@@ -725,7 +718,7 @@ class Parser {
     }
 
     // wait [every] sheets <n> by <event>
-    if (next.type === T.KEYWORD && next.value === 'sheets') {
+    if ((next.type === T.KEYWORD || next.type === T.IDENTIFIER) && next.value === 'sheets') {
       this.advance();
       const name = this.parseExpr();
       let event = 'row added';
@@ -776,30 +769,6 @@ class Parser {
     const expr = this.parseExpr();
     this.eatNewline();
     return Node('Wait', { expr, condition: null, line: tok.line, col: tok.col });
-  }
-
-  // ── post <url> <body> [use <key>] ─────────────────────────────────────────
-  parsePost() {
-    const tok = this.advance(); // eat 'post'
-    const url = this.parseExpr();
-    const body = this.parseExpr();
-    let credential = null;
-    if (this.checkKw('use')) { this.advance(); credential = this.parseExpr(); }
-    this.eatNewline();
-    return Node('Post', { url, body, credential, line: tok.line, col: tok.col });
-  }
-
-  // ── email <addr> subject <subj> body <body> ──────────────────────────────
-  parseGmail() {
-    const tok = this.advance(); // eat 'email'
-    let to = null, subject = null, body = null;
-    // Accept optional 'to' for backwards compat, but not required
-    if (this.checkKw('to')) { this.advance(); }
-    to = this.parseExpr();
-    if (this.checkKw('subject')) { this.advance(); subject = this.parseExpr(); }
-    if (this.checkKw('body')) { this.advance(); body = this.parseExpr(); }
-    this.eatNewline();
-    return Node('Gmail', { to, subject, body, line: tok.line, col: tok.col });
   }
 
   // ── use <key>  (global form — standalone statement) ───────────────────────
@@ -1612,13 +1581,6 @@ class Parser {
       let credential = null;
       if (this.checkKw('use')) { this.advance(); credential = this.parseExpr(); }
       return this.parsePostfix(Node('Ask', { model, prompt, credential, line: tok.line, col: tok.col }));
-    }
-
-    // sheets <name> — returns a Sheets handle object
-    if (tok.type === T.KEYWORD && tok.value === 'sheets') {
-      this.advance(); // eat 'sheets'
-      const name = this.parseExpr();
-      return this.parsePostfix(Node('SheetsOpen', { name, line: tok.line, col: tok.col }));
     }
 
     // Nothing matched
