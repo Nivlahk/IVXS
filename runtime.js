@@ -524,85 +524,6 @@ const BUILTIN_DEFS = {
         .replace('dddd', ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d.getDay()]);
     }
   },
-
-  // ── Google / Network — migrated from keyword syntax ───────────────────────
-  email: {
-    params: ['to', 'subject', 'body'],
-    call: async (args, node, interp) => {
-      const to      = String(args[0] ?? '');
-      const subject = String(args[1] ?? '');
-      const body    = String(args[2] ?? '');
-      if (!to) throw new RuntimeError('email: missing recipient address', node?.line);
-      const raw = [`To: ${to}`, `Subject: ${subject}`, `Content-Type: text/plain; charset="UTF-8"`, `MIME-Version: 1.0`, '', body].join('\r\n');
-      const encoded = btoa(unescape(encodeURIComponent(raw))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-      await interp.runtime._googleAPI(
-        'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
-        { method: 'POST', body: JSON.stringify({ raw: encoded }) }
-      );
-      interp.onOutput?.(`Email sent to ${to}`);
-      return NONE;
-    },
-  },
-
-  sheets: {
-    params: ['name'],
-    call: async (args, node, interp) => {
-      const name  = String(args[0] ?? '');
-      const token = interp.runtime._googleToken();
-      if (!token) throw new RuntimeError('Not signed in to Google. Click "Sign in to Google" first.', node?.line);
-      const q = encodeURIComponent(`name='${name}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`);
-      const listRes = await interp.runtime._googleAPI(
-        `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=1`
-      );
-      const file = listRes?.files?.[0];
-      if (!file) throw new RuntimeError(`Spreadsheet "${name}" not found in Drive.`, node?.line);
-      const spreadsheetId = file.id;
-      const rt = interp.runtime;
-      const handle = new Map();
-      handle.set('__type__', 'sheets');
-      handle.set('__id__', spreadsheetId);
-      handle.set('__name__', name);
-      handle.set('read',   async (range) => {
-        const data = await rt._googleAPI(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(String(range))}`);
-        return data?.values ?? [];
-      });
-      handle.set('write',  async (range, value) => {
-        const body = Array.isArray(value) ? value : [[value]];
-        await rt._googleAPI(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(String(range))}?valueInputOption=USER_ENTERED`, { method: 'PUT', body: JSON.stringify({ values: body }) });
-        return value;
-      });
-      handle.set('append', async (row) => {
-        const body = Array.isArray(row[0]) ? row : [row];
-        await rt._googleAPI(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, { method: 'POST', body: JSON.stringify({ values: body }) });
-        return row;
-      });
-      return handle;
-    },
-  },
-
-  post: {
-    params: ['url', 'body', 'credential'],
-    call: async (args, node, interp) => {
-      const url        = String(args[0] ?? '');
-      const body       = args[1];
-      const credential = args[2] !== undefined && args[2] !== NONE ? args[2] : interp.globals.get('__credential__') ?? null;
-      const headers    = { 'Content-Type': 'application/json' };
-      if (credential) headers['Authorization'] = `Bearer ${credential}`;
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers,
-          body: typeof body === 'string' ? body : JSON.stringify(body),
-        });
-        const ct = res.headers.get('content-type') || '';
-        const result = ct.includes('application/json') ? await res.json() : await res.text();
-        interp.globals.set('response', result);
-        return result;
-      } catch (e) {
-        throw new RuntimeError(`post failed: ${e.message}`, node?.line);
-      }
-    },
-  },
 };
 
 function ivxToPlain(value) {
@@ -1431,6 +1352,7 @@ class Interpreter {
       StringLit: (node, env) => this._evalStringLit(node, env),
       BoolLit: (node, env) => this._evalBoolLit(node, env),
       Ask: (node, env) => this._evalAskExpr(node, env),
+      SheetsOpen: (node, env) => this._evalSheetsOpenExpr(node, env),
       Super: (node, env) => this._evalSuperExpr(node, env),
       ListLit: (node, env) => this._evalListLit(node, env),
       DictLit: (node, env) => this._evalDictLit(node, env),
@@ -1555,6 +1477,17 @@ class Interpreter {
         // use <key> — set global credential
         const keyVal = await this.evalExpr(node.key, env);
         this.globals.set('__credential__', String(keyVal));
+        break;
+      }
+
+      case 'Post': {
+        // post <url> <body> [use <key>]
+        // Result stored in 'response' by default, or assign via make response post ...
+        return await this._executePost(node, env, { storeResponse: true });
+      }
+
+      case 'Gmail': {
+        await this._executeGmail(node, env);
         break;
       }
 
@@ -1743,6 +1676,23 @@ class Interpreter {
       case 'Dot':
         // Connector — no-op at runtime
         break;
+
+      case 'Fork': {
+        // Each branch fires independently based on its weight as a probability.
+        // Weights are not normalised — 0.8 means 80% chance, regardless of other branches.
+        // Default weight is 1.0 (always fires) if omitted.
+        for (const branch of node.branches) {
+          const roll = Math.random();
+          if (roll < branch.weight) {
+            const result = await this.execBlock(branch.body, env);
+            if (result instanceof ReturnSignal || result instanceof EndSignal ||
+                result instanceof BreakSignal || result instanceof ContinueSignal) {
+              return result;
+            }
+          }
+        }
+        break;
+      }
 
       case 'Import': {
         if (!node.url) break;
