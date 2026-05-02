@@ -1,55 +1,82 @@
 {
-  "name": "ivx",
-  "displayName": "IVXS",
-  "description": "IVXS flowchart language for VS Code",
+  "name": "kh-extension",
+  "displayName": "KH Diagnostics & Visualizer",
+  "description": "Desktop diagnostics and realtime flowchart visualizer for the KH language.",
   "version": "0.1.0",
   "publisher": "ice-bolt",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yefoo/ivx-lahk"
+    "url": "https://github.com/yefoo/kh-lahk"
   },
   "engines": {
-    "vscode": "^1.109.3"
+    "vscode": "^1.107.0"
   },
   "categories": ["Other"],
 
   "main": "./dist/extension.js",
   "extensionKind": ["workspace"],
+  "activationEvents": [
+    "onLanguage:kh",
+    "onCommand:kh.showGraph",
+    "onCommand:kh.toggleRealtimeGraph"
+  ],
 
   "contributes": {
     "languages": [
       {
-        "id": "ivx",
-        "extensions": [".ivx"],
-        "aliases": ["IVXS", "ivx"],
+        "id": "kh",
+        "extensions": [".kh"],
+        "aliases": ["KH", "kh"],
         "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
       {
-        "language": "ivx",
-        "scopeName": "source.ivx",
-        "path": "./ivx.tmLanguage.json"
+        "language": "kh",
+        "scopeName": "source.kh",
+        "path": "./kh.tmLanguage.json"
       }
     ],
     "commands": [
       {
-        "command": "ivx.dumpGraph",
-        "title": "IVXS: Dump Graph"
+        "command": "kh.dumpGraph",
+        "title": "KH: Dump Graph"
       },
       {
-        "command": "ivx.showGraph",
-        "title": "IVXS: Show Graph"
+        "command": "kh.showGraph",
+        "title": "KH: Show Graph",
+        "category": "KH"
       },
       {
-        "command": "ivx.toggleRealtimeGraph",
-        "title": "IVXS: Toggle Realtime Graph"
+        "command": "kh.toggleRealtimeGraph",
+        "title": "KH: Toggle Realtime Graph",
+        "category": "KH"
       },
       {
-        "command": "ivx.clearDiagnostics",
-        "title": "IVXS: Clear Diagnostics"
+        "command": "kh.runCode",
+        "title": "KH: Run Code",
+        "category": "KH",
+        "icon": "$(play)"
+      },
+      {
+        "command": "kh.clearDiagnostics",
+        "title": "KH: Clear Diagnostics"
       }
-    ]
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "kh.runCode",
+          "group": "navigation",
+          "when": "resourceLangId == kh"
+        },
+        {
+          "command": "kh.showGraph",
+          "group": "navigation",
+          "when": "resourceLangId == kh"
+        }
+      ]
+    }
   },
 
   "scripts": {

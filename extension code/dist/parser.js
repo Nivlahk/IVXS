@@ -1,7 +1,8 @@
-// @ts-nocheck
-import { Graph } from './graph';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.parsekh = exports.preprocessControlFlowSyntax = void 0;
 
-export function preprocessControlFlowSyntax(raw) {
+function preprocessControlFlowSyntax(raw) {
   const s = String(raw)
     .replace(/then\s+/g, '\n  ')
     .replace(/\bso\s+/g, '\n');
@@ -20,6 +21,7 @@ export function preprocessControlFlowSyntax(raw) {
   }
   return result;
 }
+exports.preprocessControlFlowSyntax = preprocessControlFlowSyntax;
 
 const NODE_ARITY = {
     Start: { minIn: 0, maxIn: 0, minOut: 1, maxOut: 1 },
@@ -32,33 +34,8 @@ const NODE_ARITY = {
     Function: { minIn: 0, maxIn: 1, minOut: 0, maxOut: 1 },
 };
 
-function validNodeIO(nodes, edges) {
-    const errors = [];
-    const inDeg = new Map();
-    const outDeg = new Map();
-    for (const e of edges) {
-        outDeg.set(e.from, (outDeg.get(e.from) ?? 0) + 1);
-        inDeg.set(e.to, (inDeg.get(e.to) ?? 0) + 1);
-    }
-    for (const n of nodes) {
-        const rules = NODE_ARITY[n.kind];
-        const ins = inDeg.get(n.id) ?? 0;
-        const outs = outDeg.get(n.id) ?? 0;
-        const info = `N${n.id} [${n.kind}] L${n.line + 1}`;
-        if (ins < rules.minIn)
-            errors.push(`${info}: ${ins} inputs < min ${rules.minIn}`);
-        if (rules.maxIn !== Infinity && ins > rules.maxIn)
-            errors.push(`${info}: ${ins} inputs > max ${rules.maxIn}`);
-        if (outs < rules.minOut)
-            errors.push(`${info}: ${outs} outputs < min ${rules.minOut}`);
-        if (rules.maxOut !== Infinity && outs > rules.maxOut)
-            errors.push(`${info}: ${outs} outputs > max ${rules.maxOut}`);
-    }
-    return errors;
-}
-
 const INCOMING_KEYWORDS = ['then', 'else']; 
-const NODE_KEYWORDS = ['if', 'fork', 'loop', 'dot', 'take', 'say', 'print', 'give', 'fun', 'end', 'from', 'wait', 'every', 'try'];
+const NODE_KEYWORDS = ['if', 'fork', 'loop', 'dot', 'take', 'say', 'print', 'make', 'give', 'fun', 'end', 'from', 'wait', 'every', 'try'];
 const OUTGOING_KEYWORDS = ['prev', 'next'];
 const NODE_KEYS = new Set(NODE_KEYWORDS);
 const IN_KEYS = new Set(INCOMING_KEYWORDS);
@@ -68,7 +45,8 @@ const makeCtx = (baseIndent, firstLast, savedLast = null) => ({
   decStack: [], pendingElse: null, baseIndent, savedLastExec: savedLast,
 });
 
-export function parseivx(source) {
+exports.parsekh = parsekh;
+function parsekh(source) {
   const preprocessed = preprocessControlFlowSyntax(source);
   const rawLines = preprocessed.split('\n');
 
@@ -582,7 +560,7 @@ export function parseivx(source) {
                 }
                 setLastExec(node);
             }
-            else if (nodeKey === 'text') {
+            else if (nodeKey === 'text' || nodeKey === 'print' || nodeKey === 'say') {
                 node = addNode('Output', lineNum, content);
                 flushUntil(indent, node);
                 if (!tryWireAsBranch(node)) {
@@ -760,3 +738,4 @@ export function parseivx(source) {
 
     return { nodes, edges, startNodeId: startNode.id, segments: [], validationErrors };
 }
+exports.parsekh = parsekh;

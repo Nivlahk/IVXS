@@ -1,9 +1,9 @@
-// ivx-runtime.js — IVX Interpreter & Runtime
-// Interpreter, IVXRuntime (I/O, Google services, AI, file ops)
-// Depends on: ivx-core.js
+// kh-runtime.js — KH Interpreter & Runtime
+// Interpreter, KHRuntime (I/O, Google services, AI, file ops)
+// Depends on: kh-core.js
 // Licensed under the Apache License, Version 2.0
 // https://www.apache.org/licenses/LICENSE-2.0
-// Copyright 2026 IVX
+// Copyright 2026 KH
 
 // ── interpreter.js ───────────────────────────────────────────────────────────
 

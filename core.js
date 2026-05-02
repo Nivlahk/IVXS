@@ -1,13 +1,12 @@
-'use strict';
-// ivx-core.js — IVX Language Core
+// kh-core.js — KH Language Core
 // Lexer, Parser, Type Checker
 // Pure language pipeline — no I/O, no DOM, no external services
 // Licensed under the Apache License, Version 2.0
 // https://www.apache.org/licenses/LICENSE-2.0
-// Copyright 2026 IVX
+// Copyright 2026 KH
 // ── lexer.js ─────────────────────────────────────────────────────────────────
-// ── IVX Lexer ──────────────────────────────────────────────────────────────────
-// Turns raw IVX source into a flat stream of typed tokens.
+// ── KH Lexer ──────────────────────────────────────────────────────────────────
+// Turns raw KH source into a flat stream of typed tokens.
 // Design decisions:
 //   - Indentation-sensitive: emits INDENT / DEDENT tokens
 //   - Newlines are significant: emits NEWLINE tokens
