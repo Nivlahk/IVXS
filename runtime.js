@@ -263,68 +263,32 @@ const BUILTIN_DEFS = {
     params: ['x'],
     call: (args) => Math.sqrt(args[0]),
   },
-  log: {
-    params: ['x', 'base'],
-    call: (args) => {
-      const x = args[0];
-      const base = args[1] ?? NONE;
-      if (base === NONE) return Math.log(x);           // natural log
-      if (base === 10) return Math.log10(x);
-      if (base === 2) return Math.log2(x);
-      return Math.log(x) / Math.log(base);
-    },
-  },
-  log2: { params: ['x'], call: (args) => Math.log2(args[0]) },
-  log10: { params: ['x'], call: (args) => Math.log10(args[0]) },
-  sin: { params: ['x'], call: (args) => Math.sin(args[0]) },
-  cos: { params: ['x'], call: (args) => Math.cos(args[0]) },
-  tan: { params: ['x'], call: (args) => Math.tan(args[0]) },
-  asin: { params: ['x'], call: (args) => Math.asin(args[0]) },
-  acos: { params: ['x'], call: (args) => Math.acos(args[0]) },
-  atan: { params: ['x'], call: (args) => Math.atan(args[0]) },
-  atan2: { params: ['y', 'x'], call: (args) => Math.atan2(args[0], args[1]) },
   pi: { params: [], call: () => Math.PI },
   e: { params: [], call: () => Math.E },
   tau: { params: [], call: () => Math.PI * 2 },
   inf: { params: [], call: () => Infinity },
   random: { params: [], call: () => Math.random() },
   randint: { params: ['a', 'b'], call: (args) => Math.floor(Math.random() * (args[1] - args[0] + 1)) + args[0] },
-  roll: { params: ['a', 'b'], call: (args) => Math.floor(Math.random() * (args[1] - args[0] + 1)) + args[0] },
-  sign: { params: ['x'], call: (args) => Math.sign(args[0]) },
-  clamp: { params: ['x', 'lo', 'hi'], call: (args) => Math.min(Math.max(args[0], args[1]), args[2]) },
-  lerp: { params: ['a', 'b', 't'], call: (args) => args[0] + (args[1] - args[0]) * args[2] },
-  degrees: { params: ['r'], call: (args) => args[0] * (180 / Math.PI) },
-  radians: { params: ['d'], call: (args) => args[0] * (Math.PI / 180) },
-  gcd: {
-    params: ['a', 'b'],
+  log: {
+    params: ['x', 'base'],
     call: (args) => {
-      let a = Math.abs(Math.trunc(args[0]));
-      let b = Math.abs(Math.trunc(args[1]));
-      while (b) { [a, b] = [b, a % b]; }
-      return a;
+      const x = args[0];
+      const base = args[1] ?? NONE;
+      if (base === NONE) return Math.log(x);
+      if (base === 10) return Math.log10(x);
+      if (base === 2) return Math.log2(x);
+      return Math.log(x) / Math.log(base);
     },
   },
-  lcm: {
-    params: ['a', 'b'],
-    call: (args) => {
-      const a = Math.abs(Math.trunc(args[0]));
-      const b = Math.abs(Math.trunc(args[1]));
-      let x = a, y = b;
-      while (y) { [x, y] = [y, x % y]; }
-      return (a * b) / x;
-    },
-  },
-  isPrime: {
-    params: ['n'],
-    call: (args) => {
-      const n = Math.trunc(args[0]);
-      if (n < 2) return false;
-      if (n === 2) return true;
-      if (n % 2 === 0) return false;
-      for (let i = 3; i <= Math.sqrt(n); i += 2) if (n % i === 0) return false;
-      return true;
-    },
-  },
+  log2:  { params: ['x'], call: (args) => Math.log2(args[0]) },
+  log10: { params: ['x'], call: (args) => Math.log10(args[0]) },
+  sin:   { params: ['x'], call: (args) => Math.sin(args[0]) },
+  cos:   { params: ['x'], call: (args) => Math.cos(args[0]) },
+  tan:   { params: ['x'], call: (args) => Math.tan(args[0]) },
+  asin:  { params: ['x'], call: (args) => Math.asin(args[0]) },
+  acos:  { params: ['x'], call: (args) => Math.acos(args[0]) },
+  atan:  { params: ['x'], call: (args) => Math.atan(args[0]) },
+  atan2: { params: ['y', 'x'], call: (args) => Math.atan2(args[0], args[1]) },
   upper: {
     params: ['s'],
     call: (args) => String(args[0]).toUpperCase(),
@@ -380,176 +344,11 @@ const BUILTIN_DEFS = {
   ends: { params: ['s', 'suffix'], call: (args) => String(args[0]).endsWith(String(args[1])) },
   index: { params: ['s', 'sub'], call: (args) => { const i = String(args[0]).indexOf(String(args[1])); return i === -1 ? NONE : i; } },
   slice: { params: ['s', 'start', 'end'], call: (args) => { const s = String(args[0]); return (args[2] != null && args[2] !== NONE) ? s.slice(args[1], args[2]) : s.slice(args[1]); } },
-  pad: { params: ['s', 'len', 'char'], call: (args) => String(args[0]).padStart(Number(args[1]) || 0, String(args[2] ?? ' ')) },
-  padend: { params: ['s', 'len', 'char'], call: (args) => String(args[0]).padEnd(Number(args[1]) || 0, String(args[2] ?? ' ')) },
   chars: { params: ['s'], call: (args) => [...String(args[0])] },
-  repeat: { params: ['s', 'n'], call: (args) => String(args[0]).repeat(Math.max(0, Math.trunc(Number(args[1])))) },
   size: { params: ['x'], call: (args) => { const v = args[0]; if (typeof v === 'string') return v.length; if (Array.isArray(v)) return v.length; if (v instanceof Map) return v.size; return 0; } },
 
   // ── List methods ──────────────────────────────────────────────────────────
-  map: {
-    params: ['list', 'fun'],
-    call: async (args, node, interp) => {
-      const list = args[0]; const fn = args[1];
-      if (!Array.isArray(list)) return list;
-      const result = [];
-      for (const item of list) {
-        if (fn && fn.body !== null) {
-          const env = fn.closure.child();
-          if (fn.params[0]) env.set(typeof fn.params[0] === 'string' ? fn.params[0] : fn.params[0].name, item);
-          const r = await interp.execBlock(fn.body, env);
-          result.push(r?.value ?? item);
-        } else result.push(item);
-      }
-      return result;
-    },
-  },
-  filter: {
-    params: ['list', 'fun'],
-    call: async (args, node, interp) => {
-      const list = args[0]; const fn = args[1];
-      if (!Array.isArray(list)) return list;
-      const result = [];
-      for (const item of list) {
-        let keep = false;
-        if (fn && fn.body !== null) {
-          const env = fn.closure.child();
-          if (fn.params[0]) env.set(typeof fn.params[0] === 'string' ? fn.params[0] : fn.params[0].name, item);
-          const r = await interp.execBlock(fn.body, env);
-          keep = r?.value ?? r ?? false;
-        }
-        if (keep) result.push(item);
-      }
-      return result;
-    },
-  },
-  reduce: {
-    params: ['list', 'fun', 'init'],
-    call: async (args, node, interp) => {
-      const list = args[0]; const fn = args[1];
-      if (!Array.isArray(list)) return NONE;
-      let acc = args[2] ?? NONE;
-      for (const item of list) {
-        if (fn && fn.body !== null) {
-          const env = fn.closure.child();
-          const p0 = fn.params[0]; const p1 = fn.params[1];
-          if (p0) env.set(typeof p0 === 'string' ? p0 : p0.name, acc);
-          if (p1) env.set(typeof p1 === 'string' ? p1 : p1.name, item);
-          const r = await interp.execBlock(fn.body, env);
-          acc = r?.value ?? r ?? acc;
-        }
-      }
-      return acc;
-    },
-  },
-  sort: {
-    params: ['list', 'fun'],
-    call: async (args, node, interp) => {
-      const list = args[0];
-      if (!Array.isArray(list)) return list;
-      const copy = [...list];
-      if (!args[1] || !args[1].body) {
-        // Default sort: numeric if all numbers, else string
-        copy.sort((a, b) => {
-          if (typeof a === 'number' && typeof b === 'number') return a - b;
-          return String(a).localeCompare(String(b));
-        });
-      } else {
-        const fn = args[1];
-        copy.sort(async (a, b) => {
-          const env = fn.closure.child();
-          const p0 = fn.params[0]; const p1 = fn.params[1];
-          if (p0) env.set(typeof p0 === 'string' ? p0 : p0.name, a);
-          if (p1) env.set(typeof p1 === 'string' ? p1 : p1.name, b);
-          const r = await interp.execBlock(fn.body, env);
-          return r?.value ?? 0;
-        });
-      }
-      return copy;
-    },
-  },
-  reverse: {
-    params: ['list'],
-    call: (args) => Array.isArray(args[0]) ? [...args[0]].reverse() : args[0],
-  },
-  unique: {
-    params: ['list'],
-    call: (args) => {
-      if (!Array.isArray(args[0])) return args[0];
-      const seen = new Set();
-      return args[0].filter(x => {
-        const k = JSON.stringify(x);
-        if (seen.has(k)) return false;
-        seen.add(k); return true;
-      });
-    },
-  },
-  flat: {
-    params: ['list'],
-    call: (args) => Array.isArray(args[0]) ? args[0].flat() : args[0],
-  },
-  first: {
-    params: ['list'],
-    call: (args) => Array.isArray(args[0]) && args[0].length > 0 ? args[0][0] : NONE,
-  },
-  last: {
-    params: ['list'],
-    call: (args) => Array.isArray(args[0]) && args[0].length > 0 ? args[0][args[0].length - 1] : NONE,
-  },
-  head: {
-    params: ['list', 'n'],
-    call: (args) => Array.isArray(args[0]) ? args[0].slice(0, args[1]) : args[0],
-  },
-  drop: {
-    params: ['list', 'n'],
-    call: (args) => Array.isArray(args[0]) ? args[0].slice(args[1]) : args[0],
-  },
-  zip: {
-    params: ['a', 'b'],
-    call: (args) => {
-      const a = args[0]; const b = args[1];
-      if (!Array.isArray(a) || !Array.isArray(b)) return NONE;
-      const len = Math.min(a.length, b.length);
-      return Array.from({ length: len }, (_, i) => [a[i], b[i]]);
-    },
-  },
-  // ── 2D list methods ───────────────────────────────────────────────────────
-  col: {
-    params: ['grid', 'n'],
-    call: (args) => {
-      const grid = args[0]; const n = args[1];
-      if (!Array.isArray(grid)) return NONE;
-      return grid.map(row => Array.isArray(row) ? (row[n] ?? NONE) : NONE);
-    },
-  },
-  row: {
-    params: ['grid', 'n'],
-    call: (args) => {
-      const grid = args[0]; const n = args[1];
-      if (!Array.isArray(grid)) return NONE;
-      return grid[n] ?? NONE;
-    },
-  },
-  cols: {
-    params: ['grid'],
-    call: (args) => {
-      const grid = args[0];
-      if (!Array.isArray(grid) || !Array.isArray(grid[0])) return NONE;
-      return grid[0].length;
-    },
-  },
-  rows: {
-    params: ['grid'],
-    call: (args) => Array.isArray(args[0]) ? args[0].length : 0,
-  },
-  transpose: {
-    params: ['grid'],
-    call: (args) => {
-      const grid = args[0];
-      if (!Array.isArray(grid) || !Array.isArray(grid[0])) return NONE;
-      return grid[0].map((_, ci) => grid.map(row => row[ci]));
-    },
-  },
+  // ── 2D grid (table) ───────────────────────────────────────────────────────
   colnames: {
     params: ['table'],
     call: (args) => {
@@ -561,34 +360,6 @@ const BUILTIN_DEFS = {
   now: { params: [], call: () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; } },
   time: { params: [], call: () => { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`; } },
   timestamp: { params: [], call: () => Date.now() },
-  year: { params: ['date'], call: (args) => new Date(args[0] ?? Date.now()).getFullYear() },
-  month: { params: ['date'], call: (args) => new Date(args[0] ?? Date.now()).getMonth() + 1 },
-  day: { params: ['date'], call: (args) => new Date(args[0] ?? Date.now()).getDate() },
-  hour: { params: ['date'], call: (args) => new Date(args[0] ?? Date.now()).getHours() },
-  minute: { params: ['date'], call: (args) => new Date(args[0] ?? Date.now()).getMinutes() },
-  weekday: { params: ['date'], call: (args) => ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(args[0] ?? Date.now()).getDay()] },
-  dateadd: {
-    params: ['date', 'n', 'unit'], call: (args) => {
-      const d = new Date(args[0]); const n = Number(args[1]); const u = String(args[2] ?? 'day').toLowerCase();
-      if (u === 'day' || u === 'days') d.setDate(d.getDate() + n);
-      else if (u === 'month' || u === 'months') d.setMonth(d.getMonth() + n);
-      else if (u === 'year' || u === 'years') d.setFullYear(d.getFullYear() + n);
-      else if (u === 'hour' || u === 'hours') d.setHours(d.getHours() + n);
-      else if (u === 'minute' || u === 'minutes') d.setMinutes(d.getMinutes() + n);
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    }
-  },
-  datediff: {
-    params: ['d1', 'd2', 'unit'], call: (args) => {
-      const d1 = new Date(args[0]), d2 = new Date(args[1]); const ms = d2 - d1; const u = String(args[2] ?? 'day').toLowerCase();
-      if (u === 'day' || u === 'days') return Math.round(ms / 86400000);
-      if (u === 'hour' || u === 'hours') return Math.round(ms / 3600000);
-      if (u === 'minute' || u === 'minutes') return Math.round(ms / 60000);
-      if (u === 'month' || u === 'months') return (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth());
-      if (u === 'year' || u === 'years') return d2.getFullYear() - d1.getFullYear();
-      return Math.round(ms / 86400000);
-    }
-  },
   // ── Type and utility ────────────────────────────────────────────────────
   type: {
     params: ['x'],

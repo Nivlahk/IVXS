@@ -1,6 +1,29 @@
 note ── IVX Standard Library: text ─────────────────────────────────────────
 note https://ivxs.tech/std/text
 
+note ── Migrated from runtime ─────────────────────────────────────────────
+
+fun pad(s, len, char? " ")
+  make s str(s)
+  loop size(s) < len
+    make s "{char}{s}"
+  give s
+
+fun padend(s, len, char? " ")
+  make s str(s)
+  loop size(s) < len
+    make s "{s}{char}"
+  give s
+
+fun repeat(s, n)
+  make result ""
+  loop i? < n
+    make result "{result}{s}"
+    make i + 1
+  give result
+
+note ── End migrated ──────────────────────────────────────────────────────
+
 fun capitalize(s)
   if size(s) = 0 then give s
   give upper(s[0]) + lower(s[1:])

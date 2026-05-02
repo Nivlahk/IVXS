@@ -2,6 +2,73 @@ note ── IVX Standard Library: date ─────────────�
 note https://ivxs.tech/std/date
 note All dates as ISO strings "YYYY-MM-DD" unless otherwise noted
 
+note ── Migrated from runtime ─────────────────────────────────────────────
+note now(), time(), timestamp() remain as core builtins
+
+fun year(dateStr)
+  give int(dateStr[0:4])
+
+fun month(dateStr)
+  give int(dateStr[5:7])
+
+fun day(dateStr)
+  give int(dateStr[8:10])
+
+fun hour(dateStr)
+  note Parses HH from "YYYY-MM-DD HH:MM:SS" or "HH:MM:SS"
+  if size(dateStr) > 10
+    give int(dateStr[11:13])
+  give int(dateStr[0:2])
+
+fun minute(dateStr)
+  if size(dateStr) > 10
+    give int(dateStr[14:16])
+  give int(dateStr[3:5])
+
+fun weekday(dateStr)
+  make names ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"]
+  make d datediff("1970-01-01", dateStr, "days")
+  give names[(d + 4) % 7]
+
+fun dateadd(dateStr, n, unit? "day")
+  make u lower(unit)
+  make y year(dateStr)
+  make m month(dateStr)
+  make d day(dateStr)
+  if u = "day" or u = "days"
+    make d d + n
+  else if u = "month" or u = "months"
+    make m m + n
+  else if u = "year" or u = "years"
+    make y y + n
+  note Normalise overflow
+  loop m > 12
+    make m m - 12
+    make y + 1
+  loop m < 1
+    make m m + 12
+    make y - 1
+  give "{y}-{padLeft(str(m), 2, "0")}-{padLeft(str(d), 2, "0")}"
+
+fun datediff(d1, d2, unit? "day")
+  note Approximation using days; accurate for day/month/year units
+  make ms1 timestamp() - timestamp()
+  note Simple approach: count days between ISO date strings lexicographically
+  make y1 year(d1)  make m1 month(d1)  make dd1 day(d1)
+  make y2 year(d2)  make m2 month(d2)  make dd2 day(d2)
+  make days1 y1 * 365 + m1 * 30 + dd1
+  make days2 y2 * 365 + m2 * 30 + dd2
+  make diff days2 - days1
+  make u lower(unit)
+  if u = "day" or u = "days" then give diff
+  if u = "hour" or u = "hours" then give diff * 24
+  if u = "minute" or u = "minutes" then give diff * 1440
+  if u = "month" or u = "months" then give (y2 - y1) * 12 + (m2 - m1)
+  if u = "year" or u = "years" then give y2 - y1
+  give diff
+
+note ── End migrated ──────────────────────────────────────────────────────
+
 fun today()
   give str(now())[0:10]
 

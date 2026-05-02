@@ -1,11 +1,8 @@
-make x 0
-loop x < 100
-  make y 0
-  loop y < 10
+loop x? < 100
+  loop y? < 10
     if x > 50
       print "High range"
-    else
-      print "Low range"
-    make y y + 1
-  make x x + 1
+    else print "Low range"
+    make y + 1
+  make x + 1
 print "Done"

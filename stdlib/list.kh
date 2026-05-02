@@ -1,6 +1,119 @@
 note ── IVX Standard Library: list ─────────────────────────────────────────
 note https://ivxs.tech/std/list
 
+note ── Migrated from runtime ─────────────────────────────────────────────
+
+fun map(list, fn)
+  make result []
+  for item in list
+    push(result, fn(item))
+  give result
+
+fun filter(list, fn)
+  make result []
+  for item in list
+    if fn(item) then push(result, item)
+  give result
+
+fun reduce(list, fn, init)
+  make acc init
+  for item in list
+    make acc fn(acc, item)
+  give acc
+
+fun sort(list, fn)
+  note Insertion sort — stable, works with optional comparator
+  make arr list[:]
+  make n size(arr)
+  loop i? < n
+    make j i
+    loop j > 0
+      make shouldSwap no
+      if fn = none
+        if type(arr[j - 1]) = "integer" or type(arr[j - 1]) = "float"
+          make shouldSwap arr[j - 1] > arr[j]
+        else
+          note string comparison via > operator
+          make shouldSwap str(arr[j - 1]) > str(arr[j])
+      else
+        make shouldSwap fn(arr[j - 1], arr[j])
+      if shouldSwap
+        make temp arr[j - 1]
+        make arr[j - 1] arr[j]
+        make arr[j] temp
+        make j j - 1
+      else
+        end
+    make i + 1
+  give arr
+
+fun reverse(list)
+  make result []
+  make i size(list) - 1
+  loop i >= 0
+    push(result, list[i])
+    make i - 1
+  give result
+
+fun unique(list)
+  make result []
+  for item in list
+    if not (item in result) then push(result, item)
+  give result
+
+fun flat(list)
+  make result []
+  for item in list
+    if type(item) = "list"
+      for x in item
+        push(result, x)
+    else
+      push(result, item)
+  give result
+
+fun first(list)
+  if size(list) = 0 then give none
+  give list[0]
+
+fun head(list, n)
+  give list[0:n]
+
+fun drop(list, n)
+  give list[n:]
+
+fun zip(a, b)
+  make result []
+  make n min(size(a), size(b))
+  loop i? < n
+    push(result, [a[i], b[i]])
+    make i + 1
+  give result
+
+fun col(grid, n)
+  make result []
+  for row in grid
+    push(result, row[n])
+  give result
+
+fun row(grid, n)
+  give grid[n]
+
+fun cols(grid)
+  if size(grid) = 0 then give 0
+  give size(grid[0])
+
+fun rows(grid)
+  give size(grid)
+
+fun transpose(grid)
+  make result []
+  loop c? < cols(grid)
+    push(result, col(grid, c))
+    make c + 1
+  give result
+
+note ── End migrated ──────────────────────────────────────────────────────
+
 fun chunk(list, n)
   make result []
   make i 0

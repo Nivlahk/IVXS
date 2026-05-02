@@ -1,6 +1,13 @@
 note ── IVX Standard Library: random ───────────────────────────────────────
 note https://ivxs.tech/std/random
 
+note ── Migrated from runtime ─────────────────────────────────────────────
+
+fun roll(lo, hi)
+  give randint(lo, hi)
+
+note ── End migrated ──────────────────────────────────────────────────────
+
 fun coinFlip()
   give randint(0, 1) = 1
 

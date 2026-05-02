@@ -7,6 +7,28 @@ note     use fibonacci as fib
 note     use clamp
 note     use lerp
 
+note ── Migrated from runtime ─────────────────────────────────────────────
+
+fun degrees(r)
+  give r * 180 / 3.14159265358979323846
+
+fun radians(d)
+  give d * 3.14159265358979323846 / 180
+
+fun gcd(a, b)
+  make a abs(int(a))
+  make b abs(int(b))
+  loop b > 0
+    make temp b
+    make b a % b
+    make a temp
+  give a
+
+fun lcm(a, b)
+  give abs(int(a) * int(b)) // gcd(a, b)
+
+note ── End migrated ──────────────────────────────────────────────────────
+
 fun fibonacci(n)
   if n <= 1 then give n
   make a 0
