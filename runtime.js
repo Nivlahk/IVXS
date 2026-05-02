@@ -21,17 +21,17 @@ const NONE = null;
 
 // ── Control flow signals ──────────────────────────────────────────────────────
 // Used to unwind the call stack for 'out' (return) and loop control
-class ReturnSignal  { constructor(value) { this.value = value; } }
-class BreakSignal   {}
-class ContinueSignal {}
-class EndSignal     {}
+class ReturnSignal { constructor(value) { this.value = value; } }
+class BreakSignal { }
+class ContinueSignal { }
+class EndSignal { }
 
 // ── Runtime error ─────────────────────────────────────────────────────────────
 class RuntimeError extends Error {
   constructor(message, line, col) {
     super(message);
     this.ivxLine = line ?? 0;
-    this.ivxCol  = col  ?? 0;
+    this.ivxCol = col ?? 0;
   }
 }
 
@@ -39,13 +39,13 @@ class RuntimeError extends Error {
 class Env {
   constructor(parent = null) {
     this.parent = parent;
-    this.vars   = new Map();
+    this.vars = new Map();
     this.consts = new Set(); // inferred immutable bindings
   }
 
   get(name) {
     if (this.vars.has(name)) return this.vars.get(name);
-    if (this.parent)          return this.parent.get(name);
+    if (this.parent) return this.parent.get(name);
     return undefined;
   }
 
@@ -99,9 +99,9 @@ class Env {
 // ── IVX function (closure) ────────────────────────────────────────────────────
 class IVXFunction {
   constructor(name, params, body, closure) {
-    this.name    = name;
-    this.params  = params;
-    this.body    = body;
+    this.name = name;
+    this.params = params;
+    this.body = body;
     this.closure = closure; // captured environment
   }
 }
@@ -269,30 +269,30 @@ const BUILTIN_DEFS = {
       const x = args[0];
       const base = args[1] ?? NONE;
       if (base === NONE) return Math.log(x);           // natural log
-      if (base === 10)   return Math.log10(x);
-      if (base === 2)    return Math.log2(x);
+      if (base === 10) return Math.log10(x);
+      if (base === 2) return Math.log2(x);
       return Math.log(x) / Math.log(base);
     },
   },
-  log2:  { params: ['x'], call: (args) => Math.log2(args[0]) },
+  log2: { params: ['x'], call: (args) => Math.log2(args[0]) },
   log10: { params: ['x'], call: (args) => Math.log10(args[0]) },
-  sin:   { params: ['x'], call: (args) => Math.sin(args[0]) },
-  cos:   { params: ['x'], call: (args) => Math.cos(args[0]) },
-  tan:   { params: ['x'], call: (args) => Math.tan(args[0]) },
-  asin:  { params: ['x'], call: (args) => Math.asin(args[0]) },
-  acos:  { params: ['x'], call: (args) => Math.acos(args[0]) },
-  atan:  { params: ['x'], call: (args) => Math.atan(args[0]) },
+  sin: { params: ['x'], call: (args) => Math.sin(args[0]) },
+  cos: { params: ['x'], call: (args) => Math.cos(args[0]) },
+  tan: { params: ['x'], call: (args) => Math.tan(args[0]) },
+  asin: { params: ['x'], call: (args) => Math.asin(args[0]) },
+  acos: { params: ['x'], call: (args) => Math.acos(args[0]) },
+  atan: { params: ['x'], call: (args) => Math.atan(args[0]) },
   atan2: { params: ['y', 'x'], call: (args) => Math.atan2(args[0], args[1]) },
-  pi:    { params: [], call: () => Math.PI },
-  e:     { params: [], call: () => Math.E },
-  tau:   { params: [], call: () => Math.PI * 2 },
-  inf:   { params: [], call: () => Infinity },
-  random:  { params: [], call: () => Math.random() },
+  pi: { params: [], call: () => Math.PI },
+  e: { params: [], call: () => Math.E },
+  tau: { params: [], call: () => Math.PI * 2 },
+  inf: { params: [], call: () => Infinity },
+  random: { params: [], call: () => Math.random() },
   randint: { params: ['a', 'b'], call: (args) => Math.floor(Math.random() * (args[1] - args[0] + 1)) + args[0] },
-  roll:    { params: ['a', 'b'], call: (args) => Math.floor(Math.random() * (args[1] - args[0] + 1)) + args[0] },
-  sign:    { params: ['x'], call: (args) => Math.sign(args[0]) },
-  clamp:   { params: ['x', 'lo', 'hi'], call: (args) => Math.min(Math.max(args[0], args[1]), args[2]) },
-  lerp:    { params: ['a', 'b', 't'], call: (args) => args[0] + (args[1] - args[0]) * args[2] },
+  roll: { params: ['a', 'b'], call: (args) => Math.floor(Math.random() * (args[1] - args[0] + 1)) + args[0] },
+  sign: { params: ['x'], call: (args) => Math.sign(args[0]) },
+  clamp: { params: ['x', 'lo', 'hi'], call: (args) => Math.min(Math.max(args[0], args[1]), args[2]) },
+  lerp: { params: ['a', 'b', 't'], call: (args) => args[0] + (args[1] - args[0]) * args[2] },
   degrees: { params: ['r'], call: (args) => args[0] * (180 / Math.PI) },
   radians: { params: ['d'], call: (args) => args[0] * (Math.PI / 180) },
   gcd: {
@@ -376,15 +376,15 @@ const BUILTIN_DEFS = {
     params: ['s', 'from', 'to'],
     call: (args) => String(args[0]).replaceAll(String(args[1]), String(args[2])),
   },
-  starts:  { params: ['s','prefix'], call: (args) => String(args[0]).startsWith(String(args[1])) },
-  ends:    { params: ['s','suffix'], call: (args) => String(args[0]).endsWith(String(args[1])) },
-  index:   { params: ['s','sub'], call: (args) => { const i=String(args[0]).indexOf(String(args[1])); return i===-1?NONE:i; } },
-  slice:   { params: ['s','start','end'], call: (args) => { const s=String(args[0]); return (args[2]!=null&&args[2]!==NONE)?s.slice(args[1],args[2]):s.slice(args[1]); } },
-  pad:     { params: ['s','len','char'], call: (args) => String(args[0]).padStart(Number(args[1])||0,String(args[2]??' ')) },
-  padend:  { params: ['s','len','char'], call: (args) => String(args[0]).padEnd(Number(args[1])||0,String(args[2]??' ')) },
-  chars:   { params: ['s'], call: (args) => [...String(args[0])] },
-  repeat:  { params: ['s','n'], call: (args) => String(args[0]).repeat(Math.max(0,Math.trunc(Number(args[1])))) },
-  size:    { params: ['x'], call: (args) => { const v=args[0]; if(typeof v==='string')return v.length; if(Array.isArray(v))return v.length; if(v instanceof Map)return v.size; return 0; } },
+  starts: { params: ['s', 'prefix'], call: (args) => String(args[0]).startsWith(String(args[1])) },
+  ends: { params: ['s', 'suffix'], call: (args) => String(args[0]).endsWith(String(args[1])) },
+  index: { params: ['s', 'sub'], call: (args) => { const i = String(args[0]).indexOf(String(args[1])); return i === -1 ? NONE : i; } },
+  slice: { params: ['s', 'start', 'end'], call: (args) => { const s = String(args[0]); return (args[2] != null && args[2] !== NONE) ? s.slice(args[1], args[2]) : s.slice(args[1]); } },
+  pad: { params: ['s', 'len', 'char'], call: (args) => String(args[0]).padStart(Number(args[1]) || 0, String(args[2] ?? ' ')) },
+  padend: { params: ['s', 'len', 'char'], call: (args) => String(args[0]).padEnd(Number(args[1]) || 0, String(args[2] ?? ' ')) },
+  chars: { params: ['s'], call: (args) => [...String(args[0])] },
+  repeat: { params: ['s', 'n'], call: (args) => String(args[0]).repeat(Math.max(0, Math.trunc(Number(args[1])))) },
+  size: { params: ['x'], call: (args) => { const v = args[0]; if (typeof v === 'string') return v.length; if (Array.isArray(v)) return v.length; if (v instanceof Map) return v.size; return 0; } },
 
   // ── List methods ──────────────────────────────────────────────────────────
   map: {
@@ -510,7 +510,7 @@ const BUILTIN_DEFS = {
       const a = args[0]; const b = args[1];
       if (!Array.isArray(a) || !Array.isArray(b)) return NONE;
       const len = Math.min(a.length, b.length);
-      return Array.from({length: len}, (_, i) => [a[i], b[i]]);
+      return Array.from({ length: len }, (_, i) => [a[i], b[i]]);
     },
   },
   // ── 2D list methods ───────────────────────────────────────────────────────
@@ -558,33 +558,37 @@ const BUILTIN_DEFS = {
       return [...t[0].keys()].filter(k => !String(k).startsWith('__'));
     },
   },
-  now:       { params: [], call: () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; } },
-  time:      { params: [], call: () => { const d=new Date(); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`; } },
+  now: { params: [], call: () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; } },
+  time: { params: [], call: () => { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`; } },
   timestamp: { params: [], call: () => Date.now() },
-  year:    { params: ['date'], call: (args) => new Date(args[0]??Date.now()).getFullYear() },
-  month:   { params: ['date'], call: (args) => new Date(args[0]??Date.now()).getMonth()+1 },
-  day:     { params: ['date'], call: (args) => new Date(args[0]??Date.now()).getDate() },
-  hour:    { params: ['date'], call: (args) => new Date(args[0]??Date.now()).getHours() },
-  minute:  { params: ['date'], call: (args) => new Date(args[0]??Date.now()).getMinutes() },
-  weekday: { params: ['date'], call: (args) => ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date(args[0]??Date.now()).getDay()] },
-  dateadd: { params: ['date','n','unit'], call: (args) => {
-    const d=new Date(args[0]); const n=Number(args[1]); const u=String(args[2]??'day').toLowerCase();
-    if(u==='day'||u==='days')d.setDate(d.getDate()+n);
-    else if(u==='month'||u==='months')d.setMonth(d.getMonth()+n);
-    else if(u==='year'||u==='years')d.setFullYear(d.getFullYear()+n);
-    else if(u==='hour'||u==='hours')d.setHours(d.getHours()+n);
-    else if(u==='minute'||u==='minutes')d.setMinutes(d.getMinutes()+n);
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  }},
-  datediff: { params: ['d1','d2','unit'], call: (args) => {
-    const d1=new Date(args[0]),d2=new Date(args[1]); const ms=d2-d1; const u=String(args[2]??'day').toLowerCase();
-    if(u==='day'||u==='days')return Math.round(ms/86400000);
-    if(u==='hour'||u==='hours')return Math.round(ms/3600000);
-    if(u==='minute'||u==='minutes')return Math.round(ms/60000);
-    if(u==='month'||u==='months')return (d2.getFullYear()-d1.getFullYear())*12+(d2.getMonth()-d1.getMonth());
-    if(u==='year'||u==='years')return d2.getFullYear()-d1.getFullYear();
-    return Math.round(ms/86400000);
-  }},
+  year: { params: ['date'], call: (args) => new Date(args[0] ?? Date.now()).getFullYear() },
+  month: { params: ['date'], call: (args) => new Date(args[0] ?? Date.now()).getMonth() + 1 },
+  day: { params: ['date'], call: (args) => new Date(args[0] ?? Date.now()).getDate() },
+  hour: { params: ['date'], call: (args) => new Date(args[0] ?? Date.now()).getHours() },
+  minute: { params: ['date'], call: (args) => new Date(args[0] ?? Date.now()).getMinutes() },
+  weekday: { params: ['date'], call: (args) => ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(args[0] ?? Date.now()).getDay()] },
+  dateadd: {
+    params: ['date', 'n', 'unit'], call: (args) => {
+      const d = new Date(args[0]); const n = Number(args[1]); const u = String(args[2] ?? 'day').toLowerCase();
+      if (u === 'day' || u === 'days') d.setDate(d.getDate() + n);
+      else if (u === 'month' || u === 'months') d.setMonth(d.getMonth() + n);
+      else if (u === 'year' || u === 'years') d.setFullYear(d.getFullYear() + n);
+      else if (u === 'hour' || u === 'hours') d.setHours(d.getHours() + n);
+      else if (u === 'minute' || u === 'minutes') d.setMinutes(d.getMinutes() + n);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+  },
+  datediff: {
+    params: ['d1', 'd2', 'unit'], call: (args) => {
+      const d1 = new Date(args[0]), d2 = new Date(args[1]); const ms = d2 - d1; const u = String(args[2] ?? 'day').toLowerCase();
+      if (u === 'day' || u === 'days') return Math.round(ms / 86400000);
+      if (u === 'hour' || u === 'hours') return Math.round(ms / 3600000);
+      if (u === 'minute' || u === 'minutes') return Math.round(ms / 60000);
+      if (u === 'month' || u === 'months') return (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth());
+      if (u === 'year' || u === 'years') return d2.getFullYear() - d1.getFullYear();
+      return Math.round(ms / 86400000);
+    }
+  },
   // ── Type and utility ────────────────────────────────────────────────────
   type: {
     params: ['x'],
@@ -593,23 +597,23 @@ const BUILTIN_DEFS = {
       if (v === NONE || v === null) return 'none';
       if (v === true || v === false) return 'boolean';
       if (v instanceof IVXFunction) return 'function';
-      if (v instanceof IVXClass)    return 'class';
-      if (v instanceof Map)         return v.get('__class__') ? String(v.get('__class__')).toLowerCase() : 'dict';
-      if (Array.isArray(v))         return 'list';
-      if (typeof v === 'string')    return 'string';
-      if (Number.isInteger(v))      return 'integer';
-      if (typeof v === 'number')    return 'float';
+      if (v instanceof IVXClass) return 'class';
+      if (v instanceof Map) return v.get('__class__') ? String(v.get('__class__')).toLowerCase() : 'dict';
+      if (Array.isArray(v)) return 'list';
+      if (typeof v === 'string') return 'string';
+      if (Number.isInteger(v)) return 'integer';
+      if (typeof v === 'number') return 'float';
       return 'unknown';
     },
   },
-  isString:  { params: ['x'], call: (args) => typeof args[0] === 'string' },
-  isInt:     { params: ['x'], call: (args) => typeof args[0] === 'number' && Number.isInteger(args[0]) },
-  isFloat:   { params: ['x'], call: (args) => typeof args[0] === 'number' && !Number.isInteger(args[0]) },
-  isBool:    { params: ['x'], call: (args) => args[0] === true || args[0] === false },
-  isList:    { params: ['x'], call: (args) => Array.isArray(args[0]) },
-  isDict:    { params: ['x'], call: (args) => args[0] instanceof Map },
-  isNone:    { params: ['x'], call: (args) => args[0] === NONE || args[0] === null },
-  isNum:     { params: ['x'], call: (args) => typeof args[0] === 'number' },
+  isString: { params: ['x'], call: (args) => typeof args[0] === 'string' },
+  isInt: { params: ['x'], call: (args) => typeof args[0] === 'number' && Number.isInteger(args[0]) },
+  isFloat: { params: ['x'], call: (args) => typeof args[0] === 'number' && !Number.isInteger(args[0]) },
+  isBool: { params: ['x'], call: (args) => args[0] === true || args[0] === false },
+  isList: { params: ['x'], call: (args) => Array.isArray(args[0]) },
+  isDict: { params: ['x'], call: (args) => args[0] instanceof Map },
+  isNone: { params: ['x'], call: (args) => args[0] === NONE || args[0] === null },
+  isNum: { params: ['x'], call: (args) => typeof args[0] === 'number' },
   range: {
     params: ['n'],
     call: (args, node) => {
@@ -695,7 +699,7 @@ const BUILTIN_DEFS = {
     call: (args, node) => {
       try {
         return new RegExp(String(args[1])).test(String(args[0]));
-      } catch(e) { throw new RuntimeError(`match: invalid pattern: ${e.message}`, node?.line); }
+      } catch (e) { throw new RuntimeError(`match: invalid pattern: ${e.message}`, node?.line); }
     },
   },
   findall: {
@@ -704,7 +708,7 @@ const BUILTIN_DEFS = {
       try {
         const matches = String(args[0]).match(new RegExp(String(args[1]), 'g'));
         return matches ?? [];
-      } catch(e) { throw new RuntimeError(`findall: invalid pattern: ${e.message}`, node?.line); }
+      } catch (e) { throw new RuntimeError(`findall: invalid pattern: ${e.message}`, node?.line); }
     },
   },
   search: {
@@ -718,7 +722,7 @@ const BUILTIN_DEFS = {
         result.set('index', m.index);
         result.set('groups', m.slice(1));
         return result;
-      } catch(e) { throw new RuntimeError(`search: invalid pattern: ${e.message}`, node?.line); }
+      } catch (e) { throw new RuntimeError(`search: invalid pattern: ${e.message}`, node?.line); }
     },
   },
   sub: {
@@ -726,7 +730,7 @@ const BUILTIN_DEFS = {
     call: (args, node) => {
       try {
         return String(args[0]).replace(new RegExp(String(args[1]), 'g'), String(args[2]));
-      } catch(e) { throw new RuntimeError(`sub: invalid pattern: ${e.message}`, node?.line); }
+      } catch (e) { throw new RuntimeError(`sub: invalid pattern: ${e.message}`, node?.line); }
     },
   },
   split_re: {
@@ -734,19 +738,21 @@ const BUILTIN_DEFS = {
     call: (args, node) => {
       try {
         return String(args[0]).split(new RegExp(String(args[1])));
-      } catch(e) { throw new RuntimeError(`split_re: invalid pattern: ${e.message}`, node?.line); }
+      } catch (e) { throw new RuntimeError(`split_re: invalid pattern: ${e.message}`, node?.line); }
     },
   },
 
-  format: { params: ['date','pattern'], call: (args) => {
-    const d=new Date(args[0]);
-    return String(args[1]??'YYYY-MM-DD')
-      .replace('YYYY',d.getFullYear()).replace('MM',String(d.getMonth()+1).padStart(2,'0'))
-      .replace('DD',String(d.getDate()).padStart(2,'0')).replace('HH',String(d.getHours()).padStart(2,'0'))
-      .replace('mm',String(d.getMinutes()).padStart(2,'0')).replace('ss',String(d.getSeconds()).padStart(2,'0'))
-      .replace('ddd',['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()])
-      .replace('dddd',['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][d.getDay()]);
-  }},
+  format: {
+    params: ['date', 'pattern'], call: (args) => {
+      const d = new Date(args[0]);
+      return String(args[1] ?? 'YYYY-MM-DD')
+        .replace('YYYY', d.getFullYear()).replace('MM', String(d.getMonth() + 1).padStart(2, '0'))
+        .replace('DD', String(d.getDate()).padStart(2, '0')).replace('HH', String(d.getHours()).padStart(2, '0'))
+        .replace('mm', String(d.getMinutes()).padStart(2, '0')).replace('ss', String(d.getSeconds()).padStart(2, '0'))
+        .replace('ddd', ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()])
+        .replace('dddd', ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d.getDay()]);
+    }
+  },
 };
 
 function ivxToPlain(value) {
@@ -929,7 +935,7 @@ class IVXRuntime {
   }
 
   async _executePost(node, env, { storeResponse = false } = {}) {
-    const url  = await this._interp.evalExpr(node.url,  env);
+    const url = await this._interp.evalExpr(node.url, env);
     const body = await this._interp.evalExpr(node.body, env);
     const cred = node.credential
       ? await this._interp.evalExpr(node.credential, env)
@@ -1113,7 +1119,7 @@ class IVXRuntime {
     }
 
     if (typeof driveListFiles === 'function') {
-      try { await driveListFiles(); } catch (_) {}
+      try { await driveListFiles(); } catch (_) { }
     }
   }
 
@@ -1334,9 +1340,9 @@ class IVXRuntime {
 
   // ── gmail to <addr> subject <subj> body <body> ────────────────────────────
   async _executeGmail(node, env) {
-    const to      = node.to      ? String(await this._interp.evalExpr(node.to, env))      : '';
+    const to = node.to ? String(await this._interp.evalExpr(node.to, env)) : '';
     const subject = node.subject ? String(await this._interp.evalExpr(node.subject, env)) : '';
-    const body    = node.body    ? String(await this._interp.evalExpr(node.body, env))     : '';
+    const body = node.body ? String(await this._interp.evalExpr(node.body, env)) : '';
 
     if (!to) throw new RuntimeError("email: missing recipient address", node.line);
 
@@ -1363,16 +1369,16 @@ class IVXRuntime {
 
   // ── wait block: Level 1 polling execution ────────────────────────────────
   async _executeWaitBlock(node, env) {
-    const POLL_MS    = 5000;  // poll every 5 seconds
-    const MAX_POLLS  = 720;   // give up after 1 hour (720 × 5s)
-    const trigger    = node.trigger;
-    const interp     = this;
+    const POLL_MS = 5000;  // poll every 5 seconds
+    const MAX_POLLS = 720;   // give up after 1 hour (720 × 5s)
+    const trigger = node.trigger;
+    const interp = this;
 
     const poll = async () => {
       if (trigger === 'email') {
         // Poll Gmail for unread messages from the source address
         const from = node.source ? String(await this._interp.evalExpr(node.source, env)) : '';
-        const q    = encodeURIComponent(`is:unread${from ? ` from:${from}` : ''}`);
+        const q = encodeURIComponent(`is:unread${from ? ` from:${from}` : ''}`);
         const data = await this._googleAPI(
           `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${q}&maxResults=1`
         );
@@ -1385,7 +1391,7 @@ class IVXRuntime {
           const subject = headers.find(h => h.name === 'Subject')?.value ?? '';
           const fromAddr = headers.find(h => h.name === 'From')?.value ?? '';
           const bodyPart = msg?.payload?.parts?.[0]?.body?.data ?? msg?.payload?.body?.data ?? '';
-          const bodyText = bodyPart ? atob(bodyPart.replace(/-/g,'+').replace(/_/g,'/')) : '';
+          const bodyText = bodyPart ? atob(bodyPart.replace(/-/g, '+').replace(/_/g, '/')) : '';
           const triggerEnv = env.child();
           triggerEnv.set('request', new Map([
             ['subject', subject], ['from', fromAddr], ['body', bodyText], ['id', data.messages[0].id]
@@ -1401,7 +1407,7 @@ class IVXRuntime {
         const handle = await this._evalSheetsOpenExpr({ ...node, name: node.source }, env);
         const rows = await handle.get('read')('A1:Z1000');
         const lastSeen = this._interp.globals.get('__waitSheetRows__') ?? 0;
-        const current  = (rows?.length ?? 1) - 1; // subtract header
+        const current = (rows?.length ?? 1) - 1; // subtract header
         if (current > lastSeen) {
           this._interp.globals.set('__waitSheetRows__', current);
           const newRows = rows.slice(lastSeen + 1);
@@ -1418,7 +1424,7 @@ class IVXRuntime {
         // Check if current time matches (simple HH:MM match)
         const timeStr = node.source ? String(await this._interp.evalExpr(node.source, env)) : '';
         const now = new Date();
-        const nowStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+        const nowStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
         if (nowStr === timeStr) return env.child();
         return null;
       }
@@ -1477,7 +1483,7 @@ async function resolveParam(param, incoming, env, interp) {
 // Returns a Set of variable names that are safe to treat as const.
 function inferImmutables(ast) {
   const assigned = new Map(); // name → count of assignments
-  const mutated  = new Set(); // names that are explicitly mutated (make x + 1 shorthand)
+  const mutated = new Set(); // names that are explicitly mutated (make x + 1 shorthand)
 
   function scanExpr(node) {
     if (!node) return;
@@ -1527,10 +1533,10 @@ function inferImmutables(ast) {
       return;
     }
     if (node.type === 'Loop') { scanExpr(node.condition); scanBlock(node.body); return; }
-    if (node.type === 'For')  { scanBlock(node.body); return; }
-    if (node.type === 'Fun')  { scanBlock(node.body); return; }
+    if (node.type === 'For') { scanBlock(node.body); return; }
+    if (node.type === 'Fun') { scanBlock(node.body); return; }
     if (node.type === 'Class') { scanBlock(node.body); return; }
-    if (node.type === 'Try')  { scanBlock(node.body); scanBlock(node.errBody); return; }
+    if (node.type === 'Try') { scanBlock(node.body); scanBlock(node.errBody); return; }
     if (node.type === 'Print' || node.type === 'Text' || node.type === 'Give') { scanExpr(node.expr); return; }
     if (node.type === 'ExprStatement') { scanExpr(node.expr); return; }
   }
@@ -1551,12 +1557,12 @@ function inferImmutables(ast) {
 class Interpreter {
   constructor(options = {}) {
     // I/O hooks — override these to wire up the browser UI
-    this.onOutput  = options.onOutput  ?? (v => console.log(ivxRepr(v)));
-    this.onInput   = options.onInput   ?? (() => { throw new RuntimeError("'take' requires an input handler"); });
-    this.onError   = options.onError   ?? (e => console.error(e));
-    this.onWait    = options.onWait    ?? (n => new Promise(r => setTimeout(r, n * 100)));
+    this.onOutput = options.onOutput ?? (v => console.log(ivxRepr(v)));
+    this.onInput = options.onInput ?? (() => { throw new RuntimeError("'take' requires an input handler"); });
+    this.onError = options.onError ?? (e => console.error(e));
+    this.onWait = options.onWait ?? (n => new Promise(r => setTimeout(r, n * 100)));
     // onStep(srcLine) — called before each statement executes with the 1-based source line
-    this.onStep    = options.onStep    ?? null;
+    this.onStep = options.onStep ?? null;
 
     // Max loop iterations — safety valve against infinite loops
     this.maxIterations = options.maxIterations ?? 100_000;
@@ -1597,10 +1603,10 @@ class Interpreter {
       if (!stmt) continue;
       const result = await this.execStmt(stmt, env);
       // Propagate control flow signals up
-      if (result instanceof ReturnSignal)   return result;
-      if (result instanceof BreakSignal)    return result;
+      if (result instanceof ReturnSignal) return result;
+      if (result instanceof BreakSignal) return result;
       if (result instanceof ContinueSignal) return result;
-      if (result instanceof EndSignal)      return result;
+      if (result instanceof EndSignal) return result;
     }
   }
 
@@ -1685,7 +1691,7 @@ class Interpreter {
         // Apply converter if specified
         if (node.converter && value !== NONE) {
           try { value = this._callBuiltin(node.converter, [value], node); }
-          catch(e) { this.globals.set('err', e.message ?? String(e)); }
+          catch (e) { this.globals.set('err', e.message ?? String(e)); }
         }
         env.set(node.name, value);
         break;
@@ -1747,7 +1753,7 @@ class Interpreter {
               } else {
                 resolve(text);
               }
-            } catch(e) {
+            } catch (e) {
               reject(new RuntimeError(`Failed to parse ${node.ext}: ${e.message}`, node.line));
             }
           };
@@ -1808,8 +1814,8 @@ class Interpreter {
           }
           const loopEnv = env.child();
           const r = await this.execBlock(node.body, loopEnv);
-          if (r instanceof ReturnSignal)  return r;
-          if (r instanceof BreakSignal)   break;
+          if (r instanceof ReturnSignal) return r;
+          if (r instanceof BreakSignal) break;
         }
         break;
       }
@@ -1833,11 +1839,11 @@ class Interpreter {
             throw new RuntimeError('For loop exceeded maximum iterations', node.line);
           }
           const forEnv = env.child();
-          forEnv.set(node.iterVar,  primary);
+          forEnv.set(node.iterVar, primary);
           forEnv.set(node.iterVar2, secondary);
           const r = await this.execBlock(node.body, forEnv);
-          if (r instanceof ReturnSignal)  return r;
-          if (r instanceof BreakSignal)   break;
+          if (r instanceof ReturnSignal) return r;
+          if (r instanceof BreakSignal) break;
         }
         break;
       }
@@ -1903,11 +1909,40 @@ class Interpreter {
       case 'Import': {
         if (!node.url) break;
         let url = node.url;
+        if (url.startsWith('http:')) throw new RuntimeError("Insecure protocol: HTTPS is mandatory for KH modules.", node.line);
         if (!url.startsWith('http')) url = 'https://' + url;
+
         try {
           const res = await fetch(url);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const src = await res.text();
+
+          // Generate SHA-256 Fingerprint
+          const encoder = new TextEncoder();
+          const data = encoder.encode(src);
+          const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+          const hashArray = Array.from(new Uint8Array(hashBuffer));
+          const currentHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+          // TOFU Verification (Trust-On-First-Use)
+          const storageKey = `kh_hash_${url}`;
+          const storedHash = localStorage.getItem(storageKey);
+
+          if (!storedHash) {
+            // First time loading - Pin the hash
+            localStorage.setItem(storageKey, currentHash);
+            console.log(`%c[KH SECURITY] Pinned new module: ${url.substring(0, 30)}...`, 'color: #3498db; font-weight: bold;');
+            console.log(`%c[KH SECURITY] Fingerprint: ${currentHash.substring(0, 16)}...`, 'color: #95a5a6;');
+          } else if (storedHash !== currentHash) {
+            // Tampering detected!
+            console.error(`%c[KH SECURITY ALERT] TAMPERING DETECTED for ${url}`, 'background: #e74c3c; color: white; padding: 5px; font-weight: bold;');
+            console.error(`Stored Hash:  ${storedHash}`);
+            console.error(`Current Hash: ${currentHash}`);
+            throw new RuntimeError(`Security Block: The code at ${url} has changed since its first use! To allow this change, clear your cache or use a versioned URL.`, node.line);
+          } else {
+            console.log(`%c[KH SECURITY] Verified: ${url.substring(0, 30)}... (Integrity Match)`, 'color: #2ecc71; font-weight: bold;');
+          }
+
           const modEnv = this.globals.child();
           const parsed = parse(src);
           await this.execBlock(parsed.ast.body, modEnv);
@@ -2065,17 +2100,17 @@ class Interpreter {
 
 
   // ── I/O delegation — all side effects live in IVXRuntime ─────────────────
-  async _executePost(node, env, opts)         { return this.runtime._executePost(node, env, opts); }
-  async _saveLocalFile(f, c, m)              { return this.runtime._saveLocalFile(f, c, m); }
-  async _saveDriveFile(f, c, m)              { return this.runtime._saveDriveFile(f, c, m); }
-  _ivxToPlain(v)                             { return this.runtime._ivxToPlain(v); }
-  _escapeDelimitedCell(v, d)                 { return this.runtime._escapeDelimitedCell(v, d); }
-  _toDelimitedText(v, d)                     { return this.runtime._toDelimitedText(v, d); }
-  _serializeForSave(v, f)                    { return this.runtime._serializeForSave(v, f); }
-  async _evalAskExpr(node, env)              { return this.runtime._evalAskExpr(node, env); }
-  async _evalSheetsOpenExpr(node, env)       { return this.runtime._evalSheetsOpenExpr(node, env); }
-  async _executeGmail(node, env)             { return this.runtime._executeGmail(node, env); }
-  async _executeWaitBlock(node, env)         { return this.runtime._executeWaitBlock(node, env); }
+  async _executePost(node, env, opts) { return this.runtime._executePost(node, env, opts); }
+  async _saveLocalFile(f, c, m) { return this.runtime._saveLocalFile(f, c, m); }
+  async _saveDriveFile(f, c, m) { return this.runtime._saveDriveFile(f, c, m); }
+  _ivxToPlain(v) { return this.runtime._ivxToPlain(v); }
+  _escapeDelimitedCell(v, d) { return this.runtime._escapeDelimitedCell(v, d); }
+  _toDelimitedText(v, d) { return this.runtime._toDelimitedText(v, d); }
+  _serializeForSave(v, f) { return this.runtime._serializeForSave(v, f); }
+  async _evalAskExpr(node, env) { return this.runtime._evalAskExpr(node, env); }
+  async _evalSheetsOpenExpr(node, env) { return this.runtime._evalSheetsOpenExpr(node, env); }
+  async _executeGmail(node, env) { return this.runtime._executeGmail(node, env); }
+  async _executeWaitBlock(node, env) { return this.runtime._executeWaitBlock(node, env); }
 
 
   async _evalListLit(node, env) {
@@ -2405,16 +2440,16 @@ class Interpreter {
   async evalBinOp(node, env) {
     // Lazy inference: if either side is a LazyDecl, infer default from the other side
     if (node.left?.type === 'LazyDecl' || node.right?.type === 'LazyDecl') {
-      const lazyNode  = node.left?.type  === 'LazyDecl' ? node.left  : node.right;
-      const otherNode = node.left?.type  === 'LazyDecl' ? node.right : node.left;
+      const lazyNode = node.left?.type === 'LazyDecl' ? node.left : node.right;
+      const otherNode = node.left?.type === 'LazyDecl' ? node.right : node.left;
       if (!this.globals.has(lazyNode.name)) {
-        const otherVal   = await this.evalExpr(otherNode, env);
+        const otherVal = await this.evalExpr(otherNode, env);
         const defaultVal =
           typeof otherVal === 'number' && Number.isInteger(otherVal) ? 0
-          : typeof otherVal === 'number'  ? 0.0
-          : typeof otherVal === 'string'  ? ''
-          : typeof otherVal === 'boolean' ? false
-          : NONE;
+            : typeof otherVal === 'number' ? 0.0
+              : typeof otherVal === 'string' ? ''
+                : typeof otherVal === 'boolean' ? false
+                  : NONE;
         this.globals.set(lazyNode.name, defaultVal);
       }
     }
@@ -2443,69 +2478,69 @@ class Interpreter {
       return (Number.isInteger(l) && Number.isInteger(r)) ? ~(l | r) : !(isTruthy(l) || isTruthy(r));
     }
 
-    const left  = await this.evalExpr(node.left,  env);
+    const left = await this.evalExpr(node.left, env);
     const right = await this.evalExpr(node.right, env);
 
     // Element-wise broadcasting: list op scalar, scalar op list, or list op list
-    const ARITH = new Set(['+','-','*','/','//','%','^']);
+    const ARITH = new Set(['+', '-', '*', '/', '//', '%', '^']);
     if (ARITH.has(node.op)) {
-      const leftArr  = Array.isArray(left);
+      const leftArr = Array.isArray(left);
       const rightArr = Array.isArray(right);
       if (leftArr || rightArr) {
         const applyOp = (a, b) => {
           switch (node.op) {
-            case '+':  return typeof a === 'string' ? String(a) + String(b) : a + b;
-            case '-':  return a - b;
-            case '*':  return a * b;
-            case '/':  return b === 0 ? NONE : a / b;
+            case '+': return typeof a === 'string' ? String(a) + String(b) : a + b;
+            case '-': return a - b;
+            case '*': return a * b;
+            case '/': return b === 0 ? NONE : a / b;
             case '//': return b === 0 ? NONE : Math.trunc(a / b);
-            case '%':  return a % b;
-            case '^':  return Math.pow(a, b);
-            default:   return NONE;
+            case '%': return a % b;
+            case '^': return Math.pow(a, b);
+            default: return NONE;
           }
         };
         if (leftArr && rightArr) {
           const len = Math.min(left.length, right.length);
-          return Array.from({length: len}, (_, i) => {
+          return Array.from({ length: len }, (_, i) => {
             const a = left[i], b = right[i];
             // 2D: both elements are rows → recurse element-wise on the rows
             if (Array.isArray(a) && Array.isArray(b)) {
               const rowLen = Math.min(a.length, b.length);
-              return Array.from({length: rowLen}, (_, j) => applyOp(a[j], b[j]));
+              return Array.from({ length: rowLen }, (_, j) => applyOp(a[j], b[j]));
             }
             if (Array.isArray(a)) return a.map(v => applyOp(v, b));
             if (Array.isArray(b)) return b.map(v => applyOp(a, v));
             return applyOp(a, b);
           });
         }
-        if (leftArr)  return left.map(v => Array.isArray(v) ? v.map(c => applyOp(c, right)) : applyOp(v, right));
+        if (leftArr) return left.map(v => Array.isArray(v) ? v.map(c => applyOp(c, right)) : applyOp(v, right));
         if (rightArr) return right.map(v => Array.isArray(v) ? v.map(c => applyOp(left, c)) : applyOp(left, v));
       }
     }
 
     switch (node.op) {
-      case '+':   return typeof left === 'string' ? String(left) + String(right) : left + right;
-      case '-':   return left - right;
-      case '*':   return left * right;
-      case '/':   if (right === 0) throw new RuntimeError('Division by zero', node.line);
-                  return left / right;
-      case '//':  if (right === 0) throw new RuntimeError('Division by zero', node.line);
-                  return Math.trunc(left / right);
-      case '%':   return left % right;
-      case '^':   return Math.pow(left, right);
-      case '=':   return ivxEqual(left, right);
-      case '!=':  return !ivxEqual(left, right);
-      case '<':   return left < right;
-      case '>':   return left > right;
-      case '<=':  return left <= right;
-      case '>=':  return left >= right;
-      case 'is':   return ivxEqual(left, right);
-      case 'in':   return ivxIn(left, right, node);
+      case '+': return typeof left === 'string' ? String(left) + String(right) : left + right;
+      case '-': return left - right;
+      case '*': return left * right;
+      case '/': if (right === 0) throw new RuntimeError('Division by zero', node.line);
+        return left / right;
+      case '//': if (right === 0) throw new RuntimeError('Division by zero', node.line);
+        return Math.trunc(left / right);
+      case '%': return left % right;
+      case '^': return Math.pow(left, right);
+      case '=': return ivxEqual(left, right);
+      case '!=': return !ivxEqual(left, right);
+      case '<': return left < right;
+      case '>': return left > right;
+      case '<=': return left <= right;
+      case '>=': return left >= right;
+      case 'is': return ivxEqual(left, right);
+      case 'in': return ivxIn(left, right, node);
       case 'same': return (Number.isInteger(left) && Number.isInteger(right)) ? ~(left ^ right) : isTruthy(left) === isTruthy(right);
-      case 'xor':  return (Number.isInteger(left) && Number.isInteger(right)) ? (left ^ right)  : isTruthy(left) !== isTruthy(right);
-      case 'nand': return (Number.isInteger(left) && Number.isInteger(right)) ? ~(left & right)  : !(isTruthy(left) && isTruthy(right));
-      case 'nor':  return (Number.isInteger(left) && Number.isInteger(right)) ? ~(left | right)  : !(isTruthy(left) || isTruthy(right));
-      default:     throw new RuntimeError(`Unknown operator '${node.op}'`, node.line);
+      case 'xor': return (Number.isInteger(left) && Number.isInteger(right)) ? (left ^ right) : isTruthy(left) !== isTruthy(right);
+      case 'nand': return (Number.isInteger(left) && Number.isInteger(right)) ? ~(left & right) : !(isTruthy(left) && isTruthy(right));
+      case 'nor': return (Number.isInteger(left) && Number.isInteger(right)) ? ~(left | right) : !(isTruthy(left) || isTruthy(right));
+      default: throw new RuntimeError(`Unknown operator '${node.op}'`, node.line);
     }
   }
 
@@ -2561,7 +2596,7 @@ class Interpreter {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function isTruthy(v) {
-  if (v === NONE)  return false;
+  if (v === NONE) return false;
   if (v === false) return false;
   return true;
 }
@@ -2581,8 +2616,8 @@ function ivxEqual(a, b) {
 }
 
 function ivxIn(left, right, node) {
-  if (Array.isArray(right))     return right.some(v => ivxEqual(v, left));
-  if (right instanceof Map)     return right.has(left);
+  if (Array.isArray(right)) return right.some(v => ivxEqual(v, left));
+  if (right instanceof Map) return right.has(left);
   if (typeof right === 'string') return String(right).includes(String(left));
   throw new RuntimeError(`'in' requires list, dict, or string`, node?.line);
 }
@@ -2603,20 +2638,20 @@ function toIterable(value, node) {
 
 // Human-readable representation of an IVX value
 function ivxRepr(value) {
-  if (value === NONE)                return 'none';
-  if (value === true)                return 'yes';
-  if (value === false)               return 'no';
-  if (value instanceof IVXFunction)  return `<fun ${value.name}>`;
-  if (value instanceof IVXClass)     return `<class ${value.name}>`;
+  if (value === NONE) return 'none';
+  if (value === true) return 'yes';
+  if (value === false) return 'no';
+  if (value instanceof IVXFunction) return `<fun ${value.name}>`;
+  if (value instanceof IVXClass) return `<class ${value.name}>`;
   if (value instanceof IVXSuperProxy) return '<super>';
   if (value instanceof Map) {
     const cls = value.get('__class__');
     if (cls) return `<${cls} instance>`;
     const entries = [...value.entries()].filter(([k]) => !String(k).startsWith('__'));
     if (entries.length === 0) return '{}';
-    return '{' + entries.map(([k,v]) => `${ivxRepr(k)}: ${ivxRepr(v)}`).join(', ') + '}';
+    return '{' + entries.map(([k, v]) => `${ivxRepr(k)}: ${ivxRepr(v)}`).join(', ') + '}';
   }
-  if (Array.isArray(value))          return '[' + value.map(ivxRepr).join(', ') + ']';
+  if (Array.isArray(value)) return '[' + value.map(ivxRepr).join(', ') + ']';
   if (value && typeof value === 'object') return '<object>';
   return String(value);
 }
@@ -2761,7 +2796,7 @@ async function runIVXSelfTests() {
       onOutput: (v) => { out.push(v); },
       onError: (e) => { throw e; },
     });
-    const okRange = out.length >= 1 && ivxEqual(out[0], [[11,12],[21,22]]);
+    const okRange = out.length >= 1 && ivxEqual(out[0], [[11, 12], [21, 22]]);
     const okCell = out.length >= 2 && out[1] === 22;
     if (okRange && okCell) {
       pass('runtime-excel-range-index', { output: out });

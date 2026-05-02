@@ -104,7 +104,22 @@ class Interpreter {
         
         // Generate Fingerprint (SHA-256)
         const hashHex = crypto.createHash('sha256').update(code).digest('hex');
-        this.onOutput(`🔒 Verified [SHA256]: ${hashHex.substring(0, 12)}...`);
+        
+        // TOFU Verification (Trust-On-First-Use)
+        const hashFilePath = path.join(cacheDir, urlHash + '.hash');
+        if (fs.existsSync(hashFilePath)) {
+            const storedHash = fs.readFileSync(hashFilePath, 'utf8');
+            if (storedHash !== hashHex) {
+                this.onOutput(`🚨 SECURITY ALERT: The module at ${url} has been modified!`);
+                this.onOutput(`   Expected: ${storedHash.substring(0, 16)}...`);
+                this.onOutput(`   Received: ${hashHex.substring(0, 16)}...`);
+                throw new Error(`Integrity Failure: Remote code changed at ${url}`);
+            }
+            this.onOutput(`🔒 Verified: ${urlHash.substring(0, 8)}... (Integrity Match)`);
+        } else {
+            fs.writeFileSync(hashFilePath, hashHex);
+            this.onOutput(`🛡️ New module pinned: ${urlHash.substring(0, 8)}...`);
+        }
 
         const { parsekh } = require('./parser');
         const subGraph = parsekh(code);
