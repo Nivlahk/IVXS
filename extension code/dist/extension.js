@@ -6,7 +6,7 @@ const graph_1 = require("./graph");
 const webview_1 = require("./webview");
 const debounce_1 = require("./debounce");
 const DEBOUNCE_MS = 200;
-const diagnosticCollection = vscode.languages.createDiagnosticCollection('ivx');
+const diagnosticCollection = vscode.languages.createDiagnosticCollection('kh');
 let realtimePanel = null;
 let lastDocUri = null;
 const webviewPanels = [];
@@ -53,7 +53,7 @@ const debouncedValidate = (0, debounce_1.debounceLeading)((docUri) => {
             new vscode.Diagnostic(new vscode.Range(0, 0, doc.lineCount - 1, 1000), `Parse error: ${msg}`, vscode.DiagnosticSeverity.Error),
         ]);
         if (realtimePanel) {
-            (0, webview_1.postWebviewMessage)(realtimePanel.webview, { type: 'error', message: msg, title: 'IVXS Realtime Graph (Parse Error)' });
+            (0, webview_1.postWebviewMessage)(realtimePanel.webview, { type: 'error', message: msg, title: 'KH Realtime Graph (Parse Error)' });
         }
     }
 }, DEBOUNCE_MS);
@@ -68,7 +68,7 @@ function activateDiagnostics(doc) {
     validateAndUpdate(doc);
 }
 async function showRealtimePanel(doc, context) {
-    const panel = vscode.window.createWebviewPanel('ivxRealtimeGraph', 'IVXS Realtime Graph (Live)', vscode.ViewColumn.Beside, { enableScripts: true, retainContextWhenHidden: true });
+    const panel = vscode.window.createWebviewPanel('khRealtimeGraph', 'KH Realtime Graph (Live)', vscode.ViewColumn.Beside, { enableScripts: true, retainContextWhenHidden: true });
     realtimePanel = panel;
     trackPanel(panel);
     const docUri = doc.uri.toString();
@@ -184,11 +184,11 @@ function activate(context) {
         }
         const { graph } = (0, graph_1.buildGraph)(editor.document);
         console.log(JSON.stringify(graph, null, 2));
-        vscode.window.showInformationMessage(`IVXS: Dumped (${graph.nodes.length}n / ${graph.edges.length}e). See console.`);
-    }), vscode.commands.registerCommand('ivx.clearDiagnostics', () => {
+        vscode.window.showInformationMessage(`KH: Dumped (${graph.nodes.length}n / ${graph.edges.length}e). See console.`);
+    }), vscode.commands.registerCommand('kh.clearDiagnostics', () => {
         activeDiagnosticsDocs.clear();
         diagnosticCollection.clear();
-        vscode.window.showInformationMessage('IVXS: Diagnostics cleared.');
+        vscode.window.showInformationMessage('KH: Diagnostics cleared.');
     }));
     vscode.workspace.textDocuments.forEach(validateAndUpdate);
     context.subscriptions.push(...subs, diagnosticCollection);

@@ -1902,8 +1902,10 @@ class Interpreter {
 
       case 'Import': {
         if (!node.url) break;
+        let url = node.url;
+        if (!url.startsWith('http')) url = 'https://' + url;
         try {
-          const res = await fetch(node.url);
+          const res = await fetch(url);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const src = await res.text();
           const modEnv = this.globals.child();
