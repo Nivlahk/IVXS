@@ -33,10 +33,20 @@ let _pendingInsertEditLine = -1;
 let _parseTimer;
 IVX.bus.on('src_changed', ({ source }) => {
   clearTimeout(_parseTimer);
+  // Color the text IMMEDIATELY so it's never invisible
+  updateHighlight(); 
+
   _parseTimer = setTimeout(() => {
     try {
       const graph = parseivx(source);
-      IVX.bus.emit('ast_parsed', { graph, errors: graph.validationErrors || [] });
+      // Run Phase A Diagnostics on a delay
+      const diagnostics = IVXDiagnostics.getDiagnostics(source);
+      updateHighlight(diagnostics); // Add squiggles after pause
+      
+      IVX.bus.emit('ast_parsed', { 
+        graph, 
+        errors: graph.validationErrors || [] // Only show structural parser errors in header
+      });
     } catch(err) {
       IVX.bus.emit('ast_error', { message: err.message });
     }
@@ -73,7 +83,8 @@ IVX.bus.on('code_update_requested', ({ newCode, selectionStart, selectionEnd }) 
   srcEl.value = newCode;
   if (selectionStart != null) srcEl.selectionStart = selectionStart;
   if (selectionEnd != null) srcEl.selectionEnd = selectionEnd;
-  updateHighlight();
+  const diagnostics = IVXDiagnostics.getDiagnostics(newCode);
+  updateHighlight(diagnostics);
   IVX.bus.emit('src_changed', { source: newCode });
 });
 
@@ -433,7 +444,7 @@ function highlightLine(line, allVars = new Set(), allClasses = new Set()) {
   return html;
 }
 
-function highlightSource(src) {
+function highlightSource(src, diagnostics = []) {
   // Pre-scan entire source for all make-declared variable names
   // so every occurrence gets colored, not just the token after 'make'
   const allVars = new Set();
@@ -462,16 +473,28 @@ function highlightSource(src) {
   const classMatches = src.match(/\bclass\s+([A-Za-z_]\w*)/g);
   if (classMatches) classMatches.forEach(m => { const c = m.match(/class\s+([A-Za-z_]\w*)/); if (c) allClasses.add(c[1]); });
 
-  return src.split('\n').map(line => highlightLine(line, allVars, allClasses)).join('\n');
+  const errorLines = new Map();
+  diagnostics.forEach(d => errorLines.set(d.line, d));
+
+  return src.split('\n').map((line, i) => {
+    const lineNum = i + 1;
+    const html = highlightLine(line, allVars, allClasses);
+    if (errorLines.has(lineNum)) {
+      const d = errorLines.get(lineNum);
+      const cls = d.severity === 'warning' ? 'kh-warn-squig' : 'kh-err-squig';
+      return `<span class="${cls}" title="${d.message}">${html}</span>`;
+    }
+    return html;
+  }).join('\n');
 }
 
-function updateHighlight() {
+function updateHighlight(diagnostics = []) {
   const src   = srcEl.value;
   const lines = src.split('\n');
   const count = lines.length;
 
   // Update highlight layer
-  hlEl.innerHTML = highlightSource(src) + '\n';
+  hlEl.innerHTML = highlightSource(src, diagnostics) + '\n';
 
   // Update line number gutter
   let gutter = '';

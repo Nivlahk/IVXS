@@ -847,7 +847,13 @@ path[data-edge-from]:hover{filter:drop-shadow(0 0 4px #89b4fa);stroke:#89b4fa !i
 
 /* ── KH yellow error underline ───────────────────────────────────────────── */
 .kh-err-squig {
-  text-decoration: underline wavy #f0b429;
+  text-decoration: underline wavy #ef4444; /* red-500 */
+  text-decoration-skip-ink: none;
+  text-underline-offset: 2px;
+  cursor: help;
+}
+.kh-warn-squig {
+  text-decoration: underline wavy #f59e0b; /* amber-500 */
   text-decoration-skip-ink: none;
   text-underline-offset: 2px;
   cursor: help;
