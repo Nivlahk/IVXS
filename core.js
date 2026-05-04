@@ -68,7 +68,7 @@ const KEYWORDS = new Set([
   // Iteration
   'in', 'for',
   // Other
-  'wait', 'note', 'try', 'err', 'by',
+  'wait', 'note', 'try', 'err', 'by', 'every',
   // Network / AI
   'ask', 'post', 'use', 'key', 'get',
   // Google services
@@ -474,6 +474,7 @@ class Parser {
       download: () => this.parseDownload(),
       give: () => this.parseGive(),
       wait: () => this.parseWait(),
+      every: () => this.parseEvery(),
       ask: () => this.parseExprStatement(), // ask is an expression
       post: () => this.parsePost(),
       key: () => this.parseKey(),
@@ -491,7 +492,6 @@ class Parser {
         this.eatNewline();
         return Node('Dot', { line: tok.line });
       },
-      fork: () => this.parseFork(),
       end: () => this.parseEnd(),
       from: () => this.parseFrom(),
       try: () => this.parseTry(),
@@ -700,31 +700,67 @@ class Parser {
     return Node('Give', { expr, line: tok.line, col: tok.col });
   }
 
+  // ── every <trigger> — standalone persistent trigger ─────────────────────
+  parseEvery() {
+    const tok = this.advance(); // eat 'every'
+    return this._parseTrigger(tok, true);
+  }
+
   // ── wait / wait every ─────────────────────────────────────────────────────
   parseWait() {
     const tok = this.advance(); // eat 'wait'
-    let next = this.peek();
+    const next = this.peek();
 
-    // wait every <trigger> — persistent repeating trigger
-    let recurring = false;
-    if (next.type === T.IDENTIFIER && next.value === 'every') {
+    // wait every <trigger> — kept for backwards compat, delegates to every
+    if (next.type === T.KEYWORD && next.value === 'every') {
       this.advance(); // eat 'every'
-      recurring = true;
-      next = this.peek();
+      return this._parseTrigger(tok, true);
     }
 
-    // wait [every] email by <addr>
-    if (next.type === T.KEYWORD && next.value === 'email') {
+    // wait x = 5 — inline condition
+    if (next.type === T.IDENTIFIER && this.peek(1).type === T.OP && this.peek(1).value === '=') {
+      const name = this.advance().value;
       this.advance();
+      const value = this.parseExpr();
+      this.eatNewline();
+      return Node('Wait', {
+        expr: null,
+        condition: Node('BinOp', { op: '=', left: Node('Identifier', { name }), right: value }),
+        line: tok.line, col: tok.col
+      });
+    }
+
+    // wait 5 — plain duration wait
+    return this._parseTrigger(tok, false);
+  }
+
+  // ── Shared trigger parser ─────────────────────────────────────────────────
+  _parseTrigger(tok, recurring) {
+    const next = this.peek();
+
+    // email(<filters>) [by <addr>]
+    if ((next.type === T.KEYWORD || next.type === T.IDENTIFIER) && next.value === 'email') {
+      this.advance(); // eat 'email'
+      const filters = {};
+      if (this.check(T.LPAREN)) {
+        this.advance(); // eat '('
+        while (!this.check(T.RPAREN) && !this.check(T.EOF)) {
+          const key = this.advance().value;
+          if (this.peek().type === T.OP && this.peek().value === '=') this.advance();
+          filters[key] = this.parseExpr();
+          this.eat(T.COMMA);
+        }
+        this.expect(T.RPAREN, undefined, "Expected ')' after email filters");
+      }
       let source = null;
       if (this.checkKw('by')) { this.advance(); source = this.parseExpr(); }
       this.eatNewline();
       const body = this.check(T.INDENT) ? this.parseBlock() : [];
-      return Node('WaitBlock', { trigger: 'email', source, body, recurring, line: tok.line, col: tok.col });
+      return Node('WaitBlock', { trigger: 'email', source, filters, body, recurring, line: tok.line, col: tok.col });
     }
 
-    // wait [every] sheets <n> by <event>
-    if (next.type === T.KEYWORD && next.value === 'sheets') {
+    // sheets <name> [by <event>]
+    if ((next.type === T.KEYWORD || next.type === T.IDENTIFIER) && next.value === 'sheets') {
       this.advance();
       const name = this.parseExpr();
       let event = 'row added';
@@ -741,8 +777,8 @@ class Parser {
       return Node('WaitBlock', { trigger: 'sheets', source: name, event, body, recurring, line: tok.line, col: tok.col });
     }
 
-    // wait [every] time <expr>
-    if (next.type === T.KEYWORD && next.value === 'time') {
+    // time <expr>
+    if ((next.type === T.KEYWORD || next.type === T.IDENTIFIER) && next.value === 'time') {
       this.advance();
       const source = this.parseExpr();
       this.eatNewline();
@@ -750,28 +786,15 @@ class Parser {
       return Node('WaitBlock', { trigger: 'time', source, body, recurring, line: tok.line, col: tok.col });
     }
 
-    // wait [every] http
-    if (next.type === T.KEYWORD && next.value === 'http') {
+    // http
+    if ((next.type === T.KEYWORD || next.type === T.IDENTIFIER) && next.value === 'http') {
       this.advance();
       this.eatNewline();
       const body = this.check(T.INDENT) ? this.parseBlock() : [];
       return Node('WaitBlock', { trigger: 'http', source: null, body, recurring, line: tok.line, col: tok.col });
     }
 
-    // wait x = 5 — inline condition (no body, not a trigger)
-    if (next.type === T.IDENTIFIER && this.peek(1).type === T.OP && this.peek(1).value === '=') {
-      const name = this.advance().value;
-      this.advance();
-      const value = this.parseExpr();
-      this.eatNewline();
-      return Node('Wait', {
-        expr: null,
-        condition: Node('BinOp', { op: '=', left: Node('Identifier', { name }), right: value }),
-        line: tok.line, col: tok.col
-      });
-    }
-
-    // wait 5 — pause N cycles
+    // Plain duration: wait 5
     const expr = this.parseExpr();
     this.eatNewline();
     return Node('Wait', { expr, condition: null, line: tok.line, col: tok.col });
@@ -1104,43 +1127,10 @@ class Parser {
   // ── try / err ─────────────────────────────────────────────────────────────────
   // try
   //   <body>
-  // ── fork — probabilistic branching ───────────────────────────────────────
-  // Each branch has an independent weight (default 1.0).
-  // fork
-  //   0.8 print "red"
-  //   0.5 print "blue"
-  parseFork() {
-    const tok = this.advance(); // eat 'fork'
-    this.eatNewline();
-    const branches = [];
-    if (this.check(T.INDENT)) {
-      this.advance(); // eat INDENT
-      while (!this.check(T.DEDENT) && !this.check(T.EOF)) {
-        this.skipNewlines();
-        if (this.check(T.DEDENT) || this.check(T.EOF)) break;
-        // Optional weight: a number literal at the start of the line
-        let weight = 1.0;
-        if (this.peek().type === T.NUMBER) {
-          weight = this.advance().value;
-        }
-        // Branch body: either a single statement or an indented block
-        let body = [];
-        if (this.check(T.INDENT)) {
-          body = this.parseBlock();
-        } else {
-          const stmt = this.parseStatement();
-          if (stmt) body = [stmt];
-        }
-        branches.push({ weight, body });
-      }
-      if (this.check(T.DEDENT)) this.advance(); // eat DEDENT
-    }
-    return Node('Fork', { branches, line: tok.line, col: tok.col });
-  }
-
   // err e
   //   <handler>
   parseTry() {
+    const tok = this.advance(); // eat 'try'
     this.eatNewline();
     const body = this.parseBlock();
 

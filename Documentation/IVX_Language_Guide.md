@@ -9,7 +9,7 @@ IVX is a browser-based programming language where every program renders as a liv
 Every line follows this pattern:
 
 ```
-[incoming]  keyword  content [outgoing]
+[incoming]  [node]  content [outgoing]
 ```
 
 Lines are indented with 2 spaces to create blocks (like Python). Whitespace around operators is required — `x+1` is invalid, `x + 1` is correct.

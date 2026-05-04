@@ -1147,26 +1147,52 @@ class IVXRuntime {
 
     const poll = async () => {
       if (trigger === 'email') {
-        // Poll Gmail for unread messages from the source address
+        // Poll Gmail for unread messages, optionally filtered by sender (by) and subject/other filters
         const from = node.source ? String(await this._interp.evalExpr(node.source, env)) : '';
-        const q = encodeURIComponent(`is:unread${from ? ` from:${from}` : ''}`);
+        let q = `is:unread${from ? ` from:${from}` : ''}`;
+
+        // Apply subject filter to Gmail query if provided
+        const filters = node.filters ?? {};
+        if (filters.subject) {
+          const subjectFilter = String(await this._interp.evalExpr(filters.subject, env));
+          q += ` subject:${subjectFilter}`;
+        }
+
         const data = await this._googleAPI(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${q}&maxResults=1`
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=1`
         );
         if (data?.messages?.length > 0) {
-          // Fetch the message and expose it as 'request'
           const msg = await this._googleAPI(
             `https://gmail.googleapis.com/gmail/v1/users/me/messages/${data.messages[0].id}`
           );
-          const headers = msg?.payload?.headers ?? [];
-          const subject = headers.find(h => h.name === 'Subject')?.value ?? '';
+          const headers  = msg?.payload?.headers ?? [];
+          const subject  = headers.find(h => h.name === 'Subject')?.value ?? '';
           const fromAddr = headers.find(h => h.name === 'From')?.value ?? '';
           const bodyPart = msg?.payload?.parts?.[0]?.body?.data ?? msg?.payload?.body?.data ?? '';
           const bodyText = bodyPart ? atob(bodyPart.replace(/-/g, '+').replace(/_/g, '/')) : '';
+          const msgId    = data.messages[0].id;
+
+          // Apply any remaining filters that couldn't be passed to Gmail API
+          for (const [key, valNode] of Object.entries(filters)) {
+            if (key === 'subject') continue; // already applied above
+            const expected = String(await this._interp.evalExpr(valNode, env));
+            const actual = key === 'from' ? fromAddr : key === 'body' ? bodyText : '';
+            if (!actual.includes(expected)) return null;
+          }
+
           const triggerEnv = env.child();
+
+          // Implicit bindings — directly accessible by name in the block
+          triggerEnv.set('subject', subject);
+          triggerEnv.set('sender',  fromAddr);
+          triggerEnv.set('body',    bodyText);
+          triggerEnv.set('id',      msgId);
+
+          // Also keep 'request' for backwards compatibility
           triggerEnv.set('request', new Map([
-            ['subject', subject], ['from', fromAddr], ['body', bodyText], ['id', data.messages[0].id]
+            ['subject', subject], ['from', fromAddr], ['body', bodyText], ['id', msgId]
           ]));
+
           return triggerEnv;
         }
         return null;
@@ -1676,23 +1702,6 @@ class Interpreter {
       case 'Dot':
         // Connector — no-op at runtime
         break;
-
-      case 'Fork': {
-        // Each branch fires independently based on its weight as a probability.
-        // Weights are not normalised — 0.8 means 80% chance, regardless of other branches.
-        // Default weight is 1.0 (always fires) if omitted.
-        for (const branch of node.branches) {
-          const roll = Math.random();
-          if (roll < branch.weight) {
-            const result = await this.execBlock(branch.body, env);
-            if (result instanceof ReturnSignal || result instanceof EndSignal ||
-                result instanceof BreakSignal || result instanceof ContinueSignal) {
-              return result;
-            }
-          }
-        }
-        break;
-      }
 
       case 'Import': {
         if (!node.url) break;
