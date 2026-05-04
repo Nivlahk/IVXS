@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SEER ISA — Learning Reference v18 (pruned)</title>
+<title>SEER ISA v19 — 4-byte · Tiny Pointer · Security Native</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;1,300&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
@@ -36,20 +36,20 @@
   /* row colors */
   --c-sys:    #ef4444;
   --c-memctl: #a16207;
-  --c-libit:  #64748b;
-  --c-mems:   #059669;
-  --c-p8:     #16a34a;
-  --c-p4:     #2563eb;
-  --c-p5:     #d97706;
-  --c-p6:     #78716c;
-  --c-fp:     #f97316;
-  --c-trans:  #06b6d4;
+  --c-li:     #64748b;
+  --c-bit:    #059669;
+  --c-arith-i:#16a34a;
+  --c-arith-r:#2563eb;
   --c-pack:   #9333ea;
   --c-crypto: #10b981;
-  --c-valu:   #0ea5e9;
-  --c-vext:   #3b82f6;
-  --c-atom:   #ec4899;
+  --c-fp:     #f97316;
+  --c-vf:     #06b6d4;
+  --c-vi:     #0ea5e9;
+  --c-vmem:   #3b82f6;
+  --c-amem:   #ec4899;
   --c-warp:   #a855f7;
+  --c-sync:   #f43f5e;
+  --c-disp:   #8b5cf6;
 }
 
 html, body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; overflow-x: hidden; }
@@ -472,7 +472,7 @@ table.op-table tr.reserved td { opacity: 0.3; }
 </head>
 <body>
 <div style="background:#7c3aed;color:#fff;text-align:center;padding:6px 12px;font-size:12px;font-family:monospace;letter-spacing:0.03em">
-  ⚠ v18 PRUNED REVIEW DRAFT — 14 opcodes removed for FPGA-world calibration. Dropped slots show reason. Not final.
+  ✦ SEER ISA v19 — 4-byte fixed width · tiny pointer addressing · security native · 256/256 opcodes defined
 </div>
 <div id="shell">
 
@@ -480,7 +480,7 @@ table.op-table tr.reserved td { opacity: 0.3; }
 <nav id="nav">
   <div id="nav-logo">
     <div class="logo-mark">SEER</div>
-    <div class="logo-sub">ISA · v18-pruned · 2026</div>
+    <div class="logo-sub">ISA · v19 · 2026</div>
   </div>
   <div id="nav-links">
     <div class="nav-section-label">Start here</div>
@@ -528,7 +528,7 @@ table.op-table tr.reserved td { opacity: 0.3; }
     </div>
   </div>
   <div id="nav-footer">
-    SEER ISA v18-pruned<br>~86 opcodes · 8 bytes/instr<br>Fixed-width · 255 GP regs
+    SEER ISA v19<br>256 opcodes · 4 bytes/instr<br>Tiny pointer · 255 GP regs
   </div>
 </nav>
 
@@ -657,25 +657,25 @@ table.op-table tr.reserved td { opacity: 0.3; }
           <div style="font-family:var(--mono);font-size:18px;font-weight:600;color:#1D9E75;letter-spacing:2px;margin-bottom:4px">00</div>
           <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:#1D9E75;margin-bottom:4px">OPU</div>
           <div style="font-size:9px;color:var(--text3);font-family:var(--mono);margin-bottom:4px">0x00–0x3F</div>
-          <div style="font-size:9px;color:var(--text3);line-height:1.6">SYS · MEM_CTRL<br>LI+BIT · MEMS</div>
+          <div style="font-size:9px;color:var(--text3);line-height:1.6">SYS · MEM_CTRL<br>LI+MEM · BIT</div>
         </div>
         <div style="background:rgba(186,117,23,0.10);padding:14px;text-align:center">
           <div style="font-family:var(--mono);font-size:18px;font-weight:600;color:var(--amber);letter-spacing:2px;margin-bottom:4px">01</div>
           <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--amber);margin-bottom:4px">APU</div>
           <div style="font-size:9px;color:var(--text3);font-family:var(--mono);margin-bottom:4px">0x40–0x7F</div>
-          <div style="font-size:9px;color:var(--text3);line-height:1.6">P8 · P4<br>P5 · P6</div>
+          <div style="font-size:9px;color:var(--text3);line-height:1.6">ARITH-I · ARITH-R<br>PACK · CRYPTO</div>
         </div>
         <div style="background:rgba(216,90,48,0.10);padding:14px;text-align:center">
           <div style="font-family:var(--mono);font-size:18px;font-weight:600;color:var(--coral);letter-spacing:2px;margin-bottom:4px">10</div>
           <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--coral);margin-bottom:4px">FPU</div>
           <div style="font-size:9px;color:var(--text3);font-family:var(--mono);margin-bottom:4px">0x80–0xBF</div>
-          <div style="font-size:9px;color:var(--text3);line-height:1.6">FP · TRANS<br>PACK · CRYPTO</div>
+          <div style="font-size:9px;color:var(--text3);line-height:1.6">FP · VF<br>VI · VMEM</div>
         </div>
         <div style="background:rgba(83,74,183,0.10);padding:14px;text-align:center">
           <div style="font-family:var(--mono);font-size:18px;font-weight:600;color:var(--purple);letter-spacing:2px;margin-bottom:4px">11</div>
           <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--purple);margin-bottom:4px">GPU</div>
           <div style="font-size:9px;color:var(--text3);font-family:var(--mono);margin-bottom:4px">0xC0–0xFF</div>
-          <div style="font-size:9px;color:var(--text3);line-height:1.6">VALU · VEXT<br>ATOM · WARP</div>
+          <div style="font-size:9px;color:var(--text3);line-height:1.6">AMEM · WARP<br>SYNC · DISP</div>
         </div>
       </div>
 
@@ -695,7 +695,7 @@ table.op-table tr.reserved td { opacity: 0.3; }
           <div class="kv-row"><span class="kv-key">GP registers</span><span class="kv-val">r0–r254 + ZR (r255)</span></div>
           <div class="kv-note">Register operands are 1 byte each. On hardware with fewer physical registers the upper bits would be padding — SEER uses them for register space instead.</div>
           <div class="kv-row"><span class="kv-key">Max immediate</span><span class="kv-val">48 bits (LI row)</span></div>
-          <div class="kv-row"><span class="kv-key">Alignment</span><span class="kv-val">Natural (MEMS)</span></div>
+          <div class="kv-row"><span class="kv-key">Alignment</span><span class="kv-val">Natural (all memory ops)</span></div>
           <div class="kv-row"><span class="kv-key">Exceptions</span><span class="kv-val">Trap 0x06 (align), 0x07 (arith)</span></div>
         </div>
         <div class="info-box">
@@ -758,7 +758,7 @@ table.op-table tr.reserved td { opacity: 0.3; }
 
     <div class="about-section">
       <h2>Trap Vectors</h2>
-      <div class="callout"><strong>0x06</strong> — Alignment fault: natural alignment required for all MEMS ops; misalignment raises this trap.</div>
+      <div class="callout"><strong>0x06</strong> — Alignment fault: natural alignment required for all MEMS ops; misalignment raises alignment trap.</div>
       <div class="callout"><strong>0x07</strong> — Arithmetic trap: wrctrl on read-only ctrl reg IDs (0x10+); divmod with rs2==rd.</div>
       <div class="callout"><strong>0x80</strong> — Syscall (ecall): syscall number in r0, args in r1–r15.</div>
       <div class="callout"><strong>0x81</strong> — Debug trap (ebreak): user-accessible; for debugger integration.</div>
@@ -779,7 +779,7 @@ table.op-table tr.reserved td { opacity: 0.3; }
   <div class="about-body">
 
     <div class="about-section">
-      <h2>The NodeID Byte</h2>
+      <h2>Control Flow Structure</h2>
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px">
         <div style="display:flex;gap:2px;font-family:var(--mono);font-size:12px;margin-bottom:16px">
           <div style="flex:1;background:#2a0a1a;border-radius:4px;padding:10px;text-align:center">
@@ -1143,14 +1143,14 @@ table.op-table tr.reserved td { opacity: 0.3; }
       <div class="fmt-legend">P7: rd = rs1 op rs2 &nbsp;·&nbsp; imm field available for encoding hints · P6 adds 5-byte imm</div>
     </div>
 
-    <h2>Immediate-heavy (P4 / P5)</h2>
+    <h2>Register-Immediate (ARITH-I 0x4_)</h2>
     <div class="fmt-diagram">
       <div class="fmt-bits">
         <div class="fmt-field" style="flex:1;background:#102030;color:#38bdf8"><span class="fname">OP</span><span class="fbits">[7:0]</span></div>
         <div class="fmt-field" style="flex:1;background:#0e1a10;color:#4ade80"><span class="fname">RD</span><span class="fbits">[7:0]</span></div>
         <div class="fmt-field" style="flex:6;background:#1a1020;color:#a78bfa"><span class="fname">IMM48</span><span class="fbits">[47:0]</span><span class="fwidth">6 bytes</span></div>
       </div>
-      <div class="fmt-legend">P4: rd = rd op mem[imm48] &nbsp;·&nbsp; P5: rd = rd op sign_ext(imm48)</div>
+      <div class="fmt-legend">ARITH-I: rd = rs op sign_ext(imm8) &nbsp;·&nbsp; 4-byte uniform encoding</div>
     </div>
 
     <h2>Load Immediate (LI row 0x2_)</h2>
@@ -1206,22 +1206,22 @@ table.op-table tr.reserved td { opacity: 0.3; }
 
     <h2>Row Format Summary</h2>
     <div class="rows-grid">
-      <div class="row-card" style="border-left-color:var(--c-sys)"><div class="rch"><span class="row-hex" style="background:rgba(239,68,68,0.15);color:var(--c-sys)">0x</span><span class="row-name">SYS</span><span class="row-fmt-badge">kernel-only</span></div><div class="row-desc">0x00–0x03: 1-byte. 0x04–0x0F: 8-byte [op, rd/rs, ctrl_id/args, ...]</div></div>
-      <div class="row-card" style="border-left-color:var(--c-memctl)"><div class="rch"><span class="row-hex" style="background:rgba(161,98,7,0.15);color:var(--c-memctl)">1x</span><span class="row-name">MEM_CTRL</span><span class="row-fmt-badge">user</span></div><div class="row-desc">Control flow + utility. jmpr/jmp/branches + fence/wfe</div></div>
-      <div class="row-card" style="border-left-color:var(--c-libit)"><div class="rch"><span class="row-hex" style="background:rgba(100,116,139,0.15);color:var(--c-libit)">2x</span><span class="row-name">LI+BIT</span><span class="row-fmt-badge">[op, rd, imm×6]</span></div><div class="row-desc">Load immediate (u8→s48) + bit ops (bset/bclr/btst/bflp/bext/rol/ror)</div></div>
-      <div class="row-card" style="border-left-color:var(--c-mems)"><div class="rch"><span class="row-hex" style="background:rgba(5,150,105,0.15);color:var(--c-mems)">3x</span><span class="row-name">MEMS</span><span class="row-fmt-badge">[op,r,rb1,rb2,off×4]</span></div><div class="row-desc">All scalar memory ops: sized loads/stores, acquire/release, LL/SC, non-temporal</div></div>
-      <div class="row-card" style="border-left-color:var(--c-p8)"><div class="rch"><span class="row-hex" style="background:rgba(22,163,74,0.15);color:var(--c-p8)">4x</span><span class="row-name">P8 (Fused)</span><span class="row-fmt-badge">[op,rd,addr×6]</span></div><div class="row-desc">Fused load+combine: rd = rd op mem[addr48]. Accumulator pattern.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-p4)"><div class="rch"><span class="row-hex" style="background:rgba(37,99,235,0.15);color:var(--c-p4)">5x</span><span class="row-name">P4 (Accum)</span><span class="row-fmt-badge">[op,rd,imm×6]</span></div><div class="row-desc">rd = rd op sign_ext(imm48). Immediate arithmetic with large constants.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-p5)"><div class="rch"><span class="row-hex" style="background:rgba(217,119,6,0.15);color:var(--c-p5)">6x</span><span class="row-name">P5 (3-reg+imm40)</span><span class="row-fmt-badge">[op,rd,rs,imm×5]</span></div><div class="row-desc">rd = rs op sign_ext(imm40). Three-register with 40-bit immediate.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-p6)"><div class="rch"><span class="row-hex" style="background:rgba(120,113,108,0.15);color:var(--c-p6)">7x</span><span class="row-name">P6 (3-reg)</span><span class="row-fmt-badge">[op,rd,rs1,rs2,imm×4]</span></div><div class="row-desc">rd = rs1 op rs2. Core integer workhorse. Universal op table columns 0–F.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-fp)"><div class="rch"><span class="row-hex" style="background:rgba(249,115,22,0.15);color:var(--c-fp)">8x</span><span class="row-name">FP</span><span class="row-fmt-badge">float</span></div><div class="row-desc">Float ops. Mirrors universal table: col B=fadd, C=fsub, E=fmul, F=fdiv. imm[2:0]=rounding mode.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-trans)"><div class="rch"><span class="row-hex" style="background:rgba(6,182,212,0.15);color:var(--c-trans)">9x</span><span class="row-name">TRANS</span><span class="row-fmt-badge">transcendental</span></div><div class="row-desc">High-latency float ops (10–90 cy). Nibble-ordered by latency: sqrt→sin→exp→log→tan→pow.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-pack)"><div class="rch"><span class="row-hex" style="background:rgba(147,51,234,0.15);color:var(--c-pack)">Ax</span><span class="row-name">PACK</span><span class="row-fmt-badge">packed-pair</span></div><div class="row-desc">Two ops in one 8-byte word. Throughput extension — various a/b slot combinations.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-crypto)"><div class="rch"><span class="row-hex" style="background:rgba(16,185,129,0.15);color:var(--c-crypto)">Bx</span><span class="row-name">CRYPTO</span><span class="row-fmt-badge">hardware crypto</span></div><div class="row-desc">AES enc/dec, SHA-256/512 rounds, CLMUL, CRC32, RDRAND — all hardware-accelerated.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-valu)"><div class="rch"><span class="row-hex" style="background:rgba(14,165,233,0.15);color:var(--c-valu)">Cx</span><span class="row-name">VALU</span><span class="row-fmt-badge">SIMD</span></div><div class="row-desc">SIMD arithmetic. imm[3:0]=lane suppress mask, imm[11:4]=broadcast imm. GPU tier.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-vext)"><div class="rch"><span class="row-hex" style="background:rgba(59,130,246,0.15);color:var(--c-vext)">Dx</span><span class="row-name">VEXT</span><span class="row-fmt-badge">vector extended</span></div><div class="row-desc">Reductions, strided/masked load-store, gather/scatter, permute, zip/unzip. GPU tier.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-atom)"><div class="rch"><span class="row-hex" style="background:rgba(236,72,153,0.15);color:var(--c-atom)">Ex</span><span class="row-name">ATOM</span><span class="row-fmt-badge">atomic RMW</span></div><div class="row-desc">Atomic read-modify-write. rd←old; mem←ALU(mem, rs). Column mirrors universal table.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-warp)"><div class="rch"><span class="row-hex" style="background:rgba(168,85,247,0.15);color:var(--c-warp)">Fx</span><span class="row-name">WARP</span><span class="row-fmt-badge">GPU warp</span></div><div class="row-desc">Lane/warp identity, vote.any/all/bal, shuffle ops, warp/block barriers. GPU tier.</div></div>
+      <div class="row-card" style="border-left-color:var(--c-sys)"><div class="rch"><span class="row-hex" style="background:rgba(239,68,68,0.15);color:var(--c-sys)">0x</span><span class="row-name">SYS</span><span class="row-fmt-badge">kernel-only</span></div><div class="row-desc">0x00–0x03: 1-byte. 0x04–0x0F: 4-byte [op, rd/rs, ctrl_id/etc]; capability, cache, IPC, I/O</div></div>
+      <div class="row-card" style="border-left-color:var(--c-memctl)"><div class="rch"><span class="row-hex" style="background:rgba(161,98,7,0.15);color:var(--c-memctl)">1x</span><span class="row-name">MEM_CTRL</span><span class="row-fmt-badge">user</span></div><div class="row-desc">0x10–0x13: 1-byte (nop/ebreak/ecall/wfe). 0x14–0x17: utility. 0x18–0x1F: csel + CN-relative branches</div></div>
+      <div class="row-card" style="border-left-color:var(--c-libit)"><div class="rch"><span class="row-hex" style="background:rgba(100,116,139,0.15);color:var(--c-li)">2x</span><span class="row-name">LI+MEM</span><span class="row-fmt-badge">[op,rd,imm/cap+ptr]</span></div><div class="row-desc">Load immediate (u8/s8/u16/s16/cap/ptr/cn/pcrel) + loads/stores via cap+ptr</div></div>
+      <div class="row-card" style="border-left-color:var(--c-mems)"><div class="rch"><span class="row-hex" style="background:rgba(5,150,105,0.15);color:var(--c-bit)">3x</span><span class="row-name">BIT</span><span class="row-fmt-badge">[op,r,rb1,rb2,off×4]</span></div><div class="row-desc">Bit ops: 3-byte (bset/bclr/btst/bflp/rol/ror/bswap/brev) + 4-byte (bext/bins/bperm/pdep/pext/clmul/crc32/bfly)</div></div>
+      <div class="row-card" style="border-left-color:var(--c-p8)"><div class="rch"><span class="row-hex" style="background:rgba(22,163,74,0.15);color:var(--c-arith-i)">4x</span><span class="row-name">ARITH-I</span><span class="row-fmt-badge">[op,rd,rs,imm8]</span></div><div class="row-desc">Register-immediate: rd = rs op imm8. Full ALU set with 8-bit immediate.</div></div>
+      <div class="row-card" style="border-left-color:var(--c-p4)"><div class="rch"><span class="row-hex" style="background:rgba(37,99,235,0.15);color:var(--c-arith-r)">5x</span><span class="row-name">ARITH-R (Accum)</span><span class="row-fmt-badge">[op,rd,imm×6]</span></div><div class="row-desc">Register-register arithmetic [op,rd,rs1,rs2]: rd = rs1 op rs2. Full ALU set.</div></div>
+      <div class="row-card" style="border-left-color:var(--c-p5)"><div class="rch"><span class="row-hex" style="background:rgba(217,119,6,0.15);color:var(--c-pack)">6x</span><span class="row-name">PACK (chained)</span><span class="row-fmt-badge">[op,rd,op_a,op_b]</span></div><div class="row-desc">Packed chained arithmetic: two ops sharing prev instruction registers. 8 symmetric + 8 asymmetric topologies.</div></div>
+      <div class="row-card" style="border-left-color:var(--c-p6)"><div class="rch"><span class="row-hex" style="background:rgba(120,113,108,0.15);color:var(--c-crypto)">7x</span><span class="row-name">CRYPTO (3-reg)</span><span class="row-fmt-badge">[op,rd,rs1,rs2,imm×4]</span></div><div class="row-desc">Hardware crypto: AES (enc/dec/key), SHA-256/512, ChaCha20, Poly1305, GHASH, SM4.</div></div>
+      <div class="row-card" style="border-left-color:var(--c-fp)"><div class="rch"><span class="row-hex" style="background:rgba(249,115,22,0.15);color:var(--c-fp)">8x</span><span class="row-name">FP</span><span class="row-fmt-badge">float</span></div><div class="row-desc">Scalar float: feq/fabs/fneg/ffloor/fceil/fround/f2i/i2f/fmin/flt/fmax/fadd/fsub/fmul/fsqrt/fdiv.</div></div>
+      <div class="row-card" style="border-left-color:var(--c-trans)"><div class="rch"><span class="row-hex" style="background:rgba(6,182,212,0.15);color:var(--c-vf)">9x</span><span class="row-name">VF</span><span class="row-fmt-badge">vector float</span></div><div class="row-desc">Vector float: mirrors FP row across all lanes. Includes vf·fma for matrix multiply.</div></div>
+      <div class="row-card" style="border-left-color:var(--c-pack)"><div class="rch"><span class="row-hex" style="background:rgba(147,51,234,0.15);color:var(--c-vi)">Ax</span><span class="row-name">VI</span><span class="row-fmt-badge">vector integer</span></div><div class="row-desc">Vector integer arithmetic: mirrors ARITH-R row across all lanes. Includes v·fma and v·div.</div></div>
+      <div class="row-card" style="border-left-color:var(--c-crypto)"><div class="rch"><span class="row-hex" style="background:rgba(16,185,129,0.15);color:var(--c-vmem)">Bx</span><span class="row-name">VMEM</span><span class="row-fmt-badge">hardware crypto</span></div><div class="row-desc">Vector memory + vector atomics: vld/vst/strided/masked/gather/scatter + atomic RMW.</div></div>
+      <div class="row-card" style="border-left-color:var(--c-valu)"><div class="rch"><span class="row-hex" style="background:rgba(14,165,233,0.15);color:var(--c-amem)">Cx</span><span class="row-name">AMEM</span><span class="row-fmt-badge">adv memory</span></div><div class="row-desc">Advanced memory: ld.acq/st.rel/ldx/stx/nt.ld/nt.st + scalar atomics swap/and/or/xor/add/sub/min/max/minu/maxu.</div></div>
+      <div class="row-card" style="border-left-color:var(--c-vext)"><div class="rch"><span class="row-hex" style="background:rgba(59,130,246,0.15);color:var(--c-warp)">Dx</span><span class="row-name">WARP</span><span class="row-fmt-badge">warp primitives</span></div><div class="row-desc">Complex atomics (cas/nand/slt/xchg) + warp: lane/warp/blk/grid IDs, actmsk, vote, shuffle.</div></div>
+      <div class="row-card" style="border-left-color:var(--c-atom)"><div class="rch"><span class="row-hex" style="background:rgba(236,72,153,0.15);color:var(--c-sync)">Ex</span><span class="row-name">SYNC</span><span class="row-fmt-badge">warp sync</span></div><div class="row-desc">Warp control + sync: predicate ops, barriers (warp/block/grid/system), warp management.</div></div>
+      <div class="row-card" style="border-left-color:var(--c-warp)"><div class="rch"><span class="row-hex" style="background:rgba(168,85,247,0.15);color:var(--c-disp)">Fx</span><span class="row-name">DISP</span><span class="row-fmt-badge">dispatch</span></div><div class="row-desc">Data movement + dispatch: vector permute/zip/broadcast/reduce, texture/surface, kernel dispatch, warp.end.</div></div>
     </div>
 
   </div>
@@ -1273,8 +1273,8 @@ table.op-table tr.reserved td { opacity: 0.3; }
     <table class="lat-table">
       <thead><tr><th>Category</th><th>Range</th><th>Examples</th></tr></thead>
       <tbody>
-        <tr><td><span style="color:#2a8a4a;font-family:var(--mono);font-weight:600">single-cycle</span></td><td style="font-family:var(--mono)">1 cy</td><td style="font-size:12px;color:var(--text2)">sei/cli, nop, li.s32/li.s64/li.pcrel, bit ops, P6 integer (eq–sub), VALU C0–CE, lane.id/warp.id/actmsk</td></tr>
-        <tr><td><span style="color:#4a9a30;font-family:var(--mono);font-weight:600">fast</span></td><td style="font-family:var(--mono)">2–5 cy</td><td style="font-size:12px;color:var(--text2)">MEMS loads/stores, branches (pipeline flush on taken), ffloor/fceil/fround, f2i/i2f, sysret, dcache ops, tlbi, PACK, ld.acq, st.rel, ldx/stx/cas, P8 fused load+op</td></tr>
+        <tr><td><span style="color:#2a8a4a;font-family:var(--mono);font-weight:600">single-cycle</span></td><td style="font-family:var(--mono)">1 cy</td><td style="font-size:12px;color:var(--text2)">sei/cli, nop, li.s32/li.s64/li.pcrel, bit ops, ARITH-R (eq–sub), VI vector integer A0–AC, lane.id/warp.id/actmsk</td></tr>
+        <tr><td><span style="color:#4a9a30;font-family:var(--mono);font-weight:600">fast</span></td><td style="font-family:var(--mono)">2–5 cy</td><td style="font-size:12px;color:var(--text2)">MEMS loads/stores, branches (pipeline flush on taken), ffloor/fceil/fround, f2i/i2f, sysret, dcache ops, tlbi, PACK, ld.acq, st.rel, ldx/stx/cas, vector memory ops</td></tr>
         <tr><td><span style="color:#ba8a00;font-family:var(--mono);font-weight:600">medium</span></td><td style="font-family:var(--mono)">5–20 cy</td><td style="font-size:12px;color:var(--text2)">fsqrt (~10–20 cy), vxchg (scales with groups), ATOM RMW cache-hit, WARP vote ops, CRYPTO (estimated)</td></tr>
         <tr><td><span style="color:#da4a00;font-family:var(--mono);font-weight:600">slow</span></td><td style="font-family:var(--mono)">20–90 cy</td><td style="font-size:12px;color:var(--text2)">bar.warp/reconvg (~10–100 cy) &nbsp;·&nbsp; <em style="color:var(--text3)">transcendentals (fsin/fcos etc.) removed — use FPGA or software library</em></td></tr>
         <tr><td><span style="color:#da0000;font-family:var(--mono);font-weight:600">unbounded</span></td><td style="font-family:var(--mono)">∞</td><td style="font-size:12px;color:var(--text2)">io (port I/O), wfe (wait for event), hlt, bar.arr, bar.blk</td></tr>
@@ -1292,7 +1292,7 @@ table.op-table tr.reserved td { opacity: 0.3; }
         <div style="font-size:11px;color:var(--text2);line-height:1.65">nop: single-cycle. Branches: pipeline flush on taken (~2-4 cy). wfe: unbounded.</div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--c-libit);border-radius:8px;padding:14px">
-        <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-libit);margin-bottom:6px">2x_ LI+BIT</div>
+        <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-li);margin-bottom:6px">2x_ LI+MEM</div>
         <div style="font-size:11px;color:var(--text2);line-height:1.65">All single-cycle. Immediate loads and bit manipulation are all 1 cycle.</div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--c-mems);border-radius:8px;padding:14px">
@@ -1609,284 +1609,312 @@ document.querySelectorAll('.nav-item').forEach(item => {
 
 // ── OPCODE DATA ──────────────────────────────────────────────────────────────
 const ROWS = {
-  0x0:{name:"SYS",color:"#ef4444",desc:"Kernel-only. 00–03: 1-byte. 04–0F: 8-byte control/cache/TLB ops."},
-  0x1:{name:"MEM_CTRL",color:"#a16207",desc:"User: jmpr/jmp/branches (11–17) + hprobe/ebreak/ecall/fence/ics/wfe (18–1F)."},
-  0x2:{name:"LI+BIT",color:"#64748b",desc:"Load imm [op,rd,imm×6]: u8/u16/s16/u32/s32/u48/s48/pcrel. Bit ops: bset/bclr/btst/bflp/bext/rol/ror."},
-  0x3:{name:"MEMS",color:"#059669",desc:"Scalar memory [op,r,rb1,rb2,off×4]. Sized loads/stores, acquire/release, ldx/stx/cas, non-temporal."},
-  0x4:{name:"P8",color:"#16a34a",desc:"Fused load+combine [op,rd,addr×6]: rd = rd op mem[addr48]. Accumulator pattern."},
-  0x5:{name:"P4",color:"#2563eb",desc:"Accumulator+imm [op,rd,imm×6]: rd = rd op sign_ext(imm48)."},
-  0x6:{name:"P5",color:"#d97706",desc:"3-reg+imm40 [op,rd,rs,imm×5]: rd = rs op sign_ext(imm40)."},
-  0x7:{name:"P6",color:"#78716c",desc:"3-register [op,rd,rs1,rs2,imm×4]: rd = rs1 op rs2. Universal op table."},
-  0x8:{name:"FP",color:"#f97316",desc:"Float. Mirrors universal table cols B–F. imm[2:0]=rounding mode."},
-  0x9:{name:"TRANS",color:"#06b6d4",desc:"Transcendental float. High-latency (10–90 cy), nibble-ordered by latency."},
-  0xA:{name:"PACK",color:"#9333ea",desc:"Packed-pair: two ops in one 8-byte word. Throughput extension."},
-  0xB:{name:"CRYPTO",color:"#10b981",desc:"Hardware crypto: AES, SHA-256/512, CLMUL, CRC32, RDRAND."},
-  0xC:{name:"VALU",color:"#0ea5e9",desc:"SIMD arith. imm[3:0]=lane mask, imm[11:4]=bcast imm. GPU tier."},
-  0xD:{name:"VEXT",color:"#3b82f6",desc:"Vector extended: reductions, strided/masked, gather/scatter, permute."},
-  0xE:{name:"ATOM",color:"#ec4899",desc:"Atomic RMW: rd←old; mem←ALU(mem,rs). Column mirrors universal table."},
-  0xF:{name:"WARP",color:"#a855f7",desc:"GPU warp: lane/warp IDs, vote, shuffle, barriers."},
+  0x0:{name:"SYS",      color:"#ef4444", desc:"Kernel-only. 0x00–0x03: 1-byte. 0x04–0x0F: 4-byte system, cache, capability, IPC, I/O ops."},
+  0x1:{name:"MEM_CTRL", color:"#a16207", desc:"0x10–0x13: 1-byte (nop/ebreak/ecall/wfe). 0x14–0x17: utility. 0x18–0x1F: control flow + csel."},
+  0x2:{name:"LI+MEM",   color:"#64748b", desc:"0x20–0x27: load immediate (u8/s8/u16/s16/cap/ptr/cn/pcrel). 0x28–0x2F: loads and stores via cap+ptr."},
+  0x3:{name:"BIT",      color:"#059669", desc:"0x30–0x37: 3-byte bit ops (bset/bclr/btst/bflp/rol/ror/bswap/brev). 0x38–0x3F: 4-byte (bext/bins/bperm/pdep/pext/clmul/crc32/bfly)."},
+  0x4:{name:"ARITH-I",  color:"#16a34a", desc:"Register-immediate arithmetic [op,rd,rs,imm8]: rd = rs op imm8. Full ALU column set."},
+  0x5:{name:"ARITH-R",  color:"#2563eb", desc:"Register-register arithmetic [op,rd,rs1,rs2]: rd = rs1 op rs2. Full ALU column set."},
+  0x6:{name:"PACK",     color:"#9333ea", desc:"Packed chained arithmetic: two ops sharing prev instruction registers. 0x60–0x67 symmetric, 0x68–0x6F asymmetric."},
+  0x7:{name:"CRYPTO",   color:"#10b981", desc:"Hardware crypto: AES (enc/dec/key), SHA-256/512, ChaCha20, Poly1305, GHASH, SM4."},
+  0x8:{name:"FP",       color:"#f97316", desc:"Scalar float [op,rd,rs/rs1,rs2]: feq/fabs/fneg/ffloor/fceil/fround/f2i/i2f/fmin/flt/fmax/fadd/fsub/fmul/fsqrt/fdiv."},
+  0x9:{name:"VF",       color:"#06b6d4", desc:"Vector float: mirrors FP row, operates on all lanes simultaneously. Includes vf·fma for matrix math."},
+  0xA:{name:"VI",       color:"#0ea5e9", desc:"Vector integer: mirrors ARITH-R row. Includes v·fma and v·div. GPU tier."},
+  0xB:{name:"VMEM",     color:"#3b82f6", desc:"Vector memory + vector atomics: vld/vst/strided/masked/gather/scatter + a·swap/add/sub/and/or/xor/min/cas."},
+  0xC:{name:"AMEM",     color:"#ec4899", desc:"Advanced memory: ld.acq/st.rel/ldx/stx/nt.ld/nt.st + scalar atomics swap/and/or/xor/add/sub/min/max/minu/maxu."},
+  0xD:{name:"WARP",     color:"#a855f7", desc:"Complex atomics (cas/nand/slt/xchg) + warp primitives: lane/warp/blk/grid IDs, actmsk, vote, shuffle."},
+  0xE:{name:"SYNC",     color:"#f43f5e", desc:"Warp control + synchronization: predicate ops, barriers (warp/block/grid), memory barriers, warp management."},
+  0xF:{name:"DISP",     color:"#8b5cf6", desc:"Data movement + dispatch: vector permute/zip/broadcast/reduce, texture/surface ops, kernel dispatch, warp.end."},
 };
 
-const VALU_GLOBAL = new Set([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14]);
-const ATOM_GLOBAL = new Set([1,2,3,5,6,7,8,9,10,11,12,13]);
-
 const OPS = {
-  0x00:["sei","Set interrupt enable","1-byte; bit1 of STATUS ← 1; single-cycle"],
-  0x01:["cli","Clear interrupt enable","1-byte; bit1 of STATUS ← 0; single-cycle"],
-  0x02:["sysret","Return from trap","1-byte; terminal; restore SAVED_PC + SAVED_STATUS atomically; closes x86 SYSRET race"],
-  0x03:["hlt","Halt","1-byte; kernel only; halts permanently; terminal"],
-  0x04:["rdctrl","Read ctrl reg","[op,rd,ctrl_id]; single-cycle"],
-  0x05:["wrctrl","Write ctrl reg","[op,rs,ctrl_id]; kernel only; IDs 0x10+ read-only"],
-  0x06:["sev","Send event / IPI","imm[7:0]=target core (0–254) or 0xFF=broadcast; fire-and-forget"],
-  0x07:["dcz","D-cache zero line","zero cache line without read-for-ownership; fast memset"],
-  0x08:["dcf.c","D-cache flush clean","write dirty line to memory, keep valid; use before DMA read"],
-  0x09:["dcf.i","D-cache flush inval","invalidate without writeback"],
-  0x0A:["dcf.ci","D-cache flush clean+inv","write back and invalidate; primary DMA cache maintenance"],
-  0x0B:["vxchg","Vector state exchange","imm[0]=direction; imm[4:1]=group mask; precise exception"],
-  0x0C:["—","",""],
-  0x0D:["—","",""],
-  0x0E:["tlbi","TLB invalidate","rs=ZR: full flush + sfence; rs=VA: single page + sfence"],
-  0x0F:["io","Port I/O","[op,flags,port,rd/rs,vec,0×3]; in/out, sync/async"],
-  0x10:["nop","No-op","padding, branch delay slots; single-cycle, 7th byte NodeID"],
-  0x11:["jmpr","Jump reg / call","target=jmp_addr+r_offset; r_link=ret_addr if r_link≠ZR, 7th byte NodeID; ~2 cy branch penalty"],
-  0x12:["jmp","Jump imm","PC += sign_ext(6-byte offset); ±2^47 range, ~2 cy branch penalty, NodeID"],
-  0x13:["jne","Branch r1≠r2","signed, ~2 cy branch penalty, 7th byte NodeID"],
-  0x14:["jlt","Branch r1<r2","signed, ~2 cy branch penalty, 7th byte NodeID"],
-  0x15:["jltu","Branch r1<r2 unsigned","unsigned, ~2 cy branch penalty, 7th byte NodeID"],
-  0x16:["jge","Branch r1≥r2","signed, ~2 cy branch penalty, 7th byte NodeID"],
-  0x17:["jgeu","Branch r1≥r2 unsigned","unsigned, ~2 cy branch penalty, 7th byte NodeID"],
-  0x18:["—","","dropped: population count — proxy work, FPU handles normalization"],
-  0x19:["—","","dropped: count leading zeros — FPU row handles float normalization"],
-  0x1A:["hprobe","Capability probe","rd = capability metadata at addr(rs): bounds, permissions, tag; single-cycle read of cap table"],
-  0x1B:["ebreak","Breakpoint","unbounded; raise debug trap → vector 0x81, 7th byte NodeID"],
-  0x1C:["ecall","Environment call","unbounded; raise syscall trap → vector 0x80; syscall# in r0, args r1–r15, 7th byte NodeID"],
-  0x1D:["fence","Memory fence","[op,mode,0×6]; bits[3:0]=predecessor, bits[7:4]=successor"],
-  0x1E:["ics","I-cache sync","flush+sync I-cache after writing code; 5–20 cy; required before JIT code"],
-  0x1F:["wfe","Wait for event","low-power until sev or hardware event, 7th byte NodeID"],
-  0x20:["—","","dropped: li.u8 — redundant in fixed 8-byte format; li.s32 covers all cases"],
-  0x21:["—","","dropped: li.u16 — redundant; li.s32 covers all cases"],
-  0x22:["—","","dropped: li.s16 — redundant; li.s32 covers all cases"],
-  0x23:["—","","dropped: li.u32 — use li.s32 (unsigned values fit when top bit clear)"],
-  0x24:["li.s32","Imm s32",""],
-  0x25:["—","","dropped: li.u48 — use li.s64 or li.pcrel for address loads"],
-  0x26:["li.s64","Imm s64","rd = sign_ext(imm48); full 64-bit constant; use for large addresses and constants"],
-  0x27:["li.pcrel","PC-rel addr","rd = instr_addr + sign_ext(imm48); imm=0 → PC-read"],
-  0x28:["bset","Bit set","rd = rd | (1 << imm[5:0])"],
-  0x29:["bclr","Bit clear","rd = rd & ~(1 << imm[5:0])"],
-  0x2A:["btst","Bit test","rd = (rd >> imm[5:0]) & 1"],
-  0x2B:["bflp","Bit flip","rd = rd ^ (1 << imm[5:0])"],
-  0x2C:["bext","Bit field extract","rd = (rd >> imm[5:0]) & ((1 << imm[11:6]) - 1)"],
-  0x2D:["rol","Rotate left","rd = (rd << imm[5:0]) | (rd >> (64-imm[5:0]))"],
-  0x2E:["ror","Rotate right","rd = (rd >> imm[5:0]) | (rd << (64-imm[5:0]))"],
-  0x2F:["—","",""],
-  0x30:["lds.u8","Sized ld u8","[op,rd,rb1,rb2,off×4]; natural alignment required"],
-  0x31:["—","","dropped: lds.u16 — rare in orchestration code; mask from lds.u32"],
-  0x32:["—","","dropped: lds.s16 — rare in orchestration code; mask from lds.s32"],
-  0x33:["lds.u32","Sized ld u32",""],
-  0x34:["lds.s32","Sized ld s32",""],
-  0x35:["lds.u64","Sized ld u64","primary load"],
-  0x36:["sts.8","Sized st 8","natural alignment required"],
-  0x37:["—","","dropped: sts.16 — rare in orchestration code; use sts.32 with masking"],
-  0x38:["sts.32","Sized st 32",""],
-  0x39:["sts.64","Sized st 64","primary store"],
-  0x3A:["ld.acq","Load acquire","no loads/stores reorder past this toward later instructions"],
-  0x3B:["st.rel","Store release","no loads/stores reorder past this toward earlier instructions"],
-  0x3C:["ldx","Load exclusive","mark address exclusively held; first half of LL/SC pair"],
-  0x3D:["stx","Store exclusive","write if reservation held; rd=1 on success, 0 on failure"],
-  0x3E:["nt.ld","Non-temporal load","bypass cache; for streaming reads not reused"],
-  0x3F:["nt.st","Non-temporal store","bypass cache; avoids read-for-ownership"],
-  0x40:["ld·eq","Fused ld·eq","rd = (rd == mem[addr48]) ? 1 : 0"],
-  0x41:["ld·and","Fused ld·and","rd = rd & mem[addr48]"],
-  0x42:["ld·nand","Fused ld·nand","rd = ~(rd & mem[addr48])"],
-  0x43:["ld·or","Fused ld·or","rd = rd | mem[addr48]"],
-  0x44:["ld·nor","Fused ld·nor","rd = ~(rd | mem[addr48])"],
-  0x45:["ld·xor","Fused ld·xor","rd = rd ^ mem[addr48]"],
-  0x46:["ld·xnor","Fused ld·xnor","rd = ~(rd ^ mem[addr48])"],
-  0x47:["ld·sll","Fused ld·sll","rd = rd << mem[addr48]"],
-  0x48:["ld·srl","Fused ld·srl","rd = rd >> mem[addr48]"],
-  0x49:["ld·sra","Fused ld·sra","rd = rd >>> mem[addr48]"],
-  0x4A:["ld·slt","Fused ld·slt","rd = (rd < mem[addr48]) ? 1 : 0"],
-  0x4B:["ld·add","Fused ld·add","rd = rd + mem[addr48]; primary accumulator"],
-  0x4C:["ld·sub","Fused ld·sub","rd = rd - mem[addr48]"],
-  0x4D:["ld·not","Fused ld·not","rd = ~mem[addr48]"],
-  0x4E:["ld·mul","Fused ld·mul","rd = rd * mem[addr48]"],
-  0x4F:["—","","dropped: ld·div — integer division circuits expensive; use FPGA for divide-heavy code"],
-  0x50:["eqi","Equal imm","rd = (rd == sign_ext(imm48)) ? 1 : 0"],
-  0x51:["andi","AND imm","rd = rd & sign_ext(imm48)"],
-  0x52:["nandi","NAND imm","rd = ~(rd & imm48)"],
-  0x53:["ori","OR imm","rd = rd | sign_ext(imm48)"],
-  0x54:["nori","NOR imm","rd = ~(rd | imm48)"],
-  0x55:["xori","XOR imm","rd = rd ^ sign_ext(imm48); xori rd,-1 = ~rd (canonical NOT)"],
-  0x56:["xnri","XNOR imm","rd = ~(rd ^ imm48)"],
-  0x57:["slli","SLL imm","rd = rd << imm48"],
-  0x58:["srli","SRL imm","rd = rd >> imm48 (logical)"],
-  0x59:["srai","SRA imm","rd = rd >>ₐ imm48 (arithmetic)"],
-  0x5A:["slti","SLT imm","rd = (rd <ₛ sign_ext(imm48)) ? 1 : 0"],
-  0x5B:["addi","ADD imm","rd = rd + sign_ext(imm48)"],
-  0x5C:["subi","SUB imm","rd = rd − sign_ext(imm48)"],
-  0x5D:["bswap","Byte swap","rd = byte_swap(rd); endian conversion"],
-  0x5E:["muli","MUL imm","rd = rd * sign_ext(imm48)"],
-  0x5F:["—","","dropped: remi — if dividing by constant non-power-of-two in orchestration, redesign the algorithm"],
-  0x60:["eqri","r1=(rs==imm)","rd = (rs == sign_ext(imm40)) ? 1 : 0"],
-  0x61:["andri","r1=rs&imm",""],
-  0x62:["nandri","r1=~(rs&imm)",""],
-  0x63:["orri","r1=rs|imm",""],
-  0x64:["norri","r1=~(rs|imm)",""],
-  0x65:["xorri","r1=rs^imm",""],
-  0x66:["xnrri","r1=~(rs^imm)",""],
-  0x67:["sllri","r1=rs<<imm","rs is value, imm is shift count"],
-  0x68:["srlri","r1=rs>>imm","logical"],
-  0x69:["srari","r1=rs>>aimm","arithmetic"],
-  0x6A:["sltri","r1=(rs<imm)","signed"],
-  0x6B:["addri","r1=rs+imm","loop counter: add·i r1,r1,#8"],
-  0x6C:["subri","r1=rs−imm","rs−imm (standard order)"],
-  0x6D:["bins","Bit field insert","rd=(rd&~(mask<<pos))|((rs&mask)<<pos)"],
-  0x6E:["mulri","r1=rs*imm",""],
-  0x6F:["divflr","r1=rs/imm","floor division — signed"],
-  0x70:["eq","r1=(rs1==rs2)",""],
-  0x71:["and","r1=rs1&rs2",""],
-  0x72:["nand","r1=~(rs1&rs2)",""],
-  0x73:["or","r1=rs1|rs2",""],
-  0x74:["nor","r1=~(rs1|rs2)",""],
-  0x75:["xor","r1=rs1^rs2",""],
-  0x76:["xnor","r1=~(rs1^rs2)",""],
-  0x77:["sll","r1=rs1<<rs2",""],
-  0x78:["srl","r1=rs1>>rs2","logical"],
-  0x79:["sra","r1=rs1>>ars2","arithmetic shift"],
-  0x7A:["slt","r1=(rs1<rs2)","signed; 0 or 1"],
-  0x7B:["add","r1=rs1+rs2","mov = add rd,rs,r255 (ZR idiom)"],
-  0x7C:["sub","r1=rs1−rs2",""],
-  0x7D:["neg","r1=−rs2","two's complement; single-cycle; rs1 unused"],
-  0x7E:["mul","r1=rs1*rs2","64-bit integer multiply"],
-  0x7F:["divmod","rd←rs1/rs2, rs2←rs1%rs2","⚠ destructive source: rs2 overwritten with remainder; rs2≠rd else trap arith"],
-  0x80:["feq","f(r2)==f(r3)","rd = 0 or 1; mirrors eq col 0"],
-  0x81:["fabs","|f(r2)|","clear sign bit — ~free"],
-  0x82:["ffloor","⌊f(r2)⌋","rm applied — ~2 cycles"],
-  0x83:["fceil","⌈f(r2)⌉","rm applied — ~2 cycles"],
-  0x84:["fround","round(r2)","rm applied — ~2 cycles"],
-  0x85:["f2i","Float→int","rd=trunc(f(r2)); 2–4 cycles"],
-  0x86:["i2f","Int→float","rd=float(sign_ext(r2,64)); 2–4 cycles"],
-  0x87:["fmin","Float min",""],
-  0x88:["fmax","Float max",""],
-  0x89:["—","",""],
-  0x8A:["flt","Float <","rd=(f(r2)<f(r3)); mirrors slt col A"],
-  0x8B:["fadd","Float add","rm applied; mirrors add col B"],
-  0x8C:["fsub","Float sub","rm applied; mirrors sub col C"],
-  0x8D:["fneg","−f(r2)","bit-flip sign bit — ~free; mirrors neg col D"],
-  0x8E:["fmul","Float mul","rm applied; mirrors mul col E"],
-  0x8F:["fdiv","Float div","rd=f(r2)/f(r3); /0→∞; rm applied; mirrors div col F"],
-  0x90:["fjeq","Float branch ==","ordered comparison"],
-  0x91:["fjne","Float branch ≠","ordered comparison"],
-  0x92:["fjgt","Float branch >",""],
-  0x93:["—","",""],
-  0x94:["fsqrt","Float sqrt","√f(r2); ~10–20 cycles"],
-  0x95:["—","","dropped: fsin — transcendental; FPGA or library"],
-  0x96:["—","","dropped: fcos — transcendental; FPGA or library"],
-  0x97:["—","","dropped: fexp2 — transcendental; FPGA or library"],
-  0x98:["—","","dropped: flog2 — transcendental; FPGA or library"],
-  0x99:["—","","dropped: fexp — transcendental; FPGA or library"],
-  0x9A:["—","","dropped: flog — transcendental; FPGA or library"],
-  0x9B:["—","","dropped: ftan — transcendental; FPGA or library"],
-  0x9C:["—","","dropped: fatan2 — transcendental; FPGA or library"],
-  0x9D:["—","","dropped: fasin — transcendental; FPGA or library"],
-  0x9E:["—","","dropped: facos — transcendental; FPGA or library"],
-  0x9F:["—","","dropped: fpow — transcendental; FPGA or library"],
-  0xA0:["pp·rr","Packed rr·rr","two ops in one word; a-first"],
-  0xA1:["pp·ri8","Packed rr·ri8","b-slot has 8-bit immediate"],
-  0xA2:["pp·ri16","Packed rr·ri16","b-slot has 16-bit immediate"],
-  0xA3:["pp·i8i8","Packed i8·i8","both slots 8-bit immediate"],
-  0xA4:["pp·i16i16","Packed i16·i16","both slots 16-bit immediate"],
-  0xA5:["pp·i16","Packed rr·i16","b-slot 16-bit immediate"],
-  0xA6:["pp·rli8","Packed rr·li8","a-slot rr, b-slot li with 8-bit imm"],
-  0xA7:["pp·rli16","Packed rr·li16","a-slot rr, b-slot li with 16-bit imm"],
-  0xA8:["pp·fint","Packed fp·int","a-slot FP op, b-slot integer ALU"],
-  0xA9:["pp·lrr",   "Packed ld·rr",            "a-slot load into rd_a; b-slot rr ALU; load-while-compute", "pack","trap"],
-  0xAA:["pp·lri",   "Packed ld·ri",            "a-slot load into rd_a; b-slot rd_b = rd_b op imm8; pointer advance while loading", "pack","trap"],
-  0xAB:["pp·ll",    "Packed ll·ll",            "dual load; widths in byte1", "pack","trap"],
-  0xAC:["pp·rrs",   "Packed rr·store",         "a-slot rr, b-slot store", "pack","trap"],
-  0xAD:["pp·ss",    "Packed ss·ss",            "dual store", "pack","trap"],
-  0xAE:["pp·fld",   "Packed fp·ld",            "a-slot FP op; b-slot load; compute float while loading next input", "pack","trap"],
-  0xAF:["pp·fcvt",  "Packed f2i·i2f",          "simultaneous float↔int conversions", "pack","trap"],
-  0xB0:["aesenc","AES enc round",""],
-  0xB1:["aesdec","AES dec round",""],
-  0xB2:["aesenclast","AES enc final",""],
-  0xB3:["aesdeclast","AES dec final",""],
-  0xB4:["aesimc","AES inv mix cols",""],
-  0xB5:["aeskey","AES key expand",""],
-  0xB6:["sha256r2","SHA-256 rounds","2 rounds"],
-  0xB7:["sha256m1","SHA-256 msg sched 1",""],
-  0xB8:["sha256m2","SHA-256 msg sched 2",""],
-  0xB9:["sha512r2","SHA-512 rounds",""],
-  0xBA:["sha512m1","SHA-512 msg sched 1",""],
-  0xBB:["sha512m2","SHA-512 msg sched 2",""],
-  0xBC:["clmul","Carry-less mul low",""],
-  0xBD:["clmulh","Carry-less mul high",""],
-  0xBE:["crc32","CRC-32",""],
-  0xBF:["rdrand","Random number","hardware RNG"],
-  0xC0:["v·eq","VALU eq","SIMD; mirrors eq"],
-  0xC1:["v·and","VALU and",""],
-  0xC2:["v·nand","VALU nand",""],
-  0xC3:["v·or","VALU or",""],
-  0xC4:["v·nor","VALU nor",""],
-  0xC5:["v·xor","VALU xor",""],
-  0xC6:["v·xnor","VALU xnor",""],
-  0xC7:["v·sll","VALU sll",""],
-  0xC8:["v·srl","VALU srl",""],
-  0xC9:["v·sra","VALU sra",""],
-  0xCA:["v·slt","VALU slt",""],
-  0xCB:["v·add","VALU add","global aligned"],
-  0xCC:["v·sub","VALU sub","global aligned"],
-  0xCD:["v·neg","VALU neg",""],
-  0xCE:["v·mul","VALU mul","global aligned"],
-  0xCF:["v·fma","VALU fma","fused multiply-add; SIMD-only"],
-  0xD0:["vld","Vector load","rd[i] = mem[base + i*8]"],
-  0xD1:["vst","Vector store","mem[base + i*8] = rd[i]"],
-  0xD2:["vred.add","Vec reduce add","rd = sum of all lanes"],
-  0xD3:["vred.max","Vec reduce max",""],
-  0xD4:["vred.min","Vec reduce min",""],
-  0xD5:["vred.and","Vec reduce and",""],
-  0xD6:["vred.or","Vec reduce or",""],
-  0xD7:["vxchg","Vec exchange","imm[0]=direction; imm[4:1]=group mask"],
-  0xD8:["vperm","Vec permute","rd[i] = rs[imm[i]]"],
-  0xD9:["vzip","Vec zip","interleave lanes from two regs"],
-  0xDA:["vld_str","Vec strided load","rd[i] = mem[base + i*stride]"],
-  0xDB:["vst_str","Vec strided store","mem[base + i*stride] = rd[i]"],
-  0xDC:["vld_mask","Vec masked load","rd[i] = mem[addr+i] if mask[i]; inactive lanes zero"],
-  0xDD:["vst_mask","Vec masked store","mem[addr+i] = rd[i] if mask[i]"],
-  0xDE:["vscatter","Vec scatter","mem[rs1[i]] = rd[i]"],
-  0xDF:["vgather","Vec gather","rd[i] = mem[rs1[i]]"],
-  0xE0:["a·swap","Atomic swap","rd←old; mem←rs"],
-  0xE1:["a·and","Atomic AND","mem = mem & rs; rd = old; mirrors and"],
-  0xE2:["a·nand","Atomic NAND","mem = ~(mem & rs); rd = old"],
-  0xE3:["a·or","Atomic OR","mem = mem | rs; rd = old"],
-  0xE4:["—","",""],
-  0xE5:["a·xor","Atomic XOR","mem = mem ^ rs; rd = old"],
-  0xE6:["a·min","Atomic signed min","mem = min(mem, rs); rd = old"],
-  0xE7:["a·max","Atomic signed max","mem = max(mem, rs); rd = old"],
-  0xE8:["a·minu","Atomic unsigned min","unsigned"],
-  0xE9:["a·maxu","Atomic unsigned max","unsigned"],
-  0xEA:["a·slt","Atomic set-if-less","mem = (mem < rs) ? 1 : 0; rd = old; mirrors slt"],
-  0xEB:["a·add","Atomic add","mem = mem + rs; rd = old; global aligned"],
-  0xEC:["a·sub","Atomic sub","mem = mem − rs; rd = old; global aligned"],
-  0xED:["a·cas","Atomic CAS","if mem==rd: mem=rs, rd=old; else rd=mem; foundation of lock-free"],
-  0xEE:["—","",""],
-  0xEF:["—","",""],
-  0xF0:["lane.id","Lane ID","rd = this lane index within warp (0–31); single cycle"],
-  0xF1:["warp.id","Warp ID","rd = warp index within block; single cycle"],
-  0xF2:["blk.id","Block ID","rd = block index within grid; imm selects x/y/z dimension"],
-  0xF3:["grid.id","Grid dimensions","rd = grid dimension; imm=0→x, 1→y, 2→z"],
-  0xF4:["actmsk","Active mask","rd = bitmask of currently active lanes; single cycle"],
-  0xF5:["vote.any","Vote any","rd = 1 if any active lane has rs != 0; ~2–4 cycles"],
-  0xF6:["vote.all","Vote all","rd = 1 if all active lanes have rs != 0; ~2–4 cycles"],
-  0xF7:["vote.bal","Vote ballot","rd = bitmask of active lanes where rs != 0; ~2–4 cycles"],
-  0xF8:["shfl","Shuffle","rd[lane] = rs[src_lane]; ~4–8 cycles"],
-  0xF9:["shfl.up","Shuffle up","rd[lane] = rs[lane − delta]; ~4–8 cycles"],
-  0xFA:["shfl.dn","Shuffle down","rd[lane] = rs[lane + delta]; ~4–8 cycles"],
-  0xFB:["shfl.xor","Shuffle XOR","rd[lane] = rs[lane XOR mask]; butterfly reductions; ~4–8 cycles"],
-  0xFC:["bar.warp","Warp barrier","synchronise all lanes in warp; ~10–100 cycles"],
-  0xFD:["reconvg","Reconverge","reconverge diverged lanes; ~10–100 cycles"],
-  0xFE:["bar.arr","Arrived barrier","signal arrival; non-blocking; unbounded"],
-  0xFF:["bar.blk","Block barrier","synchronise all warps in block; equivalent to __syncthreads(); unbounded"],
+  // ── 0x0_ SYS (kernel-only) ──────────────────────────────────────────────
+  0x00:["sei",     "Set interrupt enable",       "1-byte; STATUS.IE←1; single-cycle"],
+  0x01:["cli",     "Clear interrupt enable",      "1-byte; STATUS.IE←0; single-cycle"],
+  0x02:["sysret",  "Return from trap",            "1-byte; restore PC+STATUS atomically; closes SYSRET race"],
+  0x03:["hlt",     "Halt",                        "1-byte; kernel only; halts permanently"],
+  0x04:["rdctrl",  "Read ctrl reg",               "[op,rd,ctrl_id]; single-cycle"],
+  0x05:["wrctrl",  "Write ctrl reg",              "[op,rs,ctrl_id]; kernel only"],
+  0x06:["sev",     "Send event / IPI",            "[op,target_core]; 0xFF=broadcast; fire-and-forget"],
+  0x07:["hprobe",  "Capability probe",            "[op,rd,cap_token]; rd=metadata(bounds,perms,tag); single-cycle"],
+  0x08:["dcz",     "D-cache zero line",           "[op,cap_reg,ptr_reg]; zero line without read-for-ownership"],
+  0x09:["dcf.c",   "D-cache flush clean",         "[op,cap_reg,ptr_reg]; write dirty line, keep valid; before DMA read"],
+  0x0A:["dcf.i",   "D-cache flush inval",         "[op,cap_reg,ptr_reg]; invalidate without writeback"],
+  0x0B:["dcf.ci",  "D-cache flush clean+inv",     "[op,cap_reg,ptr_reg]; writeback and invalidate; primary DMA maintenance"],
+  0x0C:["vxchg",   "Vector state exchange",       "[op,flags,cap_reg,ptr_reg]; flags=direction+group_mask"],
+  0x0D:["tlbi",    "TLB invalidate",              "[op,rs]; rs=ZR: full flush+sfence; rs=VA: single page+sfence"],
+  0x0E:["rdrnd",   "Read random",                 "[op,rd]; hardware RNG; kernel-only; blocks until entropy ready"],
+  0x0F:["io",      "Port I/O",                    "[op,flags,port,rd_rs]; in/out, sync/async; async vector in ctrl reg"],
+
+  // ── 0x1_ MEM_CTRL ────────────────────────────────────────────────────────
+  0x10:["nop",     "No-op / connector node",      "1-byte; connector node marker; CN counter increments here"],
+  0x11:["ebreak",  "Breakpoint",                  "1-byte; raise debug trap → vec 0x81"],
+  0x12:["ecall",   "Environment call",            "1-byte; syscall trap → vec 0x80; syscall# in r0, args r1–r15"],
+  0x13:["wfe",     "Wait for event",              "1-byte; low-power until sev or hardware event"],
+  0x14:["popcnt",  "Population count",            "[op,rd,rs,—]; rd=popcount(rs); single-cycle"],
+  0x15:["clz",     "Count leading zeros",         "[op,rd,rs,—]; rd=clz(rs); clz(0)=64; single-cycle"],
+  0x16:["fence",   "Memory fence",                "[op,mode,—,—]; bits[3:0]=predecessor, bits[7:4]=successor"],
+  0x17:["ics",     "I-cache sync",                "[op,cap_reg,ptr_reg,mode]; targeted or full flush; required before JIT code"],
+  0x18:["csel",    "Conditional select",          "[op,rd,rs1,rs2]; rd=(rd!=0)?rs1:rs2; branchless conditional"],
+  0x19:["jmpr",    "Jump reg / call",             "[op,cap_reg,ptr_reg,r_link]; PC=cap+ptr; r_link=ret_addr if ≠ZR"],
+  0x1A:["jmp",     "Jump CN-relative",            "[op,cn_off_hi,cn_off_lo,—]; jump ±32767 connector nodes"],
+  0x1B:["jne",     "Branch r1≠r2",               "[op,r1,r2,cn_off]; CN-relative; ~2 cy penalty"],
+  0x1C:["jlt",     "Branch r1<r2 signed",         "[op,r1,r2,cn_off]; CN-relative; ~2 cy penalty"],
+  0x1D:["jltu",    "Branch r1<r2 unsigned",       "[op,r1,r2,cn_off]; CN-relative; ~2 cy penalty"],
+  0x1E:["jge",     "Branch r1≥r2 signed",         "[op,r1,r2,cn_off]; CN-relative; ~2 cy penalty"],
+  0x1F:["jgeu",    "Branch r1≥r2 unsigned",       "[op,r1,r2,cn_off]; CN-relative; ~2 cy penalty"],
+
+  // ── 0x2_ LI+MEM ──────────────────────────────────────────────────────────
+  0x20:["li.u8",   "Load imm u8",                 "[op,rd,imm8,—]; rd=zero_ext(imm8)"],
+  0x21:["li.s8",   "Load imm s8",                 "[op,rd,imm8,—]; rd=sign_ext(imm8)"],
+  0x22:["li.u16",  "Load imm u16",                "[op,rd,imm_hi,imm_lo]; rd=zero_ext(imm16)"],
+  0x23:["li.s16",  "Load imm s16",                "[op,rd,imm_hi,imm_lo]; rd=sign_ext(imm16)"],
+  0x24:["li.cap",  "Load capability token",       "[op,rd,cap_hi,cap_lo]; load 16-bit cap token into rd"],
+  0x25:["li.ptr",  "Load tiny pointer",           "[op,rd,ptr_hi,ptr_lo]; load 16-bit tiny pointer into rd"],
+  0x26:["li.cn",   "Load connector node addr",    "[op,rd,cn_hi,cn_lo]; load CN table address into rd"],
+  0x27:["li.pcrel","PC-relative address",         "[op,rd,off_hi,off_lo]; rd=PC+sign_ext(off16); off=0→read PC"],
+  0x28:["lds.u8",  "Load byte zero-ext",          "[op,rd,cap_reg,ptr_reg]; rd=zero_ext(mem8[cap+ptr])"],
+  0x29:["lds.u32", "Load 32-bit zero-ext",        "[op,rd,cap_reg,ptr_reg]; rd=zero_ext(mem32[cap+ptr])"],
+  0x2A:["lds.s32", "Load 32-bit sign-ext",        "[op,rd,cap_reg,ptr_reg]; rd=sign_ext(mem32[cap+ptr])"],
+  0x2B:["lds.u64", "Load 64-bit",                 "[op,rd,cap_reg,ptr_reg]; rd=mem64[cap+ptr]; primary load"],
+  0x2C:["sts.8",   "Store byte",                  "[op,rs,cap_reg,ptr_reg]; mem8[cap+ptr]=rs[7:0]"],
+  0x2D:["sts.16",  "Store 16-bit",                "[op,rs,cap_reg,ptr_reg]; mem16[cap+ptr]=rs[15:0]"],
+  0x2E:["sts.32",  "Store 32-bit",                "[op,rs,cap_reg,ptr_reg]; mem32[cap+ptr]=rs[31:0]"],
+  0x2F:["sts.64",  "Store 64-bit",                "[op,rs,cap_reg,ptr_reg]; mem64[cap+ptr]=rs; primary store"],
+
+  // ── 0x3_ BIT ─────────────────────────────────────────────────────────────
+  0x30:["bset",    "Bit set",                     "[op,rd,bit_pos]; rd=rd|(1<<bit_pos)"],
+  0x31:["bclr",    "Bit clear",                   "[op,rd,bit_pos]; rd=rd&~(1<<bit_pos)"],
+  0x32:["btst",    "Bit test",                    "[op,rd,bit_pos]; rd=(rd>>bit_pos)&1"],
+  0x33:["bflp",    "Bit flip",                    "[op,rd,bit_pos]; rd=rd^(1<<bit_pos)"],
+  0x34:["rol",     "Rotate left",                 "[op,rd,amount]; rd=(rd<<amount)|(rd>>(64-amount))"],
+  0x35:["ror",     "Rotate right",                "[op,rd,amount]; rd=(rd>>amount)|(rd<<(64-amount))"],
+  0x36:["bswap",   "Byte swap",                   "[op,rd,width]; endian conversion; width=8/16/32/64"],
+  0x37:["brev",    "Bit reversal",                "[op,rd,width]; reverse bits within width"],
+  0x38:["bext",    "Bit field extract",           "[op,rd,pos,width]; rd=(rd>>pos)&mask(width)"],
+  0x39:["bins",    "Bit field insert",            "[op,rd,pos,width]; insert width bits of rs at pos"],
+  0x3A:["bperm",   "Bit permutation",             "[op,rd,rs,mask]; permute bits of rd per rs pattern"],
+  0x3B:["pdep",    "Parallel bit deposit",        "[op,rd,rs1,rs2]; scatter bits of rs1 into positions given by rs2"],
+  0x3C:["pext",    "Parallel bit extract",        "[op,rd,rs1,rs2]; collect bits of rs1 at positions given by rs2"],
+  0x3D:["clmul",   "Carry-less multiply",         "[op,rd,rs1,rs2]; GCM/CRC building block"],
+  0x3E:["crc32",   "CRC-32 accumulate",           "[op,rd,rs,poly]; poly selects CRC-32 vs CRC-32C"],
+  0x3F:["bfly",    "Butterfly operation",         "[op,rd,rs,stage]; FFT/WHT core op"],
+
+  // ── 0x4_ ARITH-I (rd = rs op imm8) ───────────────────────────────────────
+  0x40:["eqi",     "Equal imm",                   "[op,rd,rs,imm8]; rd=(rs==sign_ext(imm8))?1:0"],
+  0x41:["andi",    "AND imm",                     "[op,rd,rs,imm8]; rd=rs&sign_ext(imm8)"],
+  0x42:["nandi",   "NAND imm",                    "[op,rd,rs,imm8]; rd=~(rs&imm8)"],
+  0x43:["ori",     "OR imm",                      "[op,rd,rs,imm8]; rd=rs|sign_ext(imm8)"],
+  0x44:["nori",    "NOR imm",                     "[op,rd,rs,imm8]; rd=~(rs|imm8)"],
+  0x45:["xori",    "XOR imm",                     "[op,rd,rs,imm8]; rd=rs^sign_ext(imm8); xori rd,rs,-1=~rs"],
+  0x46:["xnri",    "XNOR imm",                    "[op,rd,rs,imm8]; rd=~(rs^imm8)"],
+  0x47:["slli",    "SLL imm",                     "[op,rd,rs,imm8]; rd=rs<<imm8"],
+  0x48:["srli",    "SRL imm",                     "[op,rd,rs,imm8]; rd=rs>>imm8 (logical)"],
+  0x49:["srai",    "SRA imm",                     "[op,rd,rs,imm8]; rd=rs>>ₐimm8 (arithmetic)"],
+  0x4A:["slti",    "SLT imm",                     "[op,rd,rs,imm8]; rd=(rs<sign_ext(imm8))?1:0"],
+  0x4B:["addi",    "ADD imm",                     "[op,rd,rs,imm8]; rd=rs+sign_ext(imm8)"],
+  0x4C:["subi",    "SUB imm",                     "[op,rd,rs,imm8]; rd=rs-sign_ext(imm8)"],
+  0x4D:["modi",    "MOD imm",                     "[op,rd,rs,imm8]; rd=rs%sign_ext(imm8)"],
+  0x4E:["muli",    "MUL imm",                     "[op,rd,rs,imm8]; rd=rs*sign_ext(imm8)"],
+  0x4F:["divi",    "DIV imm",                     "[op,rd,rs,imm8]; rd=rs/sign_ext(imm8)"],
+
+  // ── 0x5_ ARITH-R (rd = rs1 op rs2) ──────────────────────────────────────
+  0x50:["eq",      "Equal",                       "[op,rd,rs1,rs2]; rd=(rs1==rs2)?1:0"],
+  0x51:["and",     "AND",                         "[op,rd,rs1,rs2]; rd=rs1&rs2"],
+  0x52:["nand",    "NAND",                        "[op,rd,rs1,rs2]; rd=~(rs1&rs2)"],
+  0x53:["or",      "OR",                          "[op,rd,rs1,rs2]; rd=rs1|rs2"],
+  0x54:["nor",     "NOR",                         "[op,rd,rs1,rs2]; rd=~(rs1|rs2)"],
+  0x55:["xor",     "XOR",                         "[op,rd,rs1,rs2]; rd=rs1^rs2"],
+  0x56:["xnor",    "XNOR",                        "[op,rd,rs1,rs2]; rd=~(rs1^rs2)"],
+  0x57:["sll",     "Shift left logical",          "[op,rd,rs1,rs2]; rd=rs1<<rs2"],
+  0x58:["srl",     "Shift right logical",         "[op,rd,rs1,rs2]; rd=rs1>>rs2"],
+  0x59:["sra",     "Shift right arithmetic",      "[op,rd,rs1,rs2]; rd=rs1>>ₐrs2"],
+  0x5A:["slt",     "Set less than",               "[op,rd,rs1,rs2]; rd=(rs1<rs2)?1:0 signed"],
+  0x5B:["add",     "Add",                         "[op,rd,rs1,rs2]; rd=rs1+rs2; mov=add rd,rs,r255(ZR)"],
+  0x5C:["sub",     "Subtract",                    "[op,rd,rs1,rs2]; rd=rs1-rs2"],
+  0x5D:["mod",     "Modulo",                      "[op,rd,rs1,rs2]; rd=rs1%rs2"],
+  0x5E:["mul",     "Multiply",                    "[op,rd,rs1,rs2]; rd=rs1*rs2; 64-bit"],
+  0x5F:["div",     "Divide",                      "[op,rd,rs1,rs2]; rd=rs1/rs2; signed"],
+
+  // ── 0x6_ PACK (packed chained arithmetic) ────────────────────────────────
+  0x60:["pp·ss",   "Packed sym ss",               "[op,rd,op_a,op_b]; op_a(rs1,rs2) op_b(rs1,rs2) → rd"],
+  0x61:["pp·dd",   "Packed sym dd",               "[op,rd,op_a,op_b]; op_a(rd,rd) op_b(rd,rd) → rd"],
+  0x62:["pp·sd",   "Packed sym sd",               "[op,rd,op_a,op_b]; op_a(rs1,rs2) op_b(rd,rd) → rd"],
+  0x63:["pp·ds",   "Packed sym ds",               "[op,rd,op_a,op_b]; op_a(rd,rd) op_b(rs1,rs2) → rd"],
+  0x64:["pp·s1",   "Packed sym s1",               "[op,rd,op_a,op_b]; op_a(rs1,rs2) op_b(rd,rs2) → rd"],
+  0x65:["pp·s2",   "Packed sym s2",               "[op,rd,op_a,op_b]; op_a(rs1,rs2) op_b(rd,rs1) → rd"],
+  0x66:["pp·d1",   "Packed sym d1",               "[op,rd,op_a,op_b]; op_a(rd,rs1) op_b(rd,rs1) → rd; accumulate"],
+  0x67:["pp·d2",   "Packed sym d2",               "[op,rd,op_a,op_b]; op_a(rd,rs2) op_b(rd,rs2) → rd; accumulate"],
+  0x68:["pp·ch",   "Packed chain",                "[op,rd,op_a,op_b]; op_a(rs1,rs2)→r_a; op_b(r_a,rs2) → rd"],
+  0x69:["pp·ch1",  "Packed chain rs1",            "[op,rd,op_a,op_b]; op_a(rs1,rs2)→r_a; op_b(r_a,rs1) → rd"],
+  0x6A:["pp·chd",  "Packed chain rd",             "[op,rd,op_a,op_b]; op_a(rs1,rs2)→r_a; op_b(r_a,rd) → rd"],
+  0x6B:["pp·rch",  "Packed rd-chain",             "[op,rd,op_a,op_b]; op_a(rd,rs2)→r_a; op_b(r_a,rs1) → rd"],
+  0x6C:["pp·xch",  "Packed xswap-chain",          "[op,rd,op_a,op_b]; op_a(rs2,rs1)→r_a; op_b(r_a,rs2) → rd"],
+  0x6D:["pp·dch",  "Packed double-chain",         "[op,rd,op_a,op_b]; op_a(rd,rd)→r_a; op_b(r_a,rs1) → rd"],
+  0x6E:["pp·spl",  "Packed split-merge",          "[op,rd,op_a,op_b]; op_a(rs1,rs2)→r_a; op_b(rd,r_a) → rd"],
+  0x6F:["pp·acc",  "Packed accumulate",           "[op,rd,op_a,op_b]; op_a(rd,rs1)→r_a; op_b(r_a,rs2) → rd"],
+
+  // ── 0x7_ CRYPTO ──────────────────────────────────────────────────────────
+  0x70:["aesenc",      "AES encrypt round",       "[op,rd,rs1,rs2]; rd/rs1=128-bit state pair; rs2=round key base"],
+  0x71:["aesdec",      "AES decrypt round",       "[op,rd,rs1,rs2]"],
+  0x72:["aesenclast",  "AES encrypt final",       "[op,rd,rs1,rs2]"],
+  0x73:["aesdeclast",  "AES decrypt final",       "[op,rd,rs1,rs2]"],
+  0x74:["aesimc",      "AES inv mix cols",        "[op,rd,rs,—]"],
+  0x75:["aeskey",      "AES key expand",          "[op,rd,rs,round]; round=key schedule round number"],
+  0x76:["sha256r2",    "SHA-256 rounds×2",        "[op,rd,rs1,rs2]; rd=state base; rs1=msg sched; rs2=constants"],
+  0x77:["sha256m1",    "SHA-256 msg sched 1",     "[op,rd,rs,—]"],
+  0x78:["sha256m2",    "SHA-256 msg sched 2",     "[op,rd,rs,—]"],
+  0x79:["sha512r2",    "SHA-512 rounds×2",        "[op,rd,rs1,rs2]"],
+  0x7A:["sha512m1",    "SHA-512 msg sched 1",     "[op,rd,rs,—]"],
+  0x7B:["sha512m2",    "SHA-512 msg sched 2",     "[op,rd,rs,—]"],
+  0x7C:["chacha",      "ChaCha20 quarter round",  "[op,rd,rs1,rs2]"],
+  0x7D:["poly1305",    "Poly1305 block",          "[op,rd,rs1,rs2]"],
+  0x7E:["ghash",       "GHASH for GCM",           "[op,rd,rs1,rs2]"],
+  0x7F:["sm4",         "SM4 round",               "[op,rd,rs1,rs2]"],
+
+  // ── 0x8_ FP (scalar float) ───────────────────────────────────────────────
+  0x80:["feq",     "Float equal",                 "[op,rd,rs1,rs2]; rd=(f(rs1)==f(rs2))?1:0; ~1 cy"],
+  0x81:["fabs",    "Float abs",                   "[op,rd,rs,—]; clear sign bit; ~free"],
+  0x82:["fneg",    "Float negate",                "[op,rd,rs,—]; flip sign bit; ~free; not a pseudo-op"],
+  0x83:["ffloor",  "Float floor",                 "[op,rd,rs,—]; rm applied; ~2 cy"],
+  0x84:["fceil",   "Float ceil",                  "[op,rd,rs,—]; rm applied; ~2 cy"],
+  0x85:["fround",  "Float round",                 "[op,rd,rs,—]; rm applied; ~2 cy"],
+  0x86:["f2i",     "Float → int",                 "[op,rd,rs,—]; rd=trunc(f(rs)); ~2–4 cy"],
+  0x87:["i2f",     "Int → float",                 "[op,rd,rs,—]; rd=float(rs); ~2–4 cy"],
+  0x88:["fmin",    "Float min",                   "[op,rd,rs1,rs2]; ~1 cy"],
+  0x89:["flt",     "Float less-than",             "[op,rd,rs1,rs2]; rd=(f(rs1)<f(rs2))?1:0; ~1 cy"],
+  0x8A:["fmax",    "Float max",                   "[op,rd,rs1,rs2]; ~1 cy"],
+  0x8B:["fadd",    "Float add",                   "[op,rd,rs1,rs2]; rm applied; ~4–6 cy"],
+  0x8C:["fsub",    "Float sub",                   "[op,rd,rs1,rs2]; rm applied; ~4–6 cy"],
+  0x8D:["fmul",    "Float mul",                   "[op,rd,rs1,rs2]; rm applied; ~4–6 cy"],
+  0x8E:["fsqrt",   "Float sqrt",                  "[op,rd,rs,—]; √f(rs); ~10–20 cy"],
+  0x8F:["fdiv",    "Float div",                   "[op,rd,rs1,rs2]; /0→∞; ~10–20 cy"],
+
+  // ── 0x9_ VF (vector float) ───────────────────────────────────────────────
+  0x90:["vf·eq",   "Vec float equal",             "[op,rd,rs1,rs2]; per-lane feq; ~1 cy"],
+  0x91:["vf·abs",  "Vec float abs",               "[op,rd,rs,—]; per-lane fabs"],
+  0x92:["vf·neg",  "Vec float neg",               "[op,rd,rs,—]; per-lane fneg"],
+  0x93:["vf·floor","Vec float floor",             "[op,rd,rs,—]; ~2 cy"],
+  0x94:["vf·ceil", "Vec float ceil",              "[op,rd,rs,—]; ~2 cy"],
+  0x95:["vf·round","Vec float round",             "[op,rd,rs,—]; ~2 cy"],
+  0x96:["vf·2i",   "Vec float→int",               "[op,rd,rs,—]; ~2–4 cy"],
+  0x97:["vf·i2f",  "Vec int→float",               "[op,rd,rs,—]; ~2–4 cy"],
+  0x98:["vf·min",  "Vec float min",               "[op,rd,rs1,rs2]; ~1 cy"],
+  0x99:["vf·lt",   "Vec float less-than",         "[op,rd,rs1,rs2]; ~1 cy"],
+  0x9A:["vf·max",  "Vec float max",               "[op,rd,rs1,rs2]; ~1 cy"],
+  0x9B:["vf·add",  "Vec float add",               "[op,rd,rs1,rs2]; ~4–6 cy"],
+  0x9C:["vf·sub",  "Vec float sub",               "[op,rd,rs1,rs2]; ~4–6 cy"],
+  0x9D:["vf·fma",  "Vec fused mul-add",           "[op,rd,rs1,rs2]; essential for matrix math; ~4–6 cy"],
+  0x9E:["vf·sqrt", "Vec float sqrt",              "[op,rd,rs,—]; ~10–20 cy"],
+  0x9F:["vf·div",  "Vec float div",               "[op,rd,rs1,rs2]; ~10–20 cy"],
+
+  // ── 0xA_ VI (vector integer) ─────────────────────────────────────────────
+  0xA0:["v·eq",    "Vec equal",                   "[op,rd,rs1,rs2]; per-lane eq; ~1 cy"],
+  0xA1:["v·and",   "Vec AND",                     "[op,rd,rs1,rs2]; ~1 cy"],
+  0xA2:["v·nand",  "Vec NAND",                    "[op,rd,rs1,rs2]; ~1 cy"],
+  0xA3:["v·or",    "Vec OR",                      "[op,rd,rs1,rs2]; ~1 cy"],
+  0xA4:["v·nor",   "Vec NOR",                     "[op,rd,rs1,rs2]; ~1 cy"],
+  0xA5:["v·xor",   "Vec XOR",                     "[op,rd,rs1,rs2]; ~1 cy"],
+  0xA6:["v·xnor",  "Vec XNOR",                    "[op,rd,rs1,rs2]; ~1 cy"],
+  0xA7:["v·sll",   "Vec shift left",              "[op,rd,rs1,rs2]; ~1 cy"],
+  0xA8:["v·srl",   "Vec shift right logical",     "[op,rd,rs1,rs2]; ~1 cy"],
+  0xA9:["v·sra",   "Vec shift right arith",       "[op,rd,rs1,rs2]; ~1 cy"],
+  0xAA:["v·slt",   "Vec set less-than",           "[op,rd,rs1,rs2]; ~1 cy"],
+  0xAB:["v·add",   "Vec add",                     "[op,rd,rs1,rs2]; ~1 cy"],
+  0xAC:["v·sub",   "Vec sub",                     "[op,rd,rs1,rs2]; ~1 cy"],
+  0xAD:["v·fma",   "Vec int fused mul-add",       "[op,rd,rs1,rs2]; ~3–5 cy"],
+  0xAE:["v·mul",   "Vec multiply",                "[op,rd,rs1,rs2]; ~3–5 cy"],
+  0xAF:["v·div",   "Vec divide",                  "[op,rd,rs1,rs2]; ~20–40 cy"],
+
+  // ── 0xB_ VMEM (vector memory + vector atomics) ───────────────────────────
+  0xB0:["vld",       "Vector load",               "[op,rd,cap_reg,ptr_reg]; rd[i]=mem[cap+ptr+i*8]"],
+  0xB1:["vst",       "Vector store",              "[op,rs,cap_reg,ptr_reg]; mem[cap+ptr+i*8]=rs[i]"],
+  0xB2:["vld.str",   "Vec strided load",          "[op,rd,cap_reg,ptr_reg]; stride in next reg by convention"],
+  0xB3:["vst.str",   "Vec strided store",         "[op,rs,cap_reg,ptr_reg]"],
+  0xB4:["vld.mask",  "Vec masked load",           "[op,rd,cap_reg,ptr_reg]; mask in rd; inactive lanes zero"],
+  0xB5:["vst.mask",  "Vec masked store",          "[op,rs,cap_reg,ptr_reg]; mask in rs"],
+  0xB6:["vgather",   "Vec gather",                "[op,rd,cap_reg,ptr_reg]; rd[i]=mem[cap+ptr[i]]"],
+  0xB7:["vscatter",  "Vec scatter",               "[op,rs,cap_reg,ptr_reg]; mem[cap+ptr[i]]=rs[i]"],
+  0xB8:["a·swap",    "Vec atomic swap",           "[op,rd,cap_reg,ptr_reg]; rd←old; mem←rd"],
+  0xB9:["a·add",     "Vec atomic add",            "[op,rd,cap_reg,ptr_reg]; mem+=rd; rd←old"],
+  0xBA:["a·sub",     "Vec atomic sub",            "[op,rd,cap_reg,ptr_reg]; mem-=rd; rd←old"],
+  0xBB:["a·and",     "Vec atomic AND",            "[op,rd,cap_reg,ptr_reg]"],
+  0xBC:["a·or",      "Vec atomic OR",             "[op,rd,cap_reg,ptr_reg]"],
+  0xBD:["a·xor",     "Vec atomic XOR",            "[op,rd,cap_reg,ptr_reg]"],
+  0xBE:["a·min",     "Vec atomic min",            "[op,rd,cap_reg,ptr_reg]; signed"],
+  0xBF:["a·cas",     "Vec atomic CAS",            "[op,rd,cap_reg,ptr_reg]; if mem==rd: mem=rs, rd=old"],
+
+  // ── 0xC_ AMEM (advanced memory + scalar atomics) ─────────────────────────
+  0xC0:["ld.acq",  "Load acquire",                "[op,rd,cap_reg,ptr_reg]; no loads/stores reorder past this"],
+  0xC1:["st.rel",  "Store release",               "[op,rs,cap_reg,ptr_reg]; no loads/stores reorder past this"],
+  0xC2:["ldx",     "Load exclusive",              "[op,rd,cap_reg,ptr_reg]; mark reservation; first half LL/SC"],
+  0xC3:["stx",     "Store exclusive",             "[op,rs,cap_reg,ptr_reg]; conditional; rs←1 success 0 fail"],
+  0xC4:["nt.ld",   "Non-temporal load",           "[op,rd,cap_reg,ptr_reg]; bypass cache; streaming reads"],
+  0xC5:["nt.st",   "Non-temporal store",          "[op,rs,cap_reg,ptr_reg]; bypass cache; avoids read-for-ownership"],
+  0xC6:["a·swap",  "Atomic swap",                 "[op,rd,cap_reg,ptr_reg]; rd←old; mem←rd"],
+  0xC7:["a·and",   "Atomic AND",                  "[op,rd,cap_reg,ptr_reg]; mem&=rd; rd←old"],
+  0xC8:["a·or",    "Atomic OR",                   "[op,rd,cap_reg,ptr_reg]; mem|=rd; rd←old"],
+  0xC9:["a·xor",   "Atomic XOR",                  "[op,rd,cap_reg,ptr_reg]; mem^=rd; rd←old"],
+  0xCA:["a·add",   "Atomic add",                  "[op,rd,cap_reg,ptr_reg]; mem+=rd; rd←old"],
+  0xCB:["a·sub",   "Atomic sub",                  "[op,rd,cap_reg,ptr_reg]; mem-=rd; rd←old"],
+  0xCC:["a·min",   "Atomic signed min",           "[op,rd,cap_reg,ptr_reg]; mem=min(mem,rd); rd←old"],
+  0xCD:["a·max",   "Atomic signed max",           "[op,rd,cap_reg,ptr_reg]; mem=max(mem,rd); rd←old"],
+  0xCE:["a·minu",  "Atomic unsigned min",         "[op,rd,cap_reg,ptr_reg]; unsigned"],
+  0xCF:["a·maxu",  "Atomic unsigned max",         "[op,rd,cap_reg,ptr_reg]; unsigned"],
+
+  // ── 0xD_ WARP (complex atomics + warp primitives) ────────────────────────
+  0xD0:["a·cas",   "Atomic CAS",                  "[op,rd,cap_reg,ptr_reg]; if mem==rd: mem=rs, rd=old; lock-free foundation"],
+  0xD1:["a·nand",  "Atomic NAND",                 "[op,rd,cap_reg,ptr_reg]; mem=~(mem&rd); rd←old"],
+  0xD2:["a·slt",   "Atomic set-if-less",          "[op,rd,cap_reg,ptr_reg]; mem=(mem<rd)?1:0; rd←old"],
+  0xD3:["a·xchg",  "Atomic exchange pair",        "[op,rd,cap_reg,ptr_reg]; double-word atomic exchange"],
+  0xD4:["lane.id", "Lane ID",                     "[op,rd,—,—]; rd=lane index within warp (0–31); ~1 cy"],
+  0xD5:["warp.id", "Warp ID",                     "[op,rd,—,—]; rd=warp index within block; ~1 cy"],
+  0xD6:["blk.id",  "Block ID",                    "[op,rd,dim,—]; rd=block index; dim=0→x 1→y 2→z; ~1 cy"],
+  0xD7:["grid.id", "Grid dimensions",             "[op,rd,dim,—]; rd=grid dim; ~1 cy"],
+  0xD8:["actmsk",  "Active lane mask",            "[op,rd,—,—]; rd=bitmask of active lanes; ~1 cy"],
+  0xD9:["vote.any","Vote any",                    "[op,rd,rs,—]; rd=1 if any active lane rs!=0; ~2–4 cy"],
+  0xDA:["vote.all","Vote all",                    "[op,rd,rs,—]; rd=1 if all active lanes rs!=0; ~2–4 cy"],
+  0xDB:["vote.bal","Vote ballot",                 "[op,rd,rs,—]; rd=bitmask of active lanes where rs!=0; ~2–4 cy"],
+  0xDC:["shfl",    "Shuffle",                     "[op,rd,rs,src_lane]; rd[lane]=rs[src_lane]; ~4–8 cy"],
+  0xDD:["shfl.up", "Shuffle up",                  "[op,rd,rs,delta]; rd[lane]=rs[lane-delta]; ~4–8 cy"],
+  0xDE:["shfl.dn", "Shuffle down",                "[op,rd,rs,delta]; rd[lane]=rs[lane+delta]; ~4–8 cy"],
+  0xDF:["shfl.xor","Shuffle XOR",                 "[op,rd,rs,mask]; rd[lane]=rs[lane XOR mask]; butterfly; ~4–8 cy"],
+
+  // ── 0xE_ SYNC (warp control + synchronization) ───────────────────────────
+  0xE0:["pred.set","Predicate set",               "[op,rd,rs,mask]; set pred register from condition+mask; ~1 cy"],
+  0xE1:["pred.and","Predicate AND",               "[op,rd,rs1,rs2]; ~1 cy"],
+  0xE2:["pred.or", "Predicate OR",                "[op,rd,rs1,rs2]; ~1 cy"],
+  0xE3:["pred.not","Predicate NOT",               "[op,rd,rs,—]; ~1 cy"],
+  0xE4:["warp.yield","Yield scheduler",           "[op,—,—,—]; yield warp scheduler slot; variable latency"],
+  0xE5:["warp.sync","Warp sync masked",           "[op,mask,—,—]; sync subset of lanes by mask; ~10–100 cy"],
+  0xE6:["mem.bar.sh","Shared mem barrier",        "[op,—,—,—]; shared memory barrier; ~5–20 cy"],
+  0xE7:["mem.bar.gl","Global mem barrier",        "[op,—,—,—]; global memory barrier; ~10–100 cy"],
+  0xE8:["bar.warp","Warp barrier",                "[op,—,—,—]; sync all lanes in warp; ~10–100 cy"],
+  0xE9:["reconvg", "Reconverge lanes",            "[op,—,—,—]; reconverge diverged lanes; ~10–100 cy"],
+  0xEA:["bar.arr", "Barrier arrived",             "[op,bar_id,—,—]; signal arrival; non-blocking; unbounded"],
+  0xEB:["bar.blk", "Block barrier",               "[op,bar_id,—,—]; sync all warps in block; unbounded"],
+  0xEC:["bar.grid","Grid barrier",                "[op,bar_id,—,—]; sync all blocks in grid; unbounded"],
+  0xED:["mem.bar.sys","System mem barrier",       "[op,—,—,—]; system-wide; unbounded"],
+  0xEE:["warp.exit","Exit warp",                  "[op,—,—,—]; terminate this warp; unbounded"],
+  0xEF:["warp.trap","Warp trap",                  "[op,vec,—,—]; raise warp-level trap; unbounded"],
+
+  // ── 0xF_ DISP (data movement + dispatch) ─────────────────────────────────
+  0xF0:["vperm",      "Vec permute lanes",        "[op,rd,rs,pattern]; rd[i]=rs[pattern[i]]; ~2–4 cy"],
+  0xF1:["vzip",       "Vec zip/interleave",       "[op,rd,rs1,rs2]; interleave lanes; ~2–4 cy"],
+  0xF2:["vunzip",     "Vec unzip/deinterleave",   "[op,rd,rs1,rs2]; deinterleave lanes; ~2–4 cy"],
+  0xF3:["vxchg",      "Vec group exchange",       "[op,rd,rs,mask]; exchange vector groups by mask; ~2–4 cy"],
+  0xF4:["vbroadcast", "Vec broadcast lane",       "[op,rd,rs,lane]; broadcast rs[lane] to all lanes; ~2–4 cy"],
+  0xF5:["vred.add",   "Vec reduce add",           "[op,rd,rs,—]; rd=sum of all lanes; ~4–8 cy"],
+  0xF6:["vred.max",   "Vec reduce max",           "[op,rd,rs,—]; rd=max of all lanes; ~4–8 cy"],
+  0xF7:["vred.min",   "Vec reduce min",           "[op,rd,rs,—]; rd=min of all lanes; ~4–8 cy"],
+  0xF8:["tex.ld",     "Texture load",             "[op,rd,cap_reg,ptr_reg]; load with filtering; ~10–100 cy"],
+  0xF9:["tex.st",     "Texture store",            "[op,rs,cap_reg,ptr_reg]; ~10–100 cy"],
+  0xFA:["tex.samp",   "Texture sample",           "[op,rd,rs,sampler]; sample with sampler state; ~10–100 cy"],
+  0xFB:["surf.ld",    "Surface load",             "[op,rd,cap_reg,ptr_reg]; ~10–100 cy"],
+  0xFC:["surf.st",    "Surface store",            "[op,rs,cap_reg,ptr_reg]; ~10–100 cy"],
+  0xFD:["dispatch",   "Launch child kernel",      "[op,rs,cap_reg,ptr_reg]; dynamic parallelism; unbounded"],
+  0xFE:["dispatch.sync","Launch and wait",        "[op,rs,cap_reg,ptr_reg]; launch child kernel and wait; unbounded"],
+  0xFF:["warp.end",   "Signal grid complete",     "[op,—,—,—]; terminal; signal completion of entire grid"],
 };
 
 function isRes(op) { return !OPS[op] || OPS[op][0] === "—" || OPS[op][0] === ""; }
@@ -1901,24 +1929,32 @@ const LAT = {};
   for (let op = 0; op < 256; op++) {
     if (isRes(op)) { LAT[op] = 0; continue; }
     const m = OPS[op][0], n = (OPS[op][2]||"").toLowerCase();
+    // unbounded / terminal
     if (n.includes("unbounded")||n.includes("terminal")) { LAT[op]=5; continue; }
+    // explicit cycle range in description
     const cyM = n.match(/(~|≈)?\s*([0-9]+)\s*[-–]?\s*([0-9]+)?\s*(cycles|cy)/);
     if (cyM) {
       const avg = cyM[3] ? (parseInt(cyM[2])+parseInt(cyM[3]))/2 : parseInt(cyM[2]);
       LAT[op] = avg<=1.5?1:avg<=5?2:avg<=20?3:avg<=90?4:5; continue;
     }
-    if (n.includes("single-cycle")||n.includes("~free")) { LAT[op]=1; continue; }
-    if (n.includes("cache-hit")||n.includes("fast")||n.includes("primary load")||n.includes("primary store")) { LAT[op]=2; continue; }
-    if (["divmod","divflr","div","rem"].includes(m)) { LAT[op]=3; continue; }
-    if (["fdiv","fsqrt"].includes(m)) { LAT[op]=4; continue; }
-    // transcendentals 0x95-0x9F removed from ISA
-    if (["bar.arr","bar.blk","hlt","wfe"].includes(m)) { LAT[op]=5; continue; }
-    if (["bar.warp","reconvg"].includes(m)) { LAT[op]=4; continue; }
-    if (["vote.any","vote.all","vote.bal"].includes(m)) { LAT[op]=2; continue; }
-    if (m.startsWith("shfl")) { LAT[op]=3; continue; }
-    if (m.startsWith("aes")||m.startsWith("sha")||m.startsWith("crc")||m.startsWith("clmul")||m==="rdrand") { LAT[op]=4; continue; }
-    if (m.startsWith("ld")||m.startsWith("st")||m.includes("cache")) { LAT[op]=2; continue; }
-    if (m.startsWith("f")||m.startsWith("v")) { LAT[op]=3; continue; }
+    // 1-byte instructions — always single cycle
+    if (op<=0x03||op===0x10||op===0x11||op===0x12||op===0x13) { LAT[op]=1; continue; }
+    // by row heuristic
+    const row = op>>4;
+    if (row===0x0) { LAT[op] = n.includes("tlb")||n.includes("barrier")?4:n.includes("flush")||n.includes("dcf")?3:2; continue; }
+    if (row===0x1) { LAT[op] = n.includes("jump")||n.includes("branch")||n.includes("jmp")||n.includes("jne")||n.includes("jlt")||n.includes("jge")?2:1; continue; }
+    if (row===0x2) { LAT[op] = op>=0x28?2:1; continue; } // loads/stores vs immediates
+    if (row===0x3) { LAT[op]=1; continue; } // bit ops
+    if (row===0x4||row===0x5) { LAT[op] = m.includes("div")?4:m.includes("mul")?2:1; continue; }
+    if (row===0x6) { LAT[op]=2; continue; } // packed chained — assume medium
+    if (row===0x7) { LAT[op]=3; continue; } // crypto — medium-high
+    if (row===0x8) { LAT[op] = m.includes("sqrt")||m.includes("div")?4:m.includes("add")||m.includes("sub")||m.includes("mul")?3:1; continue; }
+    if (row===0x9) { LAT[op] = m.includes("sqrt")||m.includes("div")?4:m.includes("add")||m.includes("sub")||m.includes("fma")?3:1; continue; }
+    if (row===0xA) { LAT[op] = m.includes("div")?4:m.includes("mul")||m.includes("fma")?2:1; continue; }
+    if (row===0xB||row===0xC) { LAT[op]=3; continue; } // memory ops
+    if (row===0xD) { LAT[op] = m.includes("shfl")?3:m.includes("vote")?2:m.includes("a·")?3:1; continue; }
+    if (row===0xE) { LAT[op] = m.includes("pred")?1:m.includes("yield")?2:4; continue; }
+    if (row===0xF) { LAT[op] = m.includes("tex")||m.includes("surf")||m.includes("dispatch")?4:m.includes("vred")?3:2; continue; }
     LAT[op]=1;
   }
 })();
@@ -1951,7 +1987,7 @@ function buildGrid() {
     for(let col=0;col<16;col++) {
       const op = (row<<4)|col;
       const res = isRes(op);
-      const isAligned = (row===0xC&&VALU_GLOBAL.has(col))||(row===0xE&&ATOM_GLOBAL.has(col));
+      const isAligned = false; // alignment markers removed in new ISA
       const isSel = sel===op;
       let bg='', fc='';
       if (!res && showHeat) { bg=HEAT_BG[LAT[op]]; fc=HEAT_FG[LAT[op]]; }
@@ -1971,7 +2007,7 @@ function buildGrid() {
   grid.innerHTML = ghtml;
 
   const nImpl = Object.keys(OPS).filter(k=>!isRes(+k)).length;
-  document.getElementById('legend-counts').textContent = `${nImpl} implemented · ${256-nImpl} reserved`;
+  document.getElementById('legend-counts').textContent = `${nImpl} / 256 opcodes · 4-byte fixed width · tiny pointer addressing`;
 
   // Heat legend
   const hl = document.getElementById('heat-legend');
