@@ -750,8 +750,9 @@ class Parser {
           const key = keyTok.value;
           // eat the '=' separator
           if (this.check(T.OP) && this.peek().value === '=') this.advance();
-          // now parse the value expression
-          filters[key] = this.parseExpr();
+          // parse the value — only a primary expression (string/number/identifier)
+          // to avoid consuming the closing ')' or 'by' keyword
+          filters[key] = this.parsePrimary();
           this.eat(T.COMMA);
         }
         this.expect(T.RPAREN, undefined, "Expected ')' after email filters");
