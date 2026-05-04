@@ -691,16 +691,19 @@ table.op-table tr.reserved td { opacity: 0.3; }
       <div class="two-col" style="margin-top:16px">
         <div class="info-box">
           <h4>Key properties</h4>
-          <div class="kv-row"><span class="kv-key">Instruction width</span><span class="kv-val">8 bytes, always</span></div>
+          <div class="kv-row"><span class="kv-key">Instruction width</span><span class="kv-val">4 bytes (1 byte for 0x00–0x13)</span></div>
           <div class="kv-row"><span class="kv-key">GP registers</span><span class="kv-val">r0–r254 + ZR (r255)</span></div>
           <div class="kv-note">Register operands are 1 byte each. On hardware with fewer physical registers the upper bits would be padding — SEER uses them for register space instead.</div>
-          <div class="kv-row"><span class="kv-key">Max immediate</span><span class="kv-val">48 bits (LI row)</span></div>
+          <div class="kv-row"><span class="kv-key">Max immediate</span><span class="kv-val">16 bits inline; larger via literal pool</span></div>
           <div class="kv-row"><span class="kv-key">Alignment</span><span class="kv-val">Natural (all memory ops)</span></div>
           <div class="kv-row"><span class="kv-key">Exceptions</span><span class="kv-val">Trap 0x06 (align), 0x07 (arith)</span></div>
         </div>
         <div class="info-box">
           <h4>Binary portability guarantee</h4>
-          <div style="font-size:12px;color:var(--text2);line-height:1.75">The same compiled binary runs on a monolithic single-core (all tiers merged) or a four-unit heterogeneous chip (each tier on dedicated silicon). The compiler targets tiers, not physical units. The routing table — four entries, one shift, one AND — is the complete scheduler.</div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.75">
+              <div style="margin-bottom:8px"><strong style="color:var(--cyan)">3-gate decoder:</strong> opcodes 0x00–0x13 are 1 byte; all others are 4 bytes. The check is a single 5-input NOR on bits 7,6,5,3,2 of the opcode.</div>
+              <div style="margin-bottom:8px"><strong style="color:var(--cyan)">CN-relative branches:</strong> branches count connector nodes (nop=0x10), not bytes. CFI enforcement is a bounds check on the CN table, not a byte-level type check.</div>
+              <div>The same compiled binary runs on a monolithic single-core (all tiers merged) or a four-unit heterogeneous chip (each tier on dedicated silicon). The compiler targets tiers, not physical units. The routing table — four entries, one shift, one AND — is the complete scheduler.</div></div>
         </div>
       </div>
     </div>
@@ -750,7 +753,7 @@ table.op-table tr.reserved td { opacity: 0.3; }
         <div style="background:var(--bg3);border-radius:4px;padding:6px 8px;"><span style="color:var(--text3);font-size:9px">A </span><span style="color:#34d399">slt</span></div>
         <div style="background:var(--bg3);border-radius:4px;padding:6px 8px;color:var(--cyan)"><span style="color:var(--text3);font-size:9px">B </span>add</div>
         <div style="background:var(--bg3);border-radius:4px;padding:6px 8px;color:var(--cyan)"><span style="color:var(--text3);font-size:9px">C </span>sub</div>
-        <div style="background:var(--bg3);border-radius:4px;padding:6px 8px;"><span style="color:var(--text3);font-size:9px">D </span><span style="color:#94a3b8">neg</span></div>
+        <div style="background:var(--bg3);border-radius:4px;padding:6px 8px;"><span style="color:var(--text3);font-size:9px">D </span><span style="color:#94a3b8">mod</span></div>
         <div style="background:var(--bg3);border-radius:4px;padding:6px 8px;"><span style="color:var(--text3);font-size:9px">E </span><span style="color:#fbbf24">mul</span></div>
         <div style="background:var(--bg3);border-radius:4px;padding:6px 8px;"><span style="color:var(--text3);font-size:9px">F </span><span style="color:#f87171">div</span></div>
       </div>
@@ -758,8 +761,8 @@ table.op-table tr.reserved td { opacity: 0.3; }
 
     <div class="about-section">
       <h2>Trap Vectors</h2>
-      <div class="callout"><strong>0x06</strong> — Alignment fault: natural alignment required for all MEMS ops; misalignment raises alignment trap.</div>
-      <div class="callout"><strong>0x07</strong> — Arithmetic trap: wrctrl on read-only ctrl reg IDs (0x10+); divmod with rs2==rd.</div>
+      <div class="callout"><strong>0x06</strong> — Alignment fault: natural alignment required for all memory ops; misalignment raises alignment trap.</div>
+      <div class="callout"><strong>0x07</strong> — Arithmetic trap: wrctrl on read-only ctrl reg IDs (0x10+); div or mod with rs2==0.</div>
       <div class="callout"><strong>0x80</strong> — Syscall (ecall): syscall number in r0, args in r1–r15.</div>
       <div class="callout"><strong>0x81</strong> — Debug trap (ebreak): user-accessible; for debugger integration.</div>
       <div class="callout"><strong>vxchg precise exception:</strong> operation abandoned with no state modified on trap — all-or-nothing group save/restore.</div>
@@ -774,67 +777,84 @@ table.op-table tr.reserved td { opacity: 0.3; }
   <div class="page-header">
     <div class="page-eyebrow">IVX · Graph Encoding</div>
     <div class="page-title">Flow Graph <span>in the Binary</span></div>
-    <div class="page-desc">Every 0x1_ instruction carries an 8-bit IVX NodeID byte in byte 7. The complete control flow graph topology is encoded inline — at zero cost — in the exact instructions where it is semantically meaningful.</div>
+    <div class="page-desc">SEER encodes control flow graph structure directly in the opcode byte — no separate metadata, no byte 7 overhead, no NodeID suffix. The ISA encoding IS the graph encoding.</div>
   </div>
   <div class="about-body">
 
     <div class="about-section">
-      <h2>Control Flow Structure</h2>
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px">
-        <div style="display:flex;gap:2px;font-family:var(--mono);font-size:12px;margin-bottom:16px">
-          <div style="flex:1;background:#2a0a1a;border-radius:4px;padding:10px;text-align:center">
-            <div style="color:#fb7185;font-weight:700;margin-bottom:2px">ELSE</div>
-            <div style="color:var(--text3);font-size:9px">bit 7</div>
-          </div>
-          <div style="flex:2;background:#0e1520;border-radius:4px;padding:10px;text-align:center">
-            <div style="color:#60a5fa;font-weight:700;margin-bottom:2px">INDENT</div>
-            <div style="color:var(--text3);font-size:9px">bits 6:5</div>
-          </div>
-          <div style="flex:3;background:#1a0e2a;border-radius:4px;padding:10px;text-align:center">
-            <div style="color:#c084fc;font-weight:700;margin-bottom:2px">NODE TYPE</div>
-            <div style="color:var(--text3);font-size:9px">bits 4:2</div>
-          </div>
-          <div style="flex:2;background:#0e1a0e;border-radius:4px;padding:10px;text-align:center">
-            <div style="color:#4ade80;font-weight:700;margin-bottom:2px">ROUTING</div>
-            <div style="color:var(--text3);font-size:9px">bits 1:0</div>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:11px;color:var(--text2);line-height:1.8">
+      <h2>How Structure Lives in the Opcode</h2>
+      <p>Every ISA since the 1950s separates program <em>structure</em> from program <em>behavior</em>. Compilers know the CFG when emitting code — then discard it. Debuggers, profilers, JITs, and security tools each reconstruct it independently, redundantly, imperfectly, at runtime cost.</p>
+      <p style="margin-top:12px">SEER solves this differently. The IVX graph structure is recoverable from the opcode sequence itself through bitmask operations — no separate annotation required:</p>
+
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:20px;margin:16px 0">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:12px;font-family:var(--mono)">
           <div>
-            <div style="color:var(--text3);font-family:var(--mono);font-size:9px;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Node Type [4:2]</div>
-            <span style="color:var(--text3)">000</span> process &nbsp;·&nbsp;
-            <span style="color:var(--text3)">001</span> start &nbsp;·&nbsp;
-            <span style="color:var(--text3)">010</span> decision<br>
-            <span style="color:var(--text3)">011</span> con &nbsp;·&nbsp;
-            <span style="color:var(--text3)">100</span> give &nbsp;·&nbsp;
-            <span style="color:var(--text3)">101</span> take &nbsp;·&nbsp;
-            <span style="color:var(--text3)">110</span> fun &nbsp;·&nbsp;
-            <span style="color:var(--text3)">111</span> end
+            <div style="color:var(--text3);font-size:9px;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">Node Type → Opcode</div>
+            <div style="margin-bottom:8px"><span style="color:var(--cyan)">connector node</span> <span style="color:var(--text3)">→</span> <span style="color:var(--green)">nop (0x10)</span> — the only valid jump target</div>
+            <div style="margin-bottom:8px"><span style="color:var(--cyan)">decision node</span> <span style="color:var(--text3)">→</span> <span style="color:var(--amber)">0x1B–0x1F</span> — conditional branches</div>
+            <div style="margin-bottom:8px"><span style="color:var(--cyan)">function node</span> <span style="color:var(--text3)">→</span> <span style="color:var(--purple)">jmpr (0x19)</span> — indirect call/jump</div>
+            <div style="margin-bottom:8px"><span style="color:var(--cyan)">syscall node</span> <span style="color:var(--text3)">→</span> <span style="color:var(--coral)">ecall (0x12)</span></div>
+            <div><span style="color:var(--cyan)">process node</span> <span style="color:var(--text3)">→</span> <span style="color:var(--text2)">everything else</span></div>
           </div>
           <div>
-            <div style="color:var(--text3);font-family:var(--mono);font-size:9px;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Routing [1:0]</div>
-            <span style="color:var(--text3)">00</span> default &nbsp;·&nbsp;
-            <span style="color:var(--text3)">01</span> next &nbsp;·&nbsp;
-            <span style="color:var(--text3)">10</span> prev &nbsp;·&nbsp;
-            <span style="color:var(--text3)">11</span> next-next<br>
-            <span style="color:var(--text3)">Else=1:</span> branch off nearest decision &nbsp;·&nbsp;
-            <span style="color:var(--text3)">Indent:</span> scope depth 0–3
+            <div style="color:var(--text3);font-size:9px;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">Bitmask Detection</div>
+            <div style="margin-bottom:8px"><code style="color:var(--green)">opcode == 0x10</code> <span style="color:var(--text3)">→ connector (valid jump target)</span></div>
+            <div style="margin-bottom:8px"><code style="color:var(--amber)">(opcode & 0xF8) == 0x18</code> <span style="color:var(--text3)">→ control flow</span></div>
+            <div style="margin-bottom:8px"><code style="color:var(--amber)">(opcode & 0xFC) == 0x1C</code> <span style="color:var(--text3)">→ conditional branch</span></div>
+            <div style="margin-bottom:8px"><code style="color:var(--purple)">opcode == 0x19</code> <span style="color:var(--text3)">→ indirect jump/call</span></div>
+            <div><code style="color:var(--coral)">opcode == 0x12</code> <span style="color:var(--text3)">→ syscall</span></div>
           </div>
         </div>
       </div>
-      <div class="callout" style="border-left-color:var(--purple)">
-        <strong style="color:var(--purple)">Default is free:</strong> 0x00 = process node, indent 0, default routing, no else.
-        Every 0x1_ instruction with byte 7 left as 0x00 is a plain body instruction — invisible to the graph, zero cost.
-        The field is always present and always read; it just has no structural effect when zero.
+
+      <div class="callout" style="border-left-color:var(--green)">
+        <strong style="color:var(--green)">CFI is a single comparison:</strong> valid branch targets must be connector nodes (nop, opcode 0x10). The hardware checks <code style="font-family:var(--mono);font-size:11px">target_opcode == 0x10</code> before decode. No node table lookup, no byte 7 read, no shadow stack. One byte comparison — that is the entire CFI mechanism.
       </div>
     </div>
 
+    <div class="about-section">
+      <h2>The CN Counter</h2>
+      <p>The hardware maintains a Connector Node counter (CN) alongside the PC. It increments every time a nop (0x10) is fetched. Branches encode their target as a signed CN-relative offset — not a byte offset.</p>
+
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:20px;margin:16px 0">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;font-size:12px">
+          <div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">Old model (byte offset)</div>
+            <div style="font-family:var(--mono);font-size:11px;color:var(--text2);line-height:2">
+              <div><span style="color:var(--text3)">jlt r1, r2, -0x34</span></div>
+              <div style="color:var(--text3);font-size:10px">→ "jump back 52 bytes"</div>
+              <div style="color:var(--text3);font-size:10px">→ CFI must verify target is a node entry</div>
+              <div style="color:var(--text3);font-size:10px">→ extra hardware check required</div>
+            </div>
+          </div>
+          <div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">New model (CN offset)</div>
+            <div style="font-family:var(--mono);font-size:11px;color:var(--text2);line-height:2">
+              <div><span style="color:var(--cyan)">jlt r1, r2, -2</span></div>
+              <div style="color:var(--text3);font-size:10px">→ "jump back 2 connector nodes"</div>
+              <div style="color:var(--text3);font-size:10px">→ target is a connector node by definition</div>
+              <div style="color:var(--text3);font-size:10px">→ CFI is a bounds check, not a type check</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div class="info-box">
+          <h4>CN counter hardware</h4>
+          The fetch unit increments CN when it sees opcode 0x10. This is one extra gate on the existing fetch path — the fetch unit already reads byte 0 for opcode dispatch. CN is saved/restored as part of trap state alongside PC.
+        </div>
+        <div class="info-box">
+          <h4>CN table at load time</h4>
+          The linker/loader populates a static CN table mapping CN index → PC. One scan of the binary, indexed by nop position. The table is read-only at runtime. Hardware resolves branch targets in one table lookup.
+        </div>
+      </div>
+    </div>
 
     <div class="about-section">
       <h2>IVX Flow Graph Examples</h2>
       <p style="font-size:12px;color:var(--text2);margin-bottom:20px;line-height:1.7">
-        Each IVX program compiles to a directed flow graph. The NodeID byte in each branch instruction
-        encodes the structural type of the node being exited — decision, connector, loop back-edge — inline in the binary.
+        Each IVX program compiles to a directed flow graph. Connector nodes (nop) mark merge points. Decision nodes start with conditional branches. The graph is recoverable from a linear scan of opcodes.
       </p>
 
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px">
@@ -842,278 +862,188 @@ table.op-table tr.reserved td { opacity: 0.3; }
         <!-- Flowchart 1: Simple conditional -->
         <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px">
           <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">if / else</div>
-          <div style="font-size:11px;color:var(--text2);margin-bottom:14px">Simple conditional branch with auto-merge</div>
+          <div style="font-size:11px;color:var(--text2);margin-bottom:14px">Conditional with nop merge point</div>
           <svg viewBox="0 0 180 320" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto">
-            <!-- Start -->
             <rect x="55" y="8" width="70" height="28" rx="14" fill="#0e1520" stroke="#60a5fa" stroke-width="1.5"/>
             <text x="90" y="27" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#60a5fa">take number</text>
-            <!-- Arrow down -->
             <line x1="90" y1="36" x2="90" y2="56" stroke="#384a60" stroke-width="1.5"/>
             <polygon points="90,62 86,54 94,54" fill="#384a60"/>
-            <!-- Decision diamond -->
             <polygon points="90,68 145,98 90,128 35,98" fill="#1a0e2a" stroke="#c084fc" stroke-width="1.5"/>
             <text x="90" y="94" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#c084fc">number</text>
             <text x="90" y="106" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#c084fc">&gt; 0</text>
-            <!-- NodeID badge on decision -->
-            <rect x="118" y="70" width="34" height="13" rx="3" fill="#1a0e2a" stroke="#c084fc44" stroke-width="1"/>
-            <text x="135" y="80" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#c084fc88">010·00</text>
-            <!-- True branch arrow -->
+            <rect x="108" y="70" width="44" height="13" rx="3" fill="#1a0e2a" stroke="#c084fc44" stroke-width="1"/>
+            <text x="130" y="80" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#c084fc88">jlt 0x1C</text>
             <line x1="50" y1="98" x2="30" y2="98" stroke="#384a60" stroke-width="1.5"/>
             <line x1="30" y1="98" x2="30" y2="162" stroke="#384a60" stroke-width="1.5"/>
             <polygon points="30,168 26,160 34,160" fill="#384a60"/>
             <text x="38" y="115" font-family="JetBrains Mono,monospace" font-size="8" fill="#4ade80">true</text>
-            <!-- False branch arrow -->
             <line x1="130" y1="98" x2="150" y2="98" stroke="#384a60" stroke-width="1.5"/>
             <line x1="150" y1="98" x2="150" y2="162" stroke="#384a60" stroke-width="1.5"/>
             <polygon points="150,168 146,160 154,160" fill="#384a60"/>
             <text x="132" y="115" font-family="JetBrains Mono,monospace" font-size="8" fill="#fb7185">false</text>
-            <!-- True node -->
             <rect x="5" y="168" width="72" height="26" rx="4" fill="#0e1a10" stroke="#4ade80" stroke-width="1.5"/>
             <text x="41" y="185" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#4ade80">give positive</text>
-            <!-- False node -->
             <rect x="108" y="168" width="72" height="26" rx="4" fill="#1a0e0e" stroke="#fb7185" stroke-width="1.5"/>
             <text x="144" y="181" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#fb7185">give non-</text>
             <text x="144" y="191" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#fb7185">positive</text>
-            <!-- Arrows to connector -->
             <line x1="41" y1="194" x2="41" y2="242" stroke="#384a60" stroke-width="1.5"/>
             <line x1="41" y1="242" x2="82" y2="242" stroke="#384a60" stroke-width="1.5"/>
             <line x1="144" y1="194" x2="144" y2="242" stroke="#384a60" stroke-width="1.5"/>
             <line x1="144" y1="242" x2="98" y2="242" stroke="#384a60" stroke-width="1.5"/>
             <polygon points="90,242 96,238 96,246" fill="#384a60"/>
-            <!-- Connector (auto-generated) -->
-            <circle cx="90" cy="248" r="10" fill="#121520" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="3,2"/>
-            <text x="90" y="252" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#60a5fa88">con</text>
-            <!-- NodeID badge on connector -->
-            <rect x="103" y="240" width="34" height="13" rx="3" fill="#0e1520" stroke="#60a5fa44" stroke-width="1"/>
-            <text x="120" y="250" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#60a5fa88">011·00</text>
-            <!-- Arrow down -->
-            <line x1="90" y1="258" x2="90" y2="275" stroke="#384a60" stroke-width="1.5"/>
-            <polygon points="90,282 86,274 94,274" fill="#384a60"/>
-            <!-- Auto-label -->
-            <text x="90" y="300" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#384a60">auto-generated</text>
-            <text x="90" y="311" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#384a60">connector node</text>
+            <!-- Connector = nop -->
+            <circle cx="90" cy="250" r="10" fill="#121520" stroke="#60a5fa" stroke-width="1.5"/>
+            <text x="90" y="254" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#60a5fa">nop</text>
+            <rect x="103" y="242" width="40" height="13" rx="3" fill="#0e1520" stroke="#60a5fa44" stroke-width="1"/>
+            <text x="123" y="252" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#60a5fa88">0x10</text>
+            <line x1="90" y1="260" x2="90" y2="278" stroke="#384a60" stroke-width="1.5"/>
+            <polygon points="90,285 86,277 94,277" fill="#384a60"/>
+            <text x="90" y="302" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#384a60">nop = connector</text>
+            <text x="90" y="313" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#384a60">valid jump target</text>
           </svg>
         </div>
 
         <!-- Flowchart 2: Loop -->
         <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px">
           <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">loop</div>
-          <div style="font-size:11px;color:var(--text2);margin-bottom:14px">Loop with prev back-edge and exit</div>
+          <div style="font-size:11px;color:var(--text2);margin-bottom:14px">Loop with CN-relative back-edge</div>
           <svg viewBox="0 0 180 340" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto">
-            <!-- take -->
             <rect x="50" y="8" width="80" height="26" rx="13" fill="#0e1520" stroke="#60a5fa" stroke-width="1.5"/>
             <text x="90" y="25" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#60a5fa">take items</text>
-            <!-- Arrow to connector -->
             <line x1="90" y1="34" x2="90" y2="52" stroke="#384a60" stroke-width="1.5"/>
             <polygon points="90,58 86,50 94,50" fill="#384a60"/>
-            <!-- Auto connector (top of loop) -->
-            <circle cx="90" cy="65" r="10" fill="#121520" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="3,2"/>
-            <text x="90" y="69" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#60a5fa88">con</text>
-            <!-- Arrow to loop decision -->
+            <!-- nop = loop top connector -->
+            <circle cx="90" cy="65" r="10" fill="#121520" stroke="#60a5fa" stroke-width="1.5"/>
+            <text x="90" y="69" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#60a5fa">nop</text>
+            <rect x="103" y="58" width="40" height="13" rx="3" fill="#0e1520" stroke="#60a5fa44" stroke-width="1"/>
+            <text x="123" y="68" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#60a5fa88">CN=5</text>
             <line x1="90" y1="75" x2="90" y2="93" stroke="#384a60" stroke-width="1.5"/>
             <polygon points="90,99 86,91 94,91" fill="#384a60"/>
-            <!-- Loop decision diamond -->
             <polygon points="90,105 148,138 90,171 32,138" fill="#1a0e2a" stroke="#c084fc" stroke-width="1.5"/>
             <text x="90" y="132" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#c084fc">items not</text>
             <text x="90" y="144" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#c084fc">empty</text>
-            <!-- NodeID on loop decision: 010 (decision), routing 10 (prev) -->
-            <rect x="100" y="106" width="36" height="13" rx="3" fill="#1a0e2a" stroke="#c084fc44" stroke-width="1"/>
-            <text x="118" y="116" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#c084fc88">010·10</text>
-            <!-- True (loop body) arrow -->
+            <rect x="100" y="106" width="46" height="13" rx="3" fill="#1a0e2a" stroke="#c084fc44" stroke-width="1"/>
+            <text x="123" y="116" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#c084fc88">jne cn:-1</text>
             <line x1="90" y1="171" x2="90" y2="193" stroke="#384a60" stroke-width="1.5"/>
             <polygon points="90,199 86,191 94,191" fill="#384a60"/>
-            <!-- handle item -->
             <rect x="42" y="199" width="96" height="24" rx="4" fill="#0e1a10" stroke="#4ade80" stroke-width="1.5"/>
             <text x="90" y="215" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#4ade80">handle item</text>
-            <!-- Arrow to remove -->
             <line x1="90" y1="223" x2="90" y2="241" stroke="#384a60" stroke-width="1.5"/>
             <polygon points="90,247 86,239 94,239" fill="#384a60"/>
-            <!-- remove item (prev) -->
             <rect x="42" y="247" width="96" height="24" rx="4" fill="#0e1a10" stroke="#4ade80" stroke-width="1.5"/>
             <text x="90" y="263" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#4ade80">remove item</text>
-            <!-- prev NodeID badge -->
-            <rect x="100" y="249" width="36" height="13" rx="3" fill="#0e1a10" stroke="#4ade8044" stroke-width="1"/>
-            <text x="118" y="259" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#4ade8088">000·10</text>
-            <!-- Back arrow (prev) -->
             <line x1="42" y1="259" x2="18" y2="259" stroke="#a78bfa" stroke-width="1.5" stroke-dasharray="4,2"/>
             <line x1="18" y1="259" x2="18" y2="65" stroke="#a78bfa" stroke-width="1.5" stroke-dasharray="4,2"/>
             <line x1="18" y1="65" x2="78" y2="65" stroke="#a78bfa" stroke-width="1.5" stroke-dasharray="4,2"/>
-            <text x="8" y="165" font-family="JetBrains Mono,monospace" font-size="8" fill="#a78bfa" transform="rotate(-90,8,165)">prev</text>
-            <!-- False (exit) arrow -->
+            <text x="8" y="165" font-family="JetBrains Mono,monospace" font-size="8" fill="#a78bfa" transform="rotate(-90,8,165)">jmp cn:-1</text>
             <line x1="148" y1="138" x2="165" y2="138" stroke="#384a60" stroke-width="1.5"/>
             <line x1="165" y1="138" x2="165" y2="310" stroke="#384a60" stroke-width="1.5"/>
             <line x1="165" y1="310" x2="108" y2="310" stroke="#384a60" stroke-width="1.5"/>
             <polygon points="102,310 110,306 110,314" fill="#384a60"/>
             <text x="158" y="230" font-family="JetBrains Mono,monospace" font-size="8" fill="#fb7185" transform="rotate(90,158,230)">false → exit</text>
-            <!-- give done -->
             <rect x="32" y="298" width="70" height="24" rx="12" fill="#0e1a10" stroke="#4ade80" stroke-width="1.5"/>
             <text x="67" y="314" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#4ade80">give done</text>
           </svg>
         </div>
 
-        <!-- Flowchart 3: Fork -->
+        <!-- Flowchart 3: CN table -->
         <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px">
-          <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">fork</div>
-          <div style="font-size:11px;color:var(--text2);margin-bottom:14px">Parallel fork with manual merge via next</div>
-          <svg viewBox="0 0 200 340" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto">
-            <!-- Fork node -->
-            <polygon points="100,10 168,46 100,82 32,46" fill="#1a0e2a" stroke="#c084fc" stroke-width="1.5"/>
-            <text x="100" y="40" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#c084fc">fork notify</text>
-            <text x="100" y="52" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#c084fc">departments</text>
-            <!-- Fork NodeID: 010 decision -->
-            <rect x="108" y="12" width="36" height="13" rx="3" fill="#1a0e2a" stroke="#c084fc44" stroke-width="1"/>
-            <text x="126" y="22" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#c084fc88">010·00</text>
-            <!-- Three branch arrows -->
-            <line x1="48" y1="58" x2="28" y2="130" stroke="#384a60" stroke-width="1.5"/>
-            <polygon points="26,136 23,127 31,129" fill="#384a60"/>
-            <line x1="100" y1="82" x2="100" y2="130" stroke="#384a60" stroke-width="1.5"/>
-            <polygon points="100,136 96,128 104,128" fill="#384a60"/>
-            <line x1="152" y1="58" x2="172" y2="130" stroke="#384a60" stroke-width="1.5"/>
-            <polygon points="174,136 170,128 178,130" fill="#384a60"/>
-            <!-- Finance (next) -->
-            <rect x="2" y="136" width="68" height="24" rx="4" fill="#0e1a10" stroke="#4ade80" stroke-width="1.5"/>
-            <text x="36" y="152" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#4ade80">notify finance</text>
-            <rect x="4" y="138" width="34" height="13" rx="3" fill="#0e1a10" stroke="#4ade8044" stroke-width="1"/>
-            <text x="21" y="148" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#4ade8088">000·01</text>
-            <!-- Legal (next) -->
-            <rect x="66" y="136" width="68" height="24" rx="4" fill="#0e1a10" stroke="#4ade80" stroke-width="1.5"/>
-            <text x="100" y="152" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#4ade80">notify legal</text>
-            <rect x="68" y="138" width="34" height="13" rx="3" fill="#0e1a10" stroke="#4ade8044" stroke-width="1"/>
-            <text x="85" y="148" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#4ade8088">000·01</text>
-            <!-- HR (end) -->
-            <rect x="140" y="136" width="56" height="24" rx="4" fill="#1a0a0a" stroke="#fb7185" stroke-width="1.5"/>
-            <text x="168" y="152" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#fb7185">notify HR</text>
-            <!-- next arrows to con -->
-            <line x1="36" y1="160" x2="36" y2="208" stroke="#a78bfa" stroke-width="1.5" stroke-dasharray="4,2"/>
-            <line x1="36" y1="208" x2="90" y2="208" stroke="#a78bfa" stroke-width="1.5" stroke-dasharray="4,2"/>
-            <line x1="100" y1="160" x2="100" y2="200" stroke="#a78bfa" stroke-width="1.5" stroke-dasharray="4,2"/>
-            <polygon points="100,210 96,202 104,202" fill="#a78bfa"/>
-            <text x="54" y="205" font-family="JetBrains Mono,monospace" font-size="8" fill="#a78bfa">next</text>
-            <!-- HR end arrow -->
-            <line x1="168" y1="160" x2="168" y2="183" stroke="#384a60" stroke-width="1.5"/>
-            <polygon points="168,189 164,181 172,181" fill="#384a60"/>
-            <!-- end node -->
-            <rect x="144" y="189" width="48" height="22" rx="11" fill="#1a0808" stroke="#fb7185" stroke-width="1.5"/>
-            <text x="168" y="204" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#fb7185">end</text>
-            <!-- NodeID on end: 111 -->
-            <rect x="146" y="191" width="30" height="12" rx="3" fill="#1a0808" stroke="#fb718544" stroke-width="1"/>
-            <text x="161" y="200" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#fb718888">111·00</text>
-            <!-- Manual con node -->
-            <circle cx="100" cy="218" r="12" fill="#121520" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="3,2"/>
-            <text x="100" y="222" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#60a5fa88">con</text>
-            <!-- NodeID on manual con -->
-            <rect x="115" y="210" width="36" height="13" rx="3" fill="#0e1520" stroke="#60a5fa44" stroke-width="1"/>
-            <text x="133" y="220" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#60a5fa88">011·00</text>
-            <!-- Arrow down -->
-            <line x1="100" y1="230" x2="100" y2="250" stroke="#384a60" stroke-width="1.5"/>
-            <polygon points="100,256 96,248 104,248" fill="#384a60"/>
-            <!-- move forward -->
-            <rect x="46" y="256" width="108" height="24" rx="4" fill="#0e1a10" stroke="#4ade80" stroke-width="1.5"/>
-            <text x="100" y="272" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#4ade80">move forward</text>
-            <!-- legend -->
-            <line x1="10" y1="298" x2="28" y2="298" stroke="#a78bfa" stroke-width="1.5" stroke-dasharray="4,2"/>
-            <text x="32" y="302" font-family="JetBrains Mono,monospace" font-size="8" fill="#a78bfa">next routing</text>
-            <text x="10" y="318" font-family="JetBrains Mono,monospace" font-size="7" fill="#384a60">NodeID badge = [type·routing]</text>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">CN table</div>
+          <div style="font-size:11px;color:var(--text2);margin-bottom:14px">How the loader builds the CN lookup</div>
+          <svg viewBox="0 0 180 300" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto">
+            <!-- Binary stream -->
+            <text x="10" y="20" font-family="JetBrains Mono,monospace" font-size="9" fill="#384a60">binary stream:</text>
+            <rect x="10" y="28" width="28" height="20" rx="2" fill="#102030" stroke="#38bdf8" stroke-width="1"/>
+            <text x="24" y="42" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#38bdf8">add</text>
+            <rect x="40" y="28" width="28" height="20" rx="2" fill="#102030" stroke="#38bdf8" stroke-width="1"/>
+            <text x="54" y="42" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#38bdf8">jlt</text>
+            <rect x="70" y="28" width="28" height="20" rx="2" fill="#121520" stroke="#60a5fa" stroke-width="2"/>
+            <text x="84" y="42" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#60a5fa">nop</text>
+            <rect x="100" y="28" width="28" height="20" rx="2" fill="#102030" stroke="#38bdf8" stroke-width="1"/>
+            <text x="114" y="42" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#38bdf8">lds</text>
+            <rect x="130" y="28" width="28" height="20" rx="2" fill="#121520" stroke="#60a5fa" stroke-width="2"/>
+            <text x="144" y="42" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#60a5fa">nop</text>
+            <!-- arrows pointing to nops -->
+            <line x1="84" y1="48" x2="84" y2="65" stroke="#60a5fa" stroke-width="1.5"/>
+            <polygon points="84,72 80,64 88,64" fill="#60a5fa"/>
+            <line x1="144" y1="48" x2="144" y2="65" stroke="#60a5fa" stroke-width="1.5"/>
+            <polygon points="144,72 140,64 148,64" fill="#60a5fa"/>
+            <text x="84" y="85" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#60a5fa">CN=0</text>
+            <text x="144" y="85" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#60a5fa">CN=1</text>
+            <!-- CN table -->
+            <text x="10" y="105" font-family="JetBrains Mono,monospace" font-size="9" fill="#384a60">CN table (load time):</text>
+            <rect x="10" y="112" width="158" height="80" rx="4" fill="#0d0f18" stroke="#384a60" stroke-width="1"/>
+            <text x="20" y="130" font-family="JetBrains Mono,monospace" font-size="9" fill="#60a5fa">CN[0]</text>
+            <text x="70" y="130" font-family="JetBrains Mono,monospace" font-size="9" fill="#384a60">→</text>
+            <text x="90" y="130" font-family="JetBrains Mono,monospace" font-size="9" fill="#4ade80">PC=0x0008</text>
+            <text x="20" y="148" font-family="JetBrains Mono,monospace" font-size="9" fill="#60a5fa">CN[1]</text>
+            <text x="70" y="148" font-family="JetBrains Mono,monospace" font-size="9" fill="#384a60">→</text>
+            <text x="90" y="148" font-family="JetBrains Mono,monospace" font-size="9" fill="#4ade80">PC=0x0014</text>
+            <text x="20" y="166" font-family="JetBrains Mono,monospace" font-size="9" fill="#60a5fa">CN[2]</text>
+            <text x="70" y="166" font-family="JetBrains Mono,monospace" font-size="9" fill="#384a60">→</text>
+            <text x="90" y="166" font-family="JetBrains Mono,monospace" font-size="9" fill="#4ade80">PC=0x0028</text>
+            <text x="20" y="184" font-family="JetBrains Mono,monospace" font-size="9" fill="#384a60">...</text>
+            <!-- branch resolution -->
+            <text x="10" y="212" font-family="JetBrains Mono,monospace" font-size="9" fill="#384a60">branch resolution:</text>
+            <rect x="10" y="218" width="158" height="60" rx="4" fill="#0d0f18" stroke="#384a60" stroke-width="1"/>
+            <text x="20" y="234" font-family="JetBrains Mono,monospace" font-size="9" fill="#a78bfa">jlt r1, r2, -1</text>
+            <text x="20" y="250" font-family="JetBrains Mono,monospace" font-size="9" fill="#384a60">target = CN[current - 1]</text>
+            <text x="20" y="266" font-family="JetBrains Mono,monospace" font-size="9" fill="#4ade80">→ valid by construction</text>
+            <!-- CFI note -->
+            <text x="10" y="292" font-family="JetBrains Mono,monospace" font-size="8" fill="#384a60">CFI check = bounds check on CN index</text>
           </svg>
         </div>
-
       </div>
 
       <div class="callout" style="border-left-color:var(--purple)">
-        <strong style="color:var(--purple)">Reading the NodeID badges:</strong>
-        Each badge shows <code style="font-family:var(--mono);font-size:11px">[type·routing]</code> in binary.
-        <code style="font-family:var(--mono);font-size:11px">010·10</code> = decision node, prev routing (loop back-edge).
-        <code style="font-family:var(--mono);font-size:11px">000·01</code> = process node, next routing (routes to nearest later connector).
-        <code style="font-family:var(--mono);font-size:11px">011·00</code> = connector node, default routing.
-        A tool scanning only byte 7 of branch instructions reconstructs this entire graph in one pass.
-      </div>
-    </div>
-    <div class="about-section">
-      <h2>Branch Offset Shrinkage</h2>
-      <div class="callout" style="border-left-color:var(--green)">
-        <strong style="color:var(--green)">The byte is free.</strong>
-        <code style="font-family:var(--mono);font-size:11px">jmp</code> offset shrinks 56-bit → 48-bit (±140 TB).
-        Conditional branches shrink 40-bit → 32-bit (±2 GB).
-        No real program spans 2 GB. The recovered byte funds the entire graph encoding at zero ISA cost — and the tighter bitfields are a strict improvement independently.
-      </div>
-      <div class="two-col">
-        <div class="info-box">
-          <h4>jmp before / after</h4>
-          <div class="kv-row"><span class="kv-key">Offset before</span><span class="kv-val">56-bit · ±2⁵⁵</span></div>
-          <div class="kv-row"><span class="kv-key">Offset after</span><span class="kv-val">48-bit · ±140 TB</span></div>
-          <div class="kv-row"><span class="kv-key">Byte 7</span><span class="kv-val" style="color:var(--green)">NodeID ✓</span></div>
-        </div>
-        <div class="info-box">
-          <h4>jne / jlt / jltu / jge / jgeu</h4>
-          <div class="kv-row"><span class="kv-key">Offset before</span><span class="kv-val">40-bit · ±512 GB</span></div>
-          <div class="kv-row"><span class="kv-key">Offset after</span><span class="kv-val">32-bit · ±2 GB</span></div>
-          <div class="kv-row"><span class="kv-key">Byte 7</span><span class="kv-val" style="color:var(--green)">NodeID ✓</span></div>
-        </div>
+        <strong style="color:var(--purple)">Reading the graph:</strong>
+        Every nop (0x10) is a connector node — a valid branch target. Every conditional branch (0x1B–0x1F) is a decision node exit. Every jmpr (0x19) is a function call or indirect jump. A tool scanning opcodes reconstructs the entire CFG in one linear pass with three bitmask checks.
       </div>
     </div>
 
     <div class="about-section">
-      <h2>Which Instructions Carry NodeID</h2>
-      <table style="width:100%;border-collapse:collapse;font-size:12px;font-family:var(--mono);margin-bottom:12px">
-        <thead><tr style="background:var(--bg2)">
-          <th style="padding:8px 12px;text-align:left;color:var(--text3);font-size:9px;text-transform:uppercase;letter-spacing:1.5px;border-bottom:1px solid var(--border)">Opcode</th>
-          <th style="padding:8px 12px;text-align:left;color:var(--text3);font-size:9px;text-transform:uppercase;letter-spacing:1.5px;border-bottom:1px solid var(--border)">Mnemonic</th>
-          <th style="padding:8px 12px;text-align:left;color:var(--text3);font-size:9px;text-transform:uppercase;letter-spacing:1.5px;border-bottom:1px solid var(--border)">IVX role</th>
-          <th style="padding:8px 12px;text-align:left;color:var(--text3);font-size:9px;text-transform:uppercase;letter-spacing:1.5px;border-bottom:1px solid var(--border)">Byte 7</th>
-        </tr></thead>
-        <tbody>
-          <tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 12px;color:var(--text3)">0x10</td><td style="padding:7px 12px;color:var(--cyan)">nop</td><td style="padding:7px 12px;color:var(--text2)">Explicit node boundary marker</td><td style="padding:7px 12px;color:var(--green)">always zero-padded → free</td></tr>
-          <tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 12px;color:var(--text3)">0x11</td><td style="padding:7px 12px;color:var(--cyan)">jmpr</td><td style="padding:7px 12px;color:var(--text2)">Indirect branch / call exit</td><td style="padding:7px 12px;color:var(--green)">always zero-padded → free</td></tr>
-          <tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 12px;color:var(--text3)">0x12</td><td style="padding:7px 12px;color:var(--cyan)">jmp</td><td style="padding:7px 12px;color:var(--text2)">Unconditional branch exit</td><td style="padding:7px 12px;color:var(--amber)">freed by 48-bit offset shrink</td></tr>
-          <tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 12px;color:var(--text3)">0x13–17</td><td style="padding:7px 12px;color:var(--cyan)">jne / jlt / jltu / jge / jgeu</td><td style="padding:7px 12px;color:var(--text2)">Conditional branch exits</td><td style="padding:7px 12px;color:var(--amber)">freed by 32-bit offset shrink</td></tr>
-          <tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 12px;color:var(--text3)">0x1B</td><td style="padding:7px 12px;color:var(--cyan)">ebreak</td><td style="padding:7px 12px;color:var(--text2)">Debug trap exit</td><td style="padding:7px 12px;color:var(--green)">always zero-padded → free</td></tr>
-          <tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 12px;color:var(--text3)">0x1C</td><td style="padding:7px 12px;color:var(--cyan)">ecall</td><td style="padding:7px 12px;color:var(--text2)">Syscall exit</td><td style="padding:7px 12px;color:var(--green)">always zero-padded → free</td></tr>
-          <tr><td style="padding:7px 12px;color:var(--text3)">0x1F</td><td style="padding:7px 12px;color:var(--cyan)">wfe</td><td style="padding:7px 12px;color:var(--text2)">Wait-for-event suspension</td><td style="padding:7px 12px;color:var(--green)">always zero-padded → free</td></tr>
-        </tbody>
-      </table>
-      <div style="font-size:11px;color:var(--text3);font-family:var(--mono)">
-        fence · ics — byte 7 always read as NodeID, must be 0x00 (body instructions, no structural role)
+      <h2>Why No Byte 7?</h2>
+      <div class="two-col">
+        <div class="info-box">
+          <h4>The old approach</h4>
+          In earlier SEER designs, byte 7 of every instruction carried an 8-bit NodeID encoding the IVX node type, indent level, routing bits, and ELSE flag. This was structurally correct but redundant — the same information was already implicit in the opcode sequence.
+        </div>
+        <div class="info-box">
+          <h4>Why it was removed</h4>
+          Moving to 4-byte instructions eliminated byte 7 entirely. The design question became: what information was byte 7 actually carrying that the opcodes didn't already provide? The answer: nothing that a single bitmask on the opcode couldn't recover. The NodeID was annotation of information already in the encoding.
+        </div>
+      </div>
+      <div class="callout" style="border-left-color:var(--amber);margin-top:16px">
+        <strong>The key insight:</strong> Connector nodes are always nop (0x10) — the only valid jump targets in the ISA. Decision nodes always start with a conditional branch opcode. Function nodes always use jmpr. The graph structure was always implicit in the opcode choice. Byte 7 was making the implicit explicit at the cost of 3 bytes per instruction. In a 4-byte ISA, those 3 bytes are the entire instruction.
       </div>
     </div>
 
     <div class="about-section">
       <h2>Why It Matters</h2>
-      <div class="callout" style="border-left-color:var(--amber)">
-        <strong>The fundamental problem:</strong> Every ISA since the 1950s separates program <em>structure</em> from program <em>behavior</em>.
-        Compilers know the CFG when emitting code — then discard it. Debuggers, profilers, JITs, and security tools each reconstruct it
-        independently, redundantly, imperfectly, at runtime cost. SEER encodes structure permanently in the binary at the exact
-        points where it is semantically meaningful: the control-flow instructions of row 0x1_.
-      </div>
       <div class="two-col">
         <div class="info-box">
           <h4>Security — Hardware CFI</h4>
-          Valid branch targets are node entries. Any branch to a non-entry address is an illegal fetch caught before decode.
-          Hardware-enforced CFI with zero runtime overhead — no shadow stack, no checks, no 5–10% tax.
+          Valid branch targets are connector nodes (nop = 0x10). Any branch to an instruction where byte 0 ≠ 0x10 is an illegal fetch caught before decode. Hardware CFI with zero runtime overhead — no shadow stack, no instrumentation, no 5–10% tax.
         </div>
         <div class="info-box">
           <h4>Profiling</h4>
-          Every sampled PC maps immediately to node type and structural position. Loop bodies, decisions, and merge nodes
-          identified from one bit-read. No stack unwinding, no instrumentation, no DWARF.
+          Every sampled PC maps immediately to node type from the opcode byte. Loop bodies, decisions, and merge nodes identified from a single bitmask. No stack unwinding, no instrumentation, no DWARF.
         </div>
         <div class="info-box">
           <h4>Branch Prediction</h4>
-          The predictor sees loop back-edge, always-taken fork, or conditional decision from a static bit before any
-          execution history. First-iteration prediction is structurally informed, not guesswork.
+          The predictor sees the branch opcode before any execution history. Conditional branches (0x1B–0x1F) signal that divergence is possible. jmp (0x1A) signals unconditional. First-iteration prediction is structurally informed.
         </div>
         <div class="info-box">
           <h4>JIT Compilation</h4>
-          Complete CFG readable in one linear scan of cold binary. No tracing phase, no instrumentation.
-          Loop bodies, rare branches, and merge points immediately visible from the node type field.
+          Complete CFG readable in one linear scan — find the nops, note the conditional branches between them. No tracing phase. Loop bodies, rare branches, and merge points immediately visible.
         </div>
         <div class="info-box">
           <h4>Debugging</h4>
-          Breakpoints are node table flag flips — no code mutation, no cache invalidation, no race conditions.
-          Conditional breakpoints are counters in the table entry.
+          Breakpoints replace a nop (connector) with a trap — or more precisely, replace the instruction at a connector boundary. The connector node structure makes injection points unambiguous.
         </div>
         <div class="info-box">
           <h4>Substrate Independence</h4>
-          Same binary: native SEER executable and IVX program simultaneously. A CPU executes the opcodes.
-          A graph engine reads only the NodeID bytes. Both descriptions complete, no duplication.
+          Same binary: native SEER executable and IVX program simultaneously. A CPU executes the opcodes. A graph engine scans for 0x10 and conditional branch opcodes. Both descriptions complete, zero overhead.
         </div>
       </div>
     </div>
@@ -1122,80 +1052,147 @@ table.op-table tr.reserved td { opacity: 0.3; }
 </div>
 
 
+
 <!-- ════════════════════════════════ FORMATS ════════════════════════════════ -->
 <div id="page-formats" class="page">
   <div class="page-header">
     <div class="page-eyebrow">Instruction Formats · Encoding</div>
     <div class="page-title">Instruction <span>Formats</span></div>
-    <div class="page-desc">Every SEER instruction is exactly 8 bytes. The opcode (byte 0) determines which format applies. Fields are always byte-aligned — no split fields anywhere in the base ISA.</div>
+    <div class="page-desc">Every SEER instruction is exactly 4 bytes, except opcodes 0x00–0x13 which are 1 byte. The opcode (byte 0) determines which format applies. All fields are byte-aligned — no split fields anywhere in the ISA.</div>
   </div>
   <div class="page-body">
 
-    <h2>Standard 3-Register (P6 / P7)</h2>
+    <h2>The Width Rule</h2>
+    <div class="fmt-diagram">
+      <div class="fmt-bits">
+        <div class="fmt-field" style="flex:1;background:#102030;color:#38bdf8"><span class="fname">OP</span><span class="fbits">0x00–0x13</span></div>
+        <div class="fmt-field" style="flex:3;background:#1a1a1a;color:#555"><span class="fname">—</span><span class="fbits">1 byte total</span></div>
+      </div>
+      <div class="fmt-legend">Opcodes 0x00–0x13 (SYS 1-byters + MEM_CTRL 1-byters): width = 1 byte. Detection: (opcode &amp; 0b11101100) == 0 — a single 5-input NOR on bits 7,6,5,3,2.</div>
+    </div>
+    <div class="fmt-diagram">
+      <div class="fmt-bits">
+        <div class="fmt-field" style="flex:1;background:#102030;color:#38bdf8"><span class="fname">OP</span><span class="fbits">[7:0]</span></div>
+        <div class="fmt-field" style="flex:3;background:#0e1a10;color:#4ade80"><span class="fname">PAYLOAD</span><span class="fbits">3 bytes</span></div>
+      </div>
+      <div class="fmt-legend">All other opcodes (0x14–0xFF): width = 4 bytes. Payload interpretation depends on format class below.</div>
+    </div>
+
+    <h2>Format A — Three Register (ARITH-R, FP, VF, VI, CRYPTO…)</h2>
     <div class="fmt-diagram">
       <div class="fmt-bits">
         <div class="fmt-field" style="flex:1;background:#102030;color:#38bdf8"><span class="fname">OP</span><span class="fbits">[7:0]</span></div>
         <div class="fmt-field" style="flex:1;background:#0e1a10;color:#4ade80"><span class="fname">RD</span><span class="fbits">[7:0]</span></div>
         <div class="fmt-field" style="flex:1;background:#0e1a10;color:#4ade80"><span class="fname">RS1</span><span class="fbits">[7:0]</span></div>
         <div class="fmt-field" style="flex:1;background:#0e1a10;color:#4ade80"><span class="fname">RS2</span><span class="fbits">[7:0]</span></div>
-        <div class="fmt-field" style="flex:4;background:#1a1020;color:#a78bfa"><span class="fname">IMM</span><span class="fbits">[31:0]</span><span class="fwidth">4 bytes</span></div>
       </div>
-      <div class="fmt-legend">P7: rd = rs1 op rs2 &nbsp;·&nbsp; imm field available for encoding hints · P6 adds 5-byte imm</div>
+      <div class="fmt-legend">rd = rs1 op rs2 &nbsp;·&nbsp; Used by: ARITH-R (0x5_), FP (0x8_), VF (0x9_), VI (0xA_), CRYPTO (0x7_), VMEM (0xB_), AMEM (0xC_), WARP (0xD_), SYNC (0xE_), DISP (0xF_)</div>
     </div>
 
-    <h2>Register-Immediate (ARITH-I 0x4_)</h2>
+    <h2>Format B — Register + Immediate (ARITH-I, LI…)</h2>
     <div class="fmt-diagram">
       <div class="fmt-bits">
         <div class="fmt-field" style="flex:1;background:#102030;color:#38bdf8"><span class="fname">OP</span><span class="fbits">[7:0]</span></div>
         <div class="fmt-field" style="flex:1;background:#0e1a10;color:#4ade80"><span class="fname">RD</span><span class="fbits">[7:0]</span></div>
-        <div class="fmt-field" style="flex:6;background:#1a1020;color:#a78bfa"><span class="fname">IMM48</span><span class="fbits">[47:0]</span><span class="fwidth">6 bytes</span></div>
+        <div class="fmt-field" style="flex:2;background:#1a1020;color:#a78bfa"><span class="fname">IMM16</span><span class="fbits">[15:0]</span><span class="fwidth">2 bytes</span></div>
       </div>
-      <div class="fmt-legend">ARITH-I: rd = rs op sign_ext(imm8) &nbsp;·&nbsp; 4-byte uniform encoding</div>
+      <div class="fmt-legend">rd = f(imm16) &nbsp;·&nbsp; Used by: LI row (0x2_) for u16/s16/cap/ptr/cn/pcrel variants</div>
     </div>
-
-    <h2>Load Immediate (LI row 0x2_)</h2>
     <div class="fmt-diagram">
       <div class="fmt-bits">
         <div class="fmt-field" style="flex:1;background:#102030;color:#38bdf8"><span class="fname">OP</span><span class="fbits">[7:0]</span></div>
         <div class="fmt-field" style="flex:1;background:#0e1a10;color:#4ade80"><span class="fname">RD</span><span class="fbits">[7:0]</span></div>
-        <div class="fmt-field" style="flex:6;background:#1a1020;color:#a78bfa"><span class="fname">IMM</span><span class="fbits">up to 48 bits</span><span class="fwidth">6 bytes max</span></div>
+        <div class="fmt-field" style="flex:1;background:#1a1020;color:#a78bfa"><span class="fname">IMM8</span><span class="fbits">[7:0]</span></div>
+        <div class="fmt-field" style="flex:1;background:#1a1a1a;color:#555"><span class="fname">—</span><span class="fbits">pad</span></div>
       </div>
-      <div class="fmt-legend">li.s32 uses 4-byte immediate, li.s64 uses 6-byte immediate — remaining bytes zero-padded</div>
+      <div class="fmt-legend">rd = f(imm8) &nbsp;·&nbsp; Used by: li.u8, li.s8 (byte immediate, 1 pad byte) and ARITH-I (0x4_) where third byte is rs</div>
     </div>
 
-    <h2>Memory (MEMS row 0x3_)</h2>
+    <h2>Format C — Register + Immediate (ARITH-I specifically)</h2>
+    <div class="fmt-diagram">
+      <div class="fmt-bits">
+        <div class="fmt-field" style="flex:1;background:#102030;color:#38bdf8"><span class="fname">OP</span><span class="fbits">[7:0]</span></div>
+        <div class="fmt-field" style="flex:1;background:#0e1a10;color:#4ade80"><span class="fname">RD</span><span class="fbits">[7:0]</span></div>
+        <div class="fmt-field" style="flex:1;background:#0e1a10;color:#4ade80"><span class="fname">RS</span><span class="fbits">[7:0]</span></div>
+        <div class="fmt-field" style="flex:1;background:#1a1020;color:#a78bfa"><span class="fname">IMM8</span><span class="fbits">[7:0]</span></div>
+      </div>
+      <div class="fmt-legend">rd = rs op sign_ext(imm8) &nbsp;·&nbsp; Used by: ARITH-I (0x4_) — all 16 instructions: eqi/andi/nandi/ori/nori/xori/xnri/slli/srli/srai/slti/addi/subi/modi/muli/divi</div>
+    </div>
+
+    <h2>Format D — Memory via Capability + Tiny Pointer</h2>
     <div class="fmt-diagram">
       <div class="fmt-bits">
         <div class="fmt-field" style="flex:1;background:#102030;color:#38bdf8"><span class="fname">OP</span><span class="fbits">[7:0]</span></div>
         <div class="fmt-field" style="flex:1;background:#0e1a10;color:#4ade80"><span class="fname">RD/RS</span><span class="fbits">[7:0]</span></div>
-        <div class="fmt-field" style="flex:1;background:#0e1a10;color:#4ade80"><span class="fname">RB1</span><span class="fbits">[7:0]</span></div>
-        <div class="fmt-field" style="flex:1;background:#0e1a10;color:#4ade80"><span class="fname">RB2</span><span class="fbits">[7:0]</span></div>
-        <div class="fmt-field" style="flex:4;background:#1a1020;color:#a78bfa"><span class="fname">OFFSET</span><span class="fbits">[31:0]</span><span class="fwidth">sign-ext 32-bit</span></div>
+        <div class="fmt-field" style="flex:1;background:#1a2030;color:#38bdf8"><span class="fname">CAP</span><span class="fbits">[7:0]</span></div>
+        <div class="fmt-field" style="flex:1;background:#1a2030;color:#38bdf8"><span class="fname">PTR</span><span class="fbits">[7:0]</span></div>
       </div>
-      <div class="fmt-legend">Effective address = rb1 + rb2 + sign_ext(offset32) &nbsp;·&nbsp; Natural alignment required</div>
+      <div class="fmt-legend">effective_addr = dereference_table[CAP] + PTR &nbsp;·&nbsp; CAP = capability token register; PTR = tiny pointer register &nbsp;·&nbsp; Used by: all memory ops in LI+MEM (0x2_), VMEM (0xB_), AMEM (0xC_), texture/surface (0xF_), dcz/dcf in SYS (0x0_)</div>
+    </div>
+
+    <h2>Format E — Packed Chained (PACK row 0x6_)</h2>
+    <div class="fmt-diagram">
+      <div class="fmt-bits">
+        <div class="fmt-field" style="flex:1;background:#102030;color:#38bdf8"><span class="fname">OP</span><span class="fbits">[7:0]</span></div>
+        <div class="fmt-field" style="flex:1;background:#0e1a10;color:#4ade80"><span class="fname">RD</span><span class="fbits">[7:0]</span></div>
+        <div class="fmt-field" style="flex:1;background:#1a1020;color:#a78bfa"><span class="fname">OP_A</span><span class="fbits">[3:0]</span></div>
+        <div class="fmt-field" style="flex:1;background:#1a1020;color:#a78bfa"><span class="fname">OP_B</span><span class="fbits">[3:0]</span></div>
+      </div>
+      <div class="fmt-legend">Two operations on registers inherited from previous instruction &nbsp;·&nbsp; OP_A and OP_B are 4-bit indices into the universal op table &nbsp;·&nbsp; Source routing determined by opcode (symmetric 0x60–0x67, asymmetric 0x68–0x6F)</div>
+    </div>
+
+    <h2>Format F — Single Register (unary ops)</h2>
+    <div class="fmt-diagram">
+      <div class="fmt-bits">
+        <div class="fmt-field" style="flex:1;background:#102030;color:#38bdf8"><span class="fname">OP</span><span class="fbits">[7:0]</span></div>
+        <div class="fmt-field" style="flex:1;background:#0e1a10;color:#4ade80"><span class="fname">RD</span><span class="fbits">[7:0]</span></div>
+        <div class="fmt-field" style="flex:1;background:#0e1a10;color:#4ade80"><span class="fname">RS</span><span class="fbits">[7:0]</span></div>
+        <div class="fmt-field" style="flex:1;background:#1a1a1a;color:#555"><span class="fname">—</span><span class="fbits">pad</span></div>
+      </div>
+      <div class="fmt-legend">rd = f(rs) &nbsp;·&nbsp; Used by: fabs/fneg/ffloor/fceil/fround/f2i/i2f/fsqrt and their vector equivalents, rdctrl, hprobe, popcnt, clz, bset/bclr/btst/bflp/rol/ror/bswap/brev</div>
     </div>
 
     <h2>Bitmask Extraction Reference</h2>
     <div class="bitmask-panel">
       <div class="bitmask-row">
+        <span class="bitmask-op">(opcode &amp; 0b11101100) == 0</span>
+        <span class="bitmask-res">is_1byte</span>
+        <span class="bitmask-cmt">// 5-input NOR on bits 7,6,5,3,2 — 1 gate</span>
+      </div>
+      <div class="bitmask-row">
         <span class="bitmask-op">(opcode &gt;&gt; 4) &amp; 0xF</span>
         <span class="bitmask-res">row</span>
-        <span class="bitmask-cmt">// instruction group</span>
+        <span class="bitmask-cmt">// instruction group (0x0_–0xF_)</span>
       </div>
       <div class="bitmask-row">
         <span class="bitmask-op">opcode &amp; 0x0F</span>
         <span class="bitmask-res">col</span>
-        <span class="bitmask-cmt">// operation (universal op table)</span>
+        <span class="bitmask-cmt">// operation within row (universal op table)</span>
       </div>
       <div class="bitmask-row">
         <span class="bitmask-op">(opcode &amp; 0xC0) &gt;&gt; 6</span>
         <span class="bitmask-res">tier</span>
-        <span class="bitmask-cmt">// 0=MCU/CPU, 1=CPU, 2–3=GPU</span>
+        <span class="bitmask-cmt">// 0=OPU, 1=APU, 2=FPU, 3=GPU</span>
       </div>
       <div class="bitmask-row">
         <span class="bitmask-op">(opcode &gt;&gt; 4) == 0x00</span>
         <span class="bitmask-res">is_privileged</span>
-        <span class="bitmask-cmt">// single bitmask check, zero exceptions</span>
+        <span class="bitmask-cmt">// row 0x0_ = SYS = kernel-only</span>
+      </div>
+      <div class="bitmask-row">
+        <span class="bitmask-op">opcode == 0x10</span>
+        <span class="bitmask-res">is_connector</span>
+        <span class="bitmask-cmt">// nop = connector node marker; CN counter increments</span>
+      </div>
+      <div class="bitmask-row">
+        <span class="bitmask-op">(opcode &amp; 0xF8) == 0x18</span>
+        <span class="bitmask-res">is_branch</span>
+        <span class="bitmask-cmt">// 0x18–0x1F = control flow (csel + 5 conditional branches + jmp/jmpr)</span>
+      </div>
+      <div class="bitmask-row">
+        <span class="bitmask-op">opcode &amp; 0x08</span>
+        <span class="bitmask-res">half</span>
+        <span class="bitmask-cmt">// clean 8/8 split within every row</span>
       </div>
       <div class="bitmask-row">
         <span class="bitmask-op">opcode &amp; 0x0F</span>
@@ -1207,21 +1204,21 @@ table.op-table tr.reserved td { opacity: 0.3; }
     <h2>Row Format Summary</h2>
     <div class="rows-grid">
       <div class="row-card" style="border-left-color:var(--c-sys)"><div class="rch"><span class="row-hex" style="background:rgba(239,68,68,0.15);color:var(--c-sys)">0x</span><span class="row-name">SYS</span><span class="row-fmt-badge">kernel-only</span></div><div class="row-desc">0x00–0x03: 1-byte. 0x04–0x0F: 4-byte [op, rd/rs, ctrl_id/etc]; capability, cache, IPC, I/O</div></div>
-      <div class="row-card" style="border-left-color:var(--c-memctl)"><div class="rch"><span class="row-hex" style="background:rgba(161,98,7,0.15);color:var(--c-memctl)">1x</span><span class="row-name">MEM_CTRL</span><span class="row-fmt-badge">user</span></div><div class="row-desc">0x10–0x13: 1-byte (nop/ebreak/ecall/wfe). 0x14–0x17: utility. 0x18–0x1F: csel + CN-relative branches</div></div>
-      <div class="row-card" style="border-left-color:var(--c-libit)"><div class="rch"><span class="row-hex" style="background:rgba(100,116,139,0.15);color:var(--c-li)">2x</span><span class="row-name">LI+MEM</span><span class="row-fmt-badge">[op,rd,imm/cap+ptr]</span></div><div class="row-desc">Load immediate (u8/s8/u16/s16/cap/ptr/cn/pcrel) + loads/stores via cap+ptr</div></div>
-      <div class="row-card" style="border-left-color:var(--c-mems)"><div class="rch"><span class="row-hex" style="background:rgba(5,150,105,0.15);color:var(--c-bit)">3x</span><span class="row-name">BIT</span><span class="row-fmt-badge">[op,r,rb1,rb2,off×4]</span></div><div class="row-desc">Bit ops: 3-byte (bset/bclr/btst/bflp/rol/ror/bswap/brev) + 4-byte (bext/bins/bperm/pdep/pext/clmul/crc32/bfly)</div></div>
-      <div class="row-card" style="border-left-color:var(--c-p8)"><div class="rch"><span class="row-hex" style="background:rgba(22,163,74,0.15);color:var(--c-arith-i)">4x</span><span class="row-name">ARITH-I</span><span class="row-fmt-badge">[op,rd,rs,imm8]</span></div><div class="row-desc">Register-immediate: rd = rs op imm8. Full ALU set with 8-bit immediate.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-p4)"><div class="rch"><span class="row-hex" style="background:rgba(37,99,235,0.15);color:var(--c-arith-r)">5x</span><span class="row-name">ARITH-R (Accum)</span><span class="row-fmt-badge">[op,rd,imm×6]</span></div><div class="row-desc">Register-register arithmetic [op,rd,rs1,rs2]: rd = rs1 op rs2. Full ALU set.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-p5)"><div class="rch"><span class="row-hex" style="background:rgba(217,119,6,0.15);color:var(--c-pack)">6x</span><span class="row-name">PACK (chained)</span><span class="row-fmt-badge">[op,rd,op_a,op_b]</span></div><div class="row-desc">Packed chained arithmetic: two ops sharing prev instruction registers. 8 symmetric + 8 asymmetric topologies.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-p6)"><div class="rch"><span class="row-hex" style="background:rgba(120,113,108,0.15);color:var(--c-crypto)">7x</span><span class="row-name">CRYPTO (3-reg)</span><span class="row-fmt-badge">[op,rd,rs1,rs2,imm×4]</span></div><div class="row-desc">Hardware crypto: AES (enc/dec/key), SHA-256/512, ChaCha20, Poly1305, GHASH, SM4.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-fp)"><div class="rch"><span class="row-hex" style="background:rgba(249,115,22,0.15);color:var(--c-fp)">8x</span><span class="row-name">FP</span><span class="row-fmt-badge">float</span></div><div class="row-desc">Scalar float: feq/fabs/fneg/ffloor/fceil/fround/f2i/i2f/fmin/flt/fmax/fadd/fsub/fmul/fsqrt/fdiv.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-trans)"><div class="rch"><span class="row-hex" style="background:rgba(6,182,212,0.15);color:var(--c-vf)">9x</span><span class="row-name">VF</span><span class="row-fmt-badge">vector float</span></div><div class="row-desc">Vector float: mirrors FP row across all lanes. Includes vf·fma for matrix multiply.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-pack)"><div class="rch"><span class="row-hex" style="background:rgba(147,51,234,0.15);color:var(--c-vi)">Ax</span><span class="row-name">VI</span><span class="row-fmt-badge">vector integer</span></div><div class="row-desc">Vector integer arithmetic: mirrors ARITH-R row across all lanes. Includes v·fma and v·div.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-crypto)"><div class="rch"><span class="row-hex" style="background:rgba(16,185,129,0.15);color:var(--c-vmem)">Bx</span><span class="row-name">VMEM</span><span class="row-fmt-badge">hardware crypto</span></div><div class="row-desc">Vector memory + vector atomics: vld/vst/strided/masked/gather/scatter + atomic RMW.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-valu)"><div class="rch"><span class="row-hex" style="background:rgba(14,165,233,0.15);color:var(--c-amem)">Cx</span><span class="row-name">AMEM</span><span class="row-fmt-badge">adv memory</span></div><div class="row-desc">Advanced memory: ld.acq/st.rel/ldx/stx/nt.ld/nt.st + scalar atomics swap/and/or/xor/add/sub/min/max/minu/maxu.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-vext)"><div class="rch"><span class="row-hex" style="background:rgba(59,130,246,0.15);color:var(--c-warp)">Dx</span><span class="row-name">WARP</span><span class="row-fmt-badge">warp primitives</span></div><div class="row-desc">Complex atomics (cas/nand/slt/xchg) + warp: lane/warp/blk/grid IDs, actmsk, vote, shuffle.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-atom)"><div class="rch"><span class="row-hex" style="background:rgba(236,72,153,0.15);color:var(--c-sync)">Ex</span><span class="row-name">SYNC</span><span class="row-fmt-badge">warp sync</span></div><div class="row-desc">Warp control + sync: predicate ops, barriers (warp/block/grid/system), warp management.</div></div>
-      <div class="row-card" style="border-left-color:var(--c-warp)"><div class="rch"><span class="row-hex" style="background:rgba(168,85,247,0.15);color:var(--c-disp)">Fx</span><span class="row-name">DISP</span><span class="row-fmt-badge">dispatch</span></div><div class="row-desc">Data movement + dispatch: vector permute/zip/broadcast/reduce, texture/surface, kernel dispatch, warp.end.</div></div>
+      <div class="row-card" style="border-left-color:var(--c-memctl)"><div class="rch"><span class="row-hex" style="background:rgba(161,98,7,0.15);color:var(--c-memctl)">1x</span><span class="row-name">MEM_CTRL</span><span class="row-fmt-badge">user</span></div><div class="row-desc">0x10–0x13: 1-byte (nop/ebreak/ecall/wfe). 0x14–0x17: 4-byte utility. 0x18–0x1F: 4-byte control flow</div></div>
+      <div class="row-card" style="border-left-color:var(--c-li)"><div class="rch"><span class="row-hex" style="background:rgba(100,116,139,0.15);color:var(--c-li)">2x</span><span class="row-name">LI+MEM</span><span class="row-fmt-badge">Fmt B/D</span></div><div class="row-desc">0x20–0x27: Format B (reg+imm16/8). 0x28–0x2F: Format D (cap+ptr memory)</div></div>
+      <div class="row-card" style="border-left-color:var(--c-bit)"><div class="rch"><span class="row-hex" style="background:rgba(5,150,105,0.15);color:var(--c-bit)">3x</span><span class="row-name">BIT</span><span class="row-fmt-badge">Fmt F/A</span></div><div class="row-desc">0x30–0x37: Format F 3-byte (single reg + imm). 0x38–0x3F: Format A 4-byte (two reg operands)</div></div>
+      <div class="row-card" style="border-left-color:var(--c-arith-i)"><div class="rch"><span class="row-hex" style="background:rgba(22,163,74,0.15);color:var(--c-arith-i)">4x</span><span class="row-name">ARITH-I</span><span class="row-fmt-badge">Fmt C</span></div><div class="row-desc">Format C: [op, rd, rs, imm8] — rd = rs op sign_ext(imm8). Uniform across all 16 instructions.</div></div>
+      <div class="row-card" style="border-left-color:var(--c-arith-r)"><div class="rch"><span class="row-hex" style="background:rgba(37,99,235,0.15);color:var(--c-arith-r)">5x</span><span class="row-name">ARITH-R</span><span class="row-fmt-badge">Fmt A</span></div><div class="row-desc">Format A: [op, rd, rs1, rs2] — rd = rs1 op rs2. Uniform across all 16 instructions.</div></div>
+      <div class="row-card" style="border-left-color:var(--c-pack)"><div class="rch"><span class="row-hex" style="background:rgba(147,51,234,0.15);color:var(--c-pack)">6x</span><span class="row-name">PACK</span><span class="row-fmt-badge">Fmt E</span></div><div class="row-desc">Format E: [op, rd, op_a, op_b] — two chained ops on inherited registers. 8 symmetric + 8 asymmetric topologies.</div></div>
+      <div class="row-card" style="border-left-color:var(--c-crypto)"><div class="rch"><span class="row-hex" style="background:rgba(16,185,129,0.15);color:var(--c-crypto)">7x</span><span class="row-name">CRYPTO</span><span class="row-fmt-badge">Fmt A/F</span></div><div class="row-desc">Format A: [op, rd, rs1, rs2] for most ops. Format F: [op, rd, rs, —] for unary ops (aesimc, sha*m1/m2).</div></div>
+      <div class="row-card" style="border-left-color:var(--c-fp)"><div class="rch"><span class="row-hex" style="background:rgba(249,115,22,0.15);color:var(--c-fp)">8x</span><span class="row-name">FP</span><span class="row-fmt-badge">Fmt A/F</span></div><div class="row-desc">Format A: [op, rd, rs1, rs2] for binary ops. Format F: [op, rd, rs, —] for unary ops (fabs/fneg/ffloor/fceil/fround/f2i/i2f/fsqrt).</div></div>
+      <div class="row-card" style="border-left-color:var(--c-vf)"><div class="rch"><span class="row-hex" style="background:rgba(6,182,212,0.15);color:var(--c-vf)">9x</span><span class="row-name">VF</span><span class="row-fmt-badge">Fmt A/F</span></div><div class="row-desc">Mirrors FP row format exactly. Format A for binary, Format F for unary. All ops across vector lanes.</div></div>
+      <div class="row-card" style="border-left-color:var(--c-vi)"><div class="rch"><span class="row-hex" style="background:rgba(14,165,233,0.15);color:var(--c-vi)">Ax</span><span class="row-name">VI</span><span class="row-fmt-badge">Fmt A</span></div><div class="row-desc">Format A: [op, rd, rs1, rs2] uniform. Vector integer across all lanes.</div></div>
+      <div class="row-card" style="border-left-color:var(--c-vmem)"><div class="rch"><span class="row-hex" style="background:rgba(59,130,246,0.15);color:var(--c-vmem)">Bx</span><span class="row-name">VMEM</span><span class="row-fmt-badge">Fmt D</span></div><div class="row-desc">Format D: [op, rd/rs, cap, ptr] for all vector loads/stores/atomics. Tiny pointer addressing throughout.</div></div>
+      <div class="row-card" style="border-left-color:var(--c-amem)"><div class="rch"><span class="row-hex" style="background:rgba(236,72,153,0.15);color:var(--c-amem)">Cx</span><span class="row-name">AMEM</span><span class="row-fmt-badge">Fmt D</span></div><div class="row-desc">Format D: [op, rd/rs, cap, ptr] for all advanced memory and scalar atomic ops.</div></div>
+      <div class="row-card" style="border-left-color:var(--c-warp)"><div class="rch"><span class="row-hex" style="background:rgba(168,85,247,0.15);color:var(--c-warp)">Dx</span><span class="row-name">WARP</span><span class="row-fmt-badge">Fmt D/A</span></div><div class="row-desc">0xD0–0xD3: Format D atomic ops. 0xD4–0xDF: Format A warp primitives (IDs, vote, shuffle).</div></div>
+      <div class="row-card" style="border-left-color:var(--c-sync)"><div class="rch"><span class="row-hex" style="background:rgba(244,63,94,0.15);color:var(--c-sync)">Ex</span><span class="row-name">SYNC</span><span class="row-fmt-badge">Fmt A</span></div><div class="row-desc">Format A throughout. Predicate ops, barriers, warp management. Most payload bytes are unused (barrier instructions need only bar_id).</div></div>
+      <div class="row-card" style="border-left-color:var(--c-disp)"><div class="rch"><span class="row-hex" style="background:rgba(139,92,246,0.15);color:var(--c-disp)">Fx</span><span class="row-name">DISP</span><span class="row-fmt-badge">Fmt A/D</span></div><div class="row-desc">0xF0–0xF7: Format A vector permute/reduce ops. 0xF8–0xFF: Format D texture/surface/dispatch via cap+ptr.</div></div>
     </div>
 
   </div>
@@ -1273,11 +1270,11 @@ table.op-table tr.reserved td { opacity: 0.3; }
     <table class="lat-table">
       <thead><tr><th>Category</th><th>Range</th><th>Examples</th></tr></thead>
       <tbody>
-        <tr><td><span style="color:#2a8a4a;font-family:var(--mono);font-weight:600">single-cycle</span></td><td style="font-family:var(--mono)">1 cy</td><td style="font-size:12px;color:var(--text2)">sei/cli, nop, li.s32/li.s64/li.pcrel, bit ops, ARITH-R (eq–sub), VI vector integer A0–AC, lane.id/warp.id/actmsk</td></tr>
-        <tr><td><span style="color:#4a9a30;font-family:var(--mono);font-weight:600">fast</span></td><td style="font-family:var(--mono)">2–5 cy</td><td style="font-size:12px;color:var(--text2)">MEMS loads/stores, branches (pipeline flush on taken), ffloor/fceil/fround, f2i/i2f, sysret, dcache ops, tlbi, PACK, ld.acq, st.rel, ldx/stx/cas, vector memory ops</td></tr>
+        <tr><td><span style="color:#2a8a4a;font-family:var(--mono);font-weight:600">single-cycle</span></td><td style="font-family:var(--mono)">1 cy</td><td style="font-size:12px;color:var(--text2)">sei/cli, nop/ebreak/ecall/wfe (1-byte), all LI ops, all BIT ops, ARITH-R (eq–sub), VI (A0–AC), lane.id/warp.id/actmsk, pred.set/and/or/not</td></tr>
+        <tr><td><span style="color:#4a9a30;font-family:var(--mono);font-weight:600">fast</span></td><td style="font-family:var(--mono)">2–5 cy</td><td style="font-size:12px;color:var(--text2)">all memory loads/stores (2x_/Bx_/Cx_), branches (pipeline flush ~2-4 cy), ffloor/fceil/fround, f2i/i2f, sysret, dcache ops, PACK chained ops, ld.acq/st.rel, ldx/stx</td></tr>
         <tr><td><span style="color:#ba8a00;font-family:var(--mono);font-weight:600">medium</span></td><td style="font-family:var(--mono)">5–20 cy</td><td style="font-size:12px;color:var(--text2)">fsqrt (~10–20 cy), vxchg (scales with groups), ATOM RMW cache-hit, WARP vote ops, CRYPTO (estimated)</td></tr>
         <tr><td><span style="color:#da4a00;font-family:var(--mono);font-weight:600">slow</span></td><td style="font-family:var(--mono)">20–90 cy</td><td style="font-size:12px;color:var(--text2)">bar.warp/reconvg (~10–100 cy) &nbsp;·&nbsp; <em style="color:var(--text3)">transcendentals (fsin/fcos etc.) removed — use FPGA or software library</em></td></tr>
-        <tr><td><span style="color:#da0000;font-family:var(--mono);font-weight:600">unbounded</span></td><td style="font-family:var(--mono)">∞</td><td style="font-size:12px;color:var(--text2)">io (port I/O), wfe (wait for event), hlt, bar.arr, bar.blk</td></tr>
+        <tr><td><span style="color:#da0000;font-family:var(--mono);font-weight:600">unbounded</span></td><td style="font-family:var(--mono)">∞</td><td style="font-size:12px;color:var(--text2)">io (port I/O), wfe, hlt, bar.arr, bar.blk, bar.grid, dispatch, dispatch.sync, warp.exit, warp.end</td></tr>
       </tbody>
     </table>
 
@@ -1293,27 +1290,59 @@ table.op-table tr.reserved td { opacity: 0.3; }
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--c-libit);border-radius:8px;padding:14px">
         <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-li);margin-bottom:6px">2x_ LI+MEM</div>
-        <div style="font-size:11px;color:var(--text2);line-height:1.65">All single-cycle. Immediate loads and bit manipulation are all 1 cycle.</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.65">0x20–0x27 immediate loads: single-cycle. 0x28–0x2F memory loads/stores: 2–5 cy cache-hit, +miss penalty.</div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--c-mems);border-radius:8px;padding:14px">
-        <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-mems);margin-bottom:6px">3x_ MEMS</div>
-        <div style="font-size:11px;color:var(--text2);line-height:1.65">Cache hit: 2–5 cy. Cache miss: +miss penalty. ldx/stx/cas: ~5–20 cy. nt.ld/st bypass cache.</div>
+        <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-bit);margin-bottom:6px">3x_ BIT</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.65">All single-cycle. 3-byte ops (bset/bclr/rol/ror/bswap/brev): 1 cy. 4-byte ops (bext/bins/bperm/pdep/pext/clmul/crc32/bfly): 1 cy.</div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--c-fp);border-radius:8px;padding:14px">
         <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-fp);margin-bottom:6px">8x_ FP</div>
         <div style="font-size:11px;color:var(--text2);line-height:1.65">feq/fabs/fneg: ~free (bit ops). floor/ceil/round: ~2 cy. f2i/i2f: 2–4 cy. fdiv: ~20–90 cy.</div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--c-trans);border-radius:8px;padding:14px">
-        <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-trans);margin-bottom:6px">9x_ FPU ext</div>
-        <div style="font-size:11px;color:var(--text2);line-height:1.65">fsqrt ~10–20 cy · <em>0x95–0x9F transcendentals removed — FPGA or library</em></div>
+        <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-vf);margin-bottom:6px">9x_ VF</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.65">Mirrors FP row latency across vector lanes. vf·eq/abs/neg: ~free. vf·add/sub/fma: ~4–6 cy. vf·sqrt: ~10–20 cy. vf·div: ~10–20 cy.</div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--c-crypto);border-radius:8px;padding:14px">
-        <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-crypto);margin-bottom:6px">Bx_ CRYPTO</div>
-        <div style="font-size:11px;color:var(--text2);line-height:1.65">Hardware-accelerated. Estimated ~20–90 cy depending on operation and pipeline implementation.</div>
+        <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-vmem);margin-bottom:6px">Bx_ VMEM</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.65">vld/vst: 2–5 cy cache-hit. vgather/vscatter: 5–20 cy. Vector atomics: 5–20 cy.</div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--c-warp);border-radius:8px;padding:14px">
-        <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-warp);margin-bottom:6px">Fx_ WARP</div>
-        <div style="font-size:11px;color:var(--text2);line-height:1.65">lane/warp IDs: single-cycle. vote: ~2–4 cy. shfl: ~4–8 cy. bar.warp: ~10–100 cy. bar.blk: unbounded.</div>
+        <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-disp);margin-bottom:6px">Fx_ DISP</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.65">vperm/vzip/vbroadcast: ~2–4 cy. vred.*: ~4–8 cy. tex.ld/samp: ~10–100 cy. dispatch: unbounded. warp.end: unbounded.</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--c-arith-i);border-radius:8px;padding:14px">
+        <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-arith-i);margin-bottom:6px">4x_ ARITH-I</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.65">All single-cycle except modi/muli (~3–5 cy), divi (~20–40 cy). Latency-ordered by column position.</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--c-arith-r);border-radius:8px;padding:14px">
+        <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-arith-r);margin-bottom:6px">5x_ ARITH-R</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.65">eq–sub: single-cycle. mod: fast. mul: ~3–5 cy. div: ~20–40 cy. Column position encodes latency.</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--c-pack);border-radius:8px;padding:14px">
+        <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-pack);margin-bottom:6px">6x_ PACK</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.65">Throughput of two ops in one instruction. Latency depends on op_a and op_b selected. ~1–5 cy typical.</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--c-crypto);border-radius:8px;padding:14px">
+        <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-crypto);margin-bottom:6px">7x_ CRYPTO</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.65">Hardware-accelerated. AES rounds: ~5–20 cy. SHA rounds: ~10–30 cy. ChaCha/Poly/GHASH: ~10–20 cy.</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--c-vi);border-radius:8px;padding:14px">
+        <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-vi);margin-bottom:6px">Ax_ VI</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.65">v·eq–v·sub: single-cycle. v·fma/mul: ~3–5 cy. v·div: ~20–40 cy. Mirrors ARITH-R latency profile across lanes.</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--c-amem);border-radius:8px;padding:14px">
+        <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-amem);margin-bottom:6px">Cx_ AMEM</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.65">ld.acq/st.rel/ldx/stx: 2–5 cy. nt.ld/nt.st: 2–5 cy (bypass cache). Scalar atomics: 5–20 cy cache-hit.</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--c-warp);border-radius:8px;padding:14px">
+        <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-warp);margin-bottom:6px">Dx_ WARP</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.65">Complex atomics: 5–20 cy. lane/warp/blk/grid IDs: single-cycle. vote.*: ~2–4 cy. shfl.*: ~4–8 cy.</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--c-sync);border-radius:8px;padding:14px">
+        <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-sync);margin-bottom:6px">Ex_ SYNC</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.65">pred.*: single-cycle. warp.sync: ~10–100 cy. mem.bar.*: 5–100 cy. bar.warp/reconvg: ~10–100 cy. bar.blk/grid: unbounded.</div>
       </div>
     </div>
   </div>
