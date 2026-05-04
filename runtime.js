@@ -1188,11 +1188,6 @@ class IVXRuntime {
           triggerEnv.set('body',    bodyText);
           triggerEnv.set('id',      msgId);
 
-          // Also keep 'request' for backwards compatibility
-          triggerEnv.set('request', new Map([
-            ['subject', subject], ['from', fromAddr], ['body', bodyText], ['id', msgId]
-          ]));
-
           return triggerEnv;
         }
         return null;
@@ -1209,7 +1204,7 @@ class IVXRuntime {
           this._interp.globals.set('__waitSheetRows__', current);
           const newRows = rows.slice(lastSeen + 1);
           const triggerEnv = env.child();
-          triggerEnv.set('request', newRows);
+          triggerEnv.set('rows', newRows);
           return triggerEnv;
         }
         // Initialise baseline on first poll
