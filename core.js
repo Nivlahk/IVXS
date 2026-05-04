@@ -745,8 +745,12 @@ class Parser {
       if (this.check(T.LPAREN)) {
         this.advance(); // eat '('
         while (!this.check(T.RPAREN) && !this.check(T.EOF)) {
-          const key = this.advance().value;
-          if (this.peek().type === T.OP && this.peek().value === '=') this.advance();
+          // key must be a bare identifier — advance directly, don't parseExpr
+          const keyTok = this.advance();
+          const key = keyTok.value;
+          // eat the '=' separator
+          if (this.check(T.OP) && this.peek().value === '=') this.advance();
+          // now parse the value expression
           filters[key] = this.parseExpr();
           this.eat(T.COMMA);
         }
