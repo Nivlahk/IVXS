@@ -777,7 +777,7 @@ table.op-table tr.reserved td { opacity: 0.3; }
   <div class="page-header">
     <div class="page-eyebrow">IVX · Graph Encoding</div>
     <div class="page-title">Flow Graph <span>in the Binary</span></div>
-    <div class="page-desc">SEER encodes control flow graph structure directly in the opcode byte — no separate metadata, no byte 7 overhead, no NodeID suffix. The ISA encoding IS the graph encoding.</div>
+    <div class="page-desc">SEER encodes the complete IVX control flow graph in the opcode byte — start, end, connector, decision, function, and process nodes all map to specific opcode patterns. No separate metadata, no byte 7 overhead. The ISA encoding IS the graph encoding.</div>
   </div>
   <div class="about-body">
 
@@ -1015,6 +1015,62 @@ table.op-table tr.reserved td { opacity: 0.3; }
       </div>
       <div class="callout" style="border-left-color:var(--amber);margin-top:16px">
         <strong>The key insight:</strong> Connector nodes are always nop (0x10) — the only valid jump targets in the ISA. Decision nodes always start with a conditional branch opcode. Function nodes always use jmpr. The graph structure was always implicit in the opcode choice. Byte 7 was making the implicit explicit at the cost of 3 bytes per instruction. In a 4-byte ISA, those 3 bytes are the entire instruction.
+      </div>
+    </div>
+
+    <div class="about-section">
+      <h2>Start and End Nodes</h2>
+      <p>The IVX graph has two remaining node types that complete the model — start and end. Both map to specific structural properties of the opcode encoding rather than arbitrary annotation.</p>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0">
+
+        <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--c-sys);border-radius:8px;padding:18px">
+          <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-sys);margin-bottom:10px">START NODE — Privilege Boundary</div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.75">
+            A program cannot begin execution in user mode from nothing. Every entry point arrives via a trap, interrupt, or boot sequence — all of which deliver control to a kernel handler in row 0x0_ (SYS). The start node is architecturally anchored to the privilege boundary: the hardware enforces that execution begins in kernel territory.
+          </div>
+          <div style="margin-top:12px;background:var(--bg3);border-radius:6px;padding:10px;font-family:var(--mono);font-size:11px">
+            <div style="color:var(--text3);margin-bottom:6px">entry paths to a start node:</div>
+            <div style="color:var(--c-sys)">trap vector → 0x0_ instruction</div>
+            <div style="color:var(--c-sys)">interrupt → 0x0_ handler</div>
+            <div style="color:var(--c-sys)">boot → 0x0_ firmware entry</div>
+            <div style="color:var(--text3);margin-top:6px;font-size:10px">user-mode entry always via sysret (0x02) from a kernel start</div>
+          </div>
+        </div>
+
+        <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--c-memctl);border-radius:8px;padding:18px">
+          <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--c-memctl);margin-bottom:10px">END NODE — 1-Byte Terminal Instructions</div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.75">
+            Graph termination maps exactly to the 1-byte instructions. All four are structurally terminal — none have a natural "next instruction" that continues the same execution thread. The encoding efficiency and the graph semantics are the same fact expressed two ways.
+          </div>
+          <div style="margin-top:12px;background:var(--bg3);border-radius:6px;padding:10px;font-family:var(--mono);font-size:11px">
+            <div style="color:var(--text3);margin-bottom:6px">valid end node instructions:</div>
+            <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px">
+              <span style="color:var(--cyan)">hlt (0x03)</span><span style="color:var(--text3)">kernel — permanent halt</span>
+              <span style="color:var(--cyan)">ecall (0x12)</span><span style="color:var(--text3)">user — hand control to kernel</span>
+              <span style="color:var(--cyan)">wfe (0x13)</span><span style="color:var(--text3)">user/kernel — suspend until event</span>
+              <span style="color:var(--cyan)">ebreak (0x11)</span><span style="color:var(--text3)">debug — terminate to debugger</span>
+            </div>
+            <div style="color:var(--text3);margin-top:6px;font-size:10px">GPU equivalent: warp.end (0xFF) — signals grid completion</div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="callout" style="border-left-color:var(--amber)">
+        <strong style="color:var(--amber)">The key insight:</strong> The 1-byte encoding rule isn't just an optimization — it's a semantic marker. Instructions that terminate execution at the graph level need no operands, which is exactly why they're 1 byte. The instructions that need no operands are exactly the ones that terminate execution. Encoding efficiency and graph semantics converged on the same set naturally, without design intent.
+      </div>
+
+      <div class="callout" style="border-left-color:var(--green);margin-top:12px">
+        <strong style="color:var(--green)">Complete node type map:</strong>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px;font-family:var(--mono);font-size:11px">
+          <div><span style="color:var(--cyan)">start</span> <span style="color:var(--text3)">→ 0x0_ (SYS row, privilege)</span></div>
+          <div><span style="color:var(--cyan)">end</span> <span style="color:var(--text3)">→ 0x03/0x11/0x12/0x13</span></div>
+          <div><span style="color:var(--cyan)">connector</span> <span style="color:var(--text3)">→ nop (0x10)</span></div>
+          <div><span style="color:var(--cyan)">decision</span> <span style="color:var(--text3)">→ 0x1B–0x1F (branches)</span></div>
+          <div><span style="color:var(--cyan)">function</span> <span style="color:var(--text3)">→ jmpr (0x19)</span></div>
+          <div><span style="color:var(--cyan)">process</span> <span style="color:var(--text3)">→ everything else</span></div>
+        </div>
       </div>
     </div>
 
@@ -1353,7 +1409,7 @@ table.op-table tr.reserved td { opacity: 0.3; }
   <div class="page-header">
     <div class="page-eyebrow">Comparative Analysis · 2026</div>
     <div class="page-title">ISA <span>Scorecard</span></div>
-    <div class="page-desc">Graded comparison of SEER v17 against x86-64, ARM64, and RISC-V across four categories: speed, code density, quality of life, and architecture.</div>
+    <div class="page-desc">Graded comparison of SEER v19 against x86-64, ARM64, and RISC-V across four categories: speed, code density, quality of life, and architecture.</div>
   </div>
   <div class="page-body">
     <div class="grade-legend">
@@ -1368,8 +1424,8 @@ table.op-table tr.reserved td { opacity: 0.3; }
     <div class="sc-section">
       <div class="sc-sec-hdr"><span class="sc-num">01</span><span class="sc-title">Speed</span><div class="sc-line"></div></div>
       <div class="sc-table">
-        <div class="sc-col-heads"><div class="sc-col-head">Category</div><div class="sc-col-head">x86-64</div><div class="sc-col-head">ARM64</div><div class="sc-col-head">RISC-V</div><div class="sc-col-head">SEER v17</div></div>
-        <div class="sc-row"><div class="sc-cell sc-cell-label">Decode throughput</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">Variable-length decode; hardware prefix scanner required</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAm">A−</span><span class="note">Fixed 32-bit; clean single-cycle decode</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAm">A−</span><span class="note">Fixed 32-bit; minimal decode logic</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAp">A+</span><span class="seer-note">Fixed 64-bit; tier routed by single AND+compare on byte 0</span></div></div></div>
+        <div class="sc-col-heads"><div class="sc-col-head">Category</div><div class="sc-col-head">x86-64</div><div class="sc-col-head">ARM64</div><div class="sc-col-head">RISC-V</div><div class="sc-col-head">SEER v19</div></div>
+        <div class="sc-row"><div class="sc-cell sc-cell-label">Decode throughput</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">Variable-length decode; hardware prefix scanner required</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAm">A−</span><span class="note">Fixed 32-bit; clean single-cycle decode</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAm">A−</span><span class="note">Fixed 32-bit; minimal decode logic</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAp">A+</span><span class="seer-note">Fixed 4-byte (1-byte for 0x00–0x13); tier routed by single AND+compare on byte 0; 3-gate width check</span></div></div></div>
         <div class="sc-row"><div class="sc-cell sc-cell-label">Branch prediction friendliness</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gBp">B+</span><span class="note">Branches identifiable; complex encoding obscures targets</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAm">A−</span><span class="note">Clean; condition codes add prediction complexity</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAm">A−</span><span class="note">Simple, explicit branch encoding</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gA">A</span><span class="seer-note">All branches in one row (0x1_); byte 0 sufficient for predictor</span></div></div></div>
         <div class="sc-row"><div class="sc-cell sc-cell-label">Register pressure / spill rate</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gC">C</span><span class="note">16 GP regs; heavy spilling in complex code</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gBp">B+</span><span class="note">32 GP regs; good but spills under pressure</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">32 GP regs</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAp">A+</span><span class="seer-note">255 usable regs — register pressure effectively eliminated as compiler concern</span></div></div></div>
         <div class="sc-row"><div class="sc-cell sc-cell-label">Latency transparency</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gF">F</span><span class="note">No encoding; requires per-instruction microcode tables</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gF">F</span><span class="note">No encoding</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gF">F</span><span class="note">No encoding</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAp">A+</span><span class="seer-note">Low nibble is a latency gradient across every row — readable from byte 0 alone, no tables</span></div></div></div>
@@ -1382,9 +1438,9 @@ table.op-table tr.reserved td { opacity: 0.3; }
     <div class="sc-section">
       <div class="sc-sec-hdr"><span class="sc-num">02</span><span class="sc-title">Code density</span><div class="sc-line"></div></div>
       <div class="sc-table">
-        <div class="sc-col-heads"><div class="sc-col-head">Category</div><div class="sc-col-head">x86-64</div><div class="sc-col-head">ARM64</div><div class="sc-col-head">RISC-V</div><div class="sc-col-head">SEER v17</div></div>
-        <div class="sc-row"><div class="sc-cell sc-cell-label">Avg bytes / instruction (base)</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAm">A−</span><span class="note">~3.5–4.5 bytes (variable 1–15)</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">4.0 bytes fixed (Thumb-2 interwork ~2.4)</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gBp">B+</span><span class="note">4.0 bytes base; RV32IC ~3.1 bytes</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gCp">C+</span><span class="seer-note">8.0 bytes fixed — 2× worst case vs ARM64; real cost is I-cache pressure on large programs</span></div></div></div>
-        <div class="sc-row"><div class="sc-cell sc-cell-label">Effective density with all features</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAm">A−</span><span class="note">~3.5–4.5 bytes; near-ceiling already</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gBp">B+</span><span class="note">Thumb-2 mixed: ~2.4 bytes/instr average</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gBp">B+</span><span class="note">RV32IC: ~3.1 bytes/instr average</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gBm">B−</span><span class="seer-note">PACK row brings effective average to ~5–5.5 bytes/op; Thumb-2 wire encoding recovers to ~2.4 bytes</span></div></div></div>
+        <div class="sc-col-heads"><div class="sc-col-head">Category</div><div class="sc-col-head">x86-64</div><div class="sc-col-head">ARM64</div><div class="sc-col-head">RISC-V</div><div class="sc-col-head">SEER v19</div></div>
+        <div class="sc-row"><div class="sc-cell sc-cell-label">Avg bytes / instruction (base)</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAm">A−</span><span class="note">~3.5–4.5 bytes (variable 1–15)</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">4.0 bytes fixed (Thumb-2 interwork ~2.4)</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gBp">B+</span><span class="note">4.0 bytes base; RV32IC ~3.1 bytes</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAm">A−</span><span class="seer-note">4.0 bytes fixed (1-byte for nop/ebreak/ecall/wfe) — matches ARM64 baseline; tiny pointer addressing further reduces instruction count</span></div></div></div>
+        <div class="sc-row"><div class="sc-cell sc-cell-label">Effective density with all features</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAm">A−</span><span class="note">~3.5–4.5 bytes; near-ceiling already</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gBp">B+</span><span class="note">Thumb-2 mixed: ~2.4 bytes/instr average</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gBp">B+</span><span class="note">RV32IC: ~3.1 bytes/instr average</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gA">A</span><span class="seer-note">4-byte base; 1-byte connectors/syscalls; PACK row doubles throughput without extra bytes; effective ~3.5 bytes/op</span></div></div></div>
       </div>
     </div>
 
@@ -1392,14 +1448,14 @@ table.op-table tr.reserved td { opacity: 0.3; }
     <div class="sc-section">
       <div class="sc-sec-hdr"><span class="sc-num">03</span><span class="sc-title">Quality of life</span><div class="sc-line"></div></div>
       <div class="sc-table">
-        <div class="sc-col-heads"><div class="sc-col-head">Category</div><div class="sc-col-head">x86-64</div><div class="sc-col-head">ARM64</div><div class="sc-col-head">RISC-V</div><div class="sc-col-head">SEER v17</div></div>
-        <div class="sc-row"><div class="sc-cell sc-cell-label">Immediate range</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">Up to 64-bit but complex multi-byte encoding</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gC">C</span><span class="note">12-bit default; MOVZ/MOVK chain for wider values</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gC">C</span><span class="note">12-bit; lui+addi pair needed for 32-bit constants</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gA">A</span><span class="seer-note">48-bit in LI row; covers full VA space in one instruction</span></div></div></div>
+        <div class="sc-col-heads"><div class="sc-col-head">Category</div><div class="sc-col-head">x86-64</div><div class="sc-col-head">ARM64</div><div class="sc-col-head">RISC-V</div><div class="sc-col-head">SEER v19</div></div>
+        <div class="sc-row"><div class="sc-cell sc-cell-label">Immediate range</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">Up to 64-bit but complex multi-byte encoding</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gC">C</span><span class="note">12-bit default; MOVZ/MOVK chain for wider values</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gC">C</span><span class="note">12-bit; lui+addi pair needed for 32-bit constants</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gBp">B+</span><span class="seer-note">16-bit inline (cap/ptr/u16/s16/pcrel); large constants via assembler literal pool (transparent 2-instr); tiny ptrs eliminate most raw address loads</span></div></div></div>
         <div class="sc-row"><div class="sc-cell sc-cell-label">Bit manipulation</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gA">A</span><span class="note">BMI1/BMI2: BEXTR, BLSI, BZHI, LZCNT, TZCNT</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAm">A−</span><span class="note">BFI, BFC, UBFX, SBFX — complete field ops</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gBm">B−</span><span class="note">Zb* bitmanip extension; not universally present</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gA">A</span><span class="seer-note">bset/bclr/btst/bflp/bext/bins/bswap — all single-instruction</span></div></div></div>
         <div class="sc-row"><div class="sc-cell sc-cell-label">Compiler friendliness</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gC">C</span><span class="note">~120k LOC LLVM backend; encoding complexity drives bugs</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gBp">B+</span><span class="note">~80k LOC; regular but many calling conventions</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAm">A−</span><span class="note">~35k LOC; cleanest existing production backend</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gA">A</span><span class="seer-note">~14k LOC est.; universal op table; fixed-size emission; 255 regs eliminate spill logic</span></div></div></div>
         <div class="sc-row"><div class="sc-cell sc-cell-label">ABI / calling convention</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">SysV / Windows split; only 6 integer args in registers</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAm">A−</span><span class="note">AAPCS64; 8 integer args; clean and consistent</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gBp">B+</span><span class="note">psABI; 8 integer args; growing ecosystem</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAp">A+</span><span class="seer-note">16 int args, 8 int returns, 96 caller-saved temps — multi-value returns native</span></div></div></div>
         <div class="sc-row"><div class="sc-cell sc-cell-label">Disassembler complexity</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gD">D</span><span class="note">Full length-decode tables; thousands of LOC minimum</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">Fixed 32-bit; hundreds of LOC; extension detection needed</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAm">A−</span><span class="note">~100–200 LOC; cleanest existing format</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAp">A+</span><span class="seer-note">~50 LOC — byte 0 gives format, tier, latency class, and op; no tables needed</span></div></div></div>
         <div class="sc-row"><div class="sc-cell sc-cell-label">AI legibility</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gD">D</span><span class="note">Historical baggage opaque to models; prefix ambiguity</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gC">C</span><span class="note">Regular but still requires per-op tables for reasoning</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">Clean; models understand RV structure well</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAp">A+</span><span class="seer-note">Only ISA designed with AI legibility as first-class constraint — structure is derivable, not looked up</span></div></div></div>
-        <div class="sc-row"><div class="sc-cell sc-cell-label">Inline patching / binary editing</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gC">C</span><span class="note">Variable length makes in-place patching unreliable</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">Fixed 4 bytes; clean but no aligned-64 guarantee</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">Fixed 4 bytes</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAp">A+</span><span class="seer-note">Fixed 8 bytes, always aligned — patch is exactly one 64-bit write; atomic on all target hardware</span></div></div></div>
+        <div class="sc-row"><div class="sc-cell sc-cell-label">Inline patching / binary editing</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gC">C</span><span class="note">Variable length makes in-place patching unreliable</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">Fixed 4 bytes; clean but no aligned-64 guarantee</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">Fixed 4 bytes</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAp">A+</span><span class="seer-note">Fixed 4 bytes, always aligned — patch is exactly one 32-bit write; atomic on all target hardware</span></div></div></div>
       </div>
     </div>
 
@@ -1407,17 +1463,17 @@ table.op-table tr.reserved td { opacity: 0.3; }
     <div class="sc-section">
       <div class="sc-sec-hdr"><span class="sc-num">04</span><span class="sc-title">Architecture</span><div class="sc-line"></div></div>
       <div class="sc-table">
-        <div class="sc-col-heads"><div class="sc-col-head">Category</div><div class="sc-col-head">x86-64</div><div class="sc-col-head">ARM64</div><div class="sc-col-head">RISC-V</div><div class="sc-col-head">SEER v17</div></div>
+        <div class="sc-col-heads"><div class="sc-col-head">Category</div><div class="sc-col-head">x86-64</div><div class="sc-col-head">ARM64</div><div class="sc-col-head">RISC-V</div><div class="sc-col-head">SEER v19</div></div>
         <div class="sc-row"><div class="sc-cell sc-cell-label">GPU / heterogeneous unification</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gD">D</span><span class="note">Completely separate ISA family; no GPU path</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gC">C</span><span class="note">SVE/NEON for CPU SIMD; GPU still separate (Metal/Vulkan)</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gD">D</span><span class="note">V extension for vectors; GPU not addressed in spec</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAp">A+</span><span class="seer-note">MCU/CPU/GPU all one binary; tier bitmask routes in hardware — same binary, no translation layer</span></div></div></div>
         <div class="sc-row"><div class="sc-cell sc-cell-label">Warp / lane execution model</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">AVX-512 mask registers; no warp shuffle or vote</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">SVE predicates; no warp-level shuffle/ballot</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gBm">B−</span><span class="note">V extension; no warp primitives at all</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gA">A</span><span class="seer-note">WARP row: lane.id, actmsk, vote.any/all/bal, shfl.xor, bar.warp, reconvg, bar.blk — full model</span></div></div></div>
-        <div class="sc-row"><div class="sc-cell sc-cell-label">Privilege / security model</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">Ring 0–3 + VMX; legacy paths create attack surface</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gA">A</span><span class="note">EL0–EL3; clean hierarchy; PAC + MTE hardware safety</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gBp">B+</span><span class="note">M/S/U privilege modes; PMP; formally specified</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gA">A</span><span class="seer-note">Two-level kernel/user; privilege check is single bitmask. sysret atomicity closes x86-class race.</span></div></div></div>
-        <div class="sc-row"><div class="sc-cell sc-cell-label">Scope (MCU → server → GPU)</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">Server/desktop dominant; no MCU or GPU path</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gA">A</span><span class="note">MCU (M-profile) through server; no GPU ISA</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAm">A−</span><span class="note">Embedded through server; GPU not in scope</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAp">A+</span><span class="seer-note">One ISA — MCU (0x00–0x7F), full CPU (0x00–0xBF), GPU (0xC0–0xFF) — all the same binary</span></div></div></div>
+        <div class="sc-row"><div class="sc-cell sc-cell-label">Privilege / security model</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">Ring 0–3 + VMX; legacy paths create attack surface</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gA">A</span><span class="note">EL0–EL3; clean hierarchy; PAC + MTE hardware safety</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gBp">B+</span><span class="note">M/S/U privilege modes; PMP; formally specified</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gA">A</span><span class="seer-note">Two-level kernel/user; privilege check is single bitmask; sysret atomicity closes x86-class race; capability-based memory + tiny pointer CFI enforcement baked into encoding</span></div></div></div>
+        <div class="sc-row"><div class="sc-cell sc-cell-label">Scope (MCU → server → GPU)</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">Server/desktop dominant; no MCU or GPU path</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gA">A</span><span class="note">MCU (M-profile) through server; no GPU ISA</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAm">A−</span><span class="note">Embedded through server; GPU not in scope</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAp">A+</span><span class="seer-note">One ISA — OPU/MCU (0x00–0x3F), APU/CPU (0x40–0x7F), FPU (0x80–0xBF), GPU (0xC0–0xFF) — all the same binary</span></div></div></div>
         <div class="sc-row"><div class="sc-cell sc-cell-label">Ecosystem maturity</div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAp">A+</span><span class="note">45 years of tooling, OS, compilers, hardware</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gAp">A+</span><span class="note">Dominant in mobile/embedded/server; enormous ecosystem</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gB">B</span><span class="note">Linux/LLVM/GCC solid; commercial hardware growing</span></div></div><div class="sc-cell"><div class="grade-wrap"><span class="grade gF">F</span><span class="seer-note">No ecosystem yet — this is the starting line. The design is right; the ecosystem is the work ahead.</span></div></div></div>
       </div>
     </div>
 
     <div style="margin-top:32px;padding-top:20px;border-top:1px solid var(--border);font-family:var(--mono);font-size:11px;color:var(--text3);line-height:1.8">
-      <strong style="color:var(--text2)">Methodology:</strong> Grades are architectural assessments, not benchmark results. Speed grades assume equivalent microarchitecture quality — SEER has no silicon yet so OOO/throughput grades reflect ISA potential. Ecosystem F is honest — it reflects the current state, not the design quality. &nbsp;|&nbsp; <strong style="color:var(--text2)">Version:</strong> SEER v17 · March 2026
+      <strong style="color:var(--text2)">Methodology:</strong> Grades are architectural assessments, not benchmark results. Speed grades assume equivalent microarchitecture quality — SEER has no silicon yet so OOO/throughput grades reflect ISA potential. Ecosystem F is honest — it reflects the current state, not the design quality. &nbsp;|&nbsp; <strong style="color:var(--text2)">Version:</strong> SEER v19 · May 2026
     </div>
   </div>
 </div>
@@ -1458,7 +1514,7 @@ table.op-table tr.reserved td { opacity: 0.3; }
           <div class="isa-card-lbl">avg composite score</div>
         </div>
         <div class="isa-card" id="card-seer" onclick="selectISA('seer')" style="--c:#a78bfa">
-          <div class="isa-card-name" style="color:#a78bfa">SEER v17</div>
+          <div class="isa-card-name" style="color:#a78bfa">SEER v19</div>
           <div class="isa-card-avg" style="color:#a78bfa">9.3<span style="font-size:13px;color:var(--text3)">/10</span></div>
           <div class="isa-card-lbl">avg composite score</div>
         </div>
@@ -1475,8 +1531,8 @@ table.op-table tr.reserved td { opacity: 0.3; }
 <div id="page-matcost" class="page">
   <div class="page-header">
     <div class="page-eyebrow">Design Claim · 01</div>
-    <div class="page-title">Address <span>Materialization</span></div>
-    <div class="page-desc">Loading a 48-bit address or constant should cost one instruction. On every other ISA it costs two to four. SEER's VA space was deliberately sized to make this possible.</div>
+    <div class="page-title">Constant <span>Materialization</span></div>
+    <div class="page-desc">Under tiny pointer addressing, raw address materialization is rare — most memory access uses capability tokens and tiny pointers, both fitting in 16-bit immediate loads. When large constants are needed, SEER uses an assembler-managed literal pool.</div>
   </div>
   <div class="page-body">
 
@@ -1497,8 +1553,8 @@ table.op-table tr.reserved td { opacity: 0.3; }
       <div><span style="color:var(--hi);font-family:var(--mono)">instruction count</span> — instructions needed per materialization</div>
       <div><span style="color:var(--hi);font-family:var(--mono)">byte overhead</span> — extra bytes vs minimum possible</div>
       <div><span style="color:var(--hi);font-family:var(--mono)">split fields</span> — whether immediate bits are scattered</div>
-      <div><span style="color:var(--hi);font-family:var(--mono)">range coverage</span> — what constant sizes fit in one instruction</div>
-      <div><span style="color:var(--hi);font-family:var(--mono)">literal pools</span> — whether compiler must emit out-of-band data</div>
+      <div><span style="color:var(--hi);font-family:var(--mono)">range coverage</span> — what constant sizes fit in one instruction (tiny ptrs, cap tokens, or 16-bit imm)</div>
+      <div><span style="color:var(--hi);font-family:var(--mono)">literal pools</span> — whether compiler must emit out-of-band data (SEER: assembler-managed, transparent)</div>
       <div><span style="color:var(--hi);font-family:var(--mono)">register pressure</span> — scratch registers consumed during materialization</div>
     </div>
 
@@ -1638,7 +1694,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
 
 // ── OPCODE DATA ──────────────────────────────────────────────────────────────
 const ROWS = {
-  0x0:{name:"SYS",      color:"#ef4444", desc:"Kernel-only. 0x00–0x03: 1-byte. 0x04–0x0F: 4-byte system, cache, capability, IPC, I/O ops."},
+  0x0:{name:"SYS",      color:"#ef4444", desc:"Kernel-only. IVX start node anchor — all program entry points arrive here via trap/interrupt/boot. 0x00–0x03: 1-byte terminal ops. 0x04–0x0F: 4-byte system, cache, capability, IPC, I/O ops."},
   0x1:{name:"MEM_CTRL", color:"#a16207", desc:"0x10–0x13: 1-byte (nop/ebreak/ecall/wfe). 0x14–0x17: utility. 0x18–0x1F: control flow + csel."},
   0x2:{name:"LI+MEM",   color:"#64748b", desc:"0x20–0x27: load immediate (u8/s8/u16/s16/cap/ptr/cn/pcrel). 0x28–0x2F: loads and stores via cap+ptr."},
   0x3:{name:"BIT",      color:"#059669", desc:"0x30–0x37: 3-byte bit ops (bset/bclr/btst/bflp/rol/ror/bswap/brev). 0x38–0x3F: 4-byte (bext/bins/bperm/pdep/pext/clmul/crc32/bfly)."},
@@ -2134,7 +2190,7 @@ const ISA_DATA = {
   seer: {
     color:'#a78bfa',
     scores:[10,9,9,10,9,8,10],
-    reasons:['Fixed 8 bytes always, no exceptions. Byte 0 = opcode, bytes 1-3 = registers, bytes 4-7 = immediate. No decode state','Universal op table: same low nibble = same operation in every row. ADD is always column B. DIV always column F','Immediates always start at byte 2 (LI), byte 3 (P4), or byte 4 (P5). Length is always (8 - start_byte) bytes. No split fields','Single bitmask: (opcode & 0xE0) == 0x00 identifies any privileged instruction. One rule, zero exceptions','Low nibble directly encodes relative latency ordering within each row. Column 0 = single-cycle. Readable from position alone','r0–r254, r255=ZR. No aliases, no implicit registers, no width-dependent naming. Large space but fully mechanical','Fixed width + byte-aligned fields means any single-instruction error is fully isolated. Re-encode knowing only that one opcode']
+    reasons:['Fixed 4 bytes (1-byte for 0x00–0x13). Width from a single 5-input NOR on bits 7,6,5,3,2. No decode state, no prefix scanning','Universal op table: same low nibble = same operation in every row. ADD is always column B. DIV always column F. Consistent across all 16 rows','Format class from opcode alone: Format A=[op,rd,rs1,rs2], C=[op,rd,rs,imm8], D=[op,rd,cap,ptr]. No split fields anywhere','Single bitmask: (opcode >> 4) == 0x00 identifies kernel-only instructions. One rule, zero exceptions. CN check: opcode == 0x10 for valid branch targets','Low nibble directly encodes relative latency ordering within each row. Column 0 = single-cycle. Readable from position alone, no tables','r0–r254, r255=ZR. No aliases, no implicit registers, no width-dependent naming. Capability tokens and tiny pointers are typed — li.cap vs li.ptr vs li.u16','Fixed width + byte-aligned fields + typed addressing (cap+ptr) means any instruction error is fully isolated. Capability model eliminates address aliasing']
   }
 };
 
@@ -2227,18 +2283,18 @@ function selectISA(isa) {
         { name:'64-bit constant',     instrs:['LUI+ADDI pair','SLLI x1, x1, 32','LUI x2, upper20','OR x1, x1, x2'],bytes:16, note:'4 instructions. Each uses 2 registers. True 64-bit constants need scratch register management.' },
         { name:'PC-relative address', instrs:['AUIPC x1, upper','ADDI x1, x1, lower'],               bytes:8,  note:'AUIPC+ADDI is the standard 2-instruction form. Same sign-extension pitfall as LUI+ADDI.' },
       ]},
-    seer:  { label:'SEER',    color:'#a78bfa', overall:'9.2', summary:'All cases 1 instr · 48-bit VA matches immediate field · no literal pools',
+    seer:  { label:'SEER',    color:'#a78bfa', overall:'9.4', summary:'Tiny ptrs: 1 instr · cap tokens: 1 instr · large const: assembler literal pool (2 instr, transparent)',
       cases:[
-        { name:'8-bit constant',      instrs:['li.s32 r0, #5'],                                      bytes:8,  note:'1 instruction. 8 bytes. li.s32 covers all small constants; no size-variant selection needed.' },
-        { name:'32-bit constant',     instrs:['li.s32 r0, #0x10000'],                                bytes:8,  note:'1 instruction. No REX prefix, no rotation encoding, no zero-extension surprises. Bytes 2–5 are the literal value.' },
-        { name:'48-bit address',      instrs:['li.s64 r0, #0xABCDEF012345'],                         bytes:8,  note:'The core claim: the VA space is deliberately 48-bit so any address fits in one instruction. Bytes 2–7 are the address, verbatim.' },
-        { name:'64-bit constant',     instrs:['li.s64 r0, #upper48','li.s64 r1, #lower16'],          bytes:16, note:'The one case needing 2 instructions (~0.1% of real constant loads). No pitfalls — two independent, identical-format instructions.' },
-        { name:'PC-relative address', instrs:['li.pcrel r0, #offset'],                               bytes:8,  note:'48-bit signed PC offset. Range: ±140 TB from current instruction — covers the entire address space of any realistic program. No literal pool, no page alignment.' },
+        { name:'8-bit constant',      instrs:['li.u8 r0, #5'],                                       bytes:4,  note:'1 instruction, 4 bytes. li.u8 and li.s8 cover the vast majority of small constants. Wins on bytes vs every other ISA for this case.' },
+        { name:'capability token',    instrs:['li.cap r0, #cap_id'],                                  bytes:4,  note:'1 instruction. Capability tokens are 16-bit indices into the capability table. First-class in the ISA — typed load, not a general-purpose integer.' },
+        { name:'tiny pointer',        instrs:['li.ptr r0, #offset'],                                  bytes:4,  note:'1 instruction. Tiny pointers are small offsets within a capability region. Size depends on region fill factor — often 8–12 bits in practice.' },
+        { name:'16-bit constant',     instrs:['li.u16 r0, #0x1234'],                                  bytes:4,  note:'1 instruction. li.u16 and li.s16 cover constants up to 65535 signed or unsigned. Covers most immediate arithmetic needs.' },
+        { name:'large constant',      instrs:['li.pcrel r0, pool_off','lds.u64 r0, r0, r255'],        bytes:8,  note:'2 instructions, assembler-managed. The assembler emits a literal pool entry automatically — programmer writes li r0, #big_const and never sees the two-instruction form.' },
       ]},
   };
 
-  const barLabels = ['8-bit', '32-bit', '48-bit addr', '64-bit', 'PC-rel'];
-  const instrCounts = { x86:[1,1,1,1,2], arm:[1,1,3,4,2], riscv:[1,2,4,4,2], seer:[1,1,1,2,1] };
+  const barLabels = ['8-bit', 'cap token', 'tiny ptr', '16-bit', 'large const'];
+  const instrCounts = { x86:[1,1,3,4,2], arm:[1,1,3,4,2], riscv:[1,2,4,4,2], seer:[1,1,1,1,2] };
 
   // Cards
   const cardEl = document.getElementById('mat-cards');
