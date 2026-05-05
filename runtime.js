@@ -280,14 +280,14 @@ const BUILTIN_DEFS = {
       return Math.log(x) / Math.log(base);
     },
   },
-  log2:  { params: ['x'], call: (args) => Math.log2(args[0]) },
+  log2: { params: ['x'], call: (args) => Math.log2(args[0]) },
   log10: { params: ['x'], call: (args) => Math.log10(args[0]) },
-  sin:   { params: ['x'], call: (args) => Math.sin(args[0]) },
-  cos:   { params: ['x'], call: (args) => Math.cos(args[0]) },
-  tan:   { params: ['x'], call: (args) => Math.tan(args[0]) },
-  asin:  { params: ['x'], call: (args) => Math.asin(args[0]) },
-  acos:  { params: ['x'], call: (args) => Math.acos(args[0]) },
-  atan:  { params: ['x'], call: (args) => Math.atan(args[0]) },
+  sin: { params: ['x'], call: (args) => Math.sin(args[0]) },
+  cos: { params: ['x'], call: (args) => Math.cos(args[0]) },
+  tan: { params: ['x'], call: (args) => Math.tan(args[0]) },
+  asin: { params: ['x'], call: (args) => Math.asin(args[0]) },
+  acos: { params: ['x'], call: (args) => Math.acos(args[0]) },
+  atan: { params: ['x'], call: (args) => Math.atan(args[0]) },
   atan2: { params: ['y', 'x'], call: (args) => Math.atan2(args[0], args[1]) },
   upper: {
     params: ['s'],
@@ -734,7 +734,7 @@ class IVXRuntime {
 
   async _executeGet(node, env) {
     const credName = this._interp.globals.get('__credName__') ?? null;
-    const baseUrl  = this._interp.globals.get('__credBase__') ?? null;
+    const baseUrl = this._interp.globals.get('__credBase__') ?? null;
     let rawUrl = String((await this._interp.evalExpr(node.url, env)) ?? '').trim();
 
     // Resolve relative paths against the stored base URL for this credential
@@ -792,7 +792,7 @@ class IVXRuntime {
   }
 
   _ivxToPlain(value) {
-    if (value === NONE || value === null || value === undefined) return null;
+    if (value === null || value === undefined) return null;
     if (Array.isArray(value)) return value.map(v => this._ivxToPlain(v));
     if (value instanceof Map) {
       const obj = {};
@@ -1224,12 +1224,12 @@ class IVXRuntime {
           const msg = await this._googleAPI(
             `https://gmail.googleapis.com/gmail/v1/users/me/messages/${data.messages[0].id}`
           );
-          const headers  = msg?.payload?.headers ?? [];
-          const subject  = headers.find(h => h.name === 'Subject')?.value ?? '';
+          const headers = msg?.payload?.headers ?? [];
+          const subject = headers.find(h => h.name === 'Subject')?.value ?? '';
           const fromAddr = headers.find(h => h.name === 'From')?.value ?? '';
           const bodyPart = msg?.payload?.parts?.[0]?.body?.data ?? msg?.payload?.body?.data ?? '';
           const bodyText = bodyPart ? atob(bodyPart.replace(/-/g, '+').replace(/_/g, '/')) : '';
-          const msgId    = data.messages[0].id;
+          const msgId = data.messages[0].id;
 
           // Apply any remaining filters that couldn't be passed to Gmail API
           for (const [key, valNode] of Object.entries(filters)) {
@@ -1243,9 +1243,9 @@ class IVXRuntime {
 
           // Implicit bindings — directly accessible by name in the block
           triggerEnv.set('subject', subject);
-          triggerEnv.set('sender',  fromAddr);
-          triggerEnv.set('body',    bodyText);
-          triggerEnv.set('id',      msgId);
+          triggerEnv.set('sender', fromAddr);
+          triggerEnv.set('body', bodyText);
+          triggerEnv.set('id', msgId);
 
           return triggerEnv;
         }
