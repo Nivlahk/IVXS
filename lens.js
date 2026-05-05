@@ -1222,17 +1222,6 @@ function compileStmt(node, em) {
       break;
     }
 
-    // ── email ─────────────────────────────────────────────────────────────────
-    case 'Gmail': {
-      em.blank();
-      em.comment(`email ${node.to ? exprText(node.to) : '?'}`);
-      if (node.to)      loadExpr(node.to, em, 'R0');
-      if (node.subject) loadExpr(node.subject, em, 'R1');
-      if (node.body)    loadExpr(node.body, em, 'R2');
-      em.ecall(SVC.EMAIL, `email → ${node.to ? exprText(node.to) : '?'}`);
-      break;
-    }
-
     // ── save ──────────────────────────────────────────────────────────────────
     case 'Save': {
       em.blank();

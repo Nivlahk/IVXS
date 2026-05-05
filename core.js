@@ -72,7 +72,7 @@ const KEYWORDS = new Set([
   // Network / AI
   'ask', 'post', 'use', 'key', 'get',
   // Google services
-  'sheets', 'email',
+  'sheets',
   // Implicit loop variables
   'i', 'ii', 'iii', 'j', 'jj', 'jjj', 'k', 'kk', 'kkk',
 ]);
@@ -479,7 +479,6 @@ class Parser {
       post: () => this.parsePost(),
       key: () => this.parseKey(),
       use: () => this.parseUseImport(),
-      email: () => this.parseGmail(),
       sheets: () => this.parseExprStatement(), // sheets is an expression
       class: () => this.parseClass(),
       if: () => this.parseIf(),
@@ -814,19 +813,6 @@ class Parser {
     if (this.checkKw('use')) { this.advance(); credential = this.parseExpr(); }
     this.eatNewline();
     return Node('Post', { url, body, credential, line: tok.line, col: tok.col });
-  }
-
-  // ── email <addr> subject <subj> body <body> ──────────────────────────────
-  parseGmail() {
-    const tok = this.advance(); // eat 'email'
-    let to = null, subject = null, body = null;
-    // Accept optional 'to' for backwards compat, but not required
-    if (this.checkKw('to')) { this.advance(); }
-    to = this.parseExpr();
-    if (this.checkKw('subject')) { this.advance(); subject = this.parseExpr(); }
-    if (this.checkKw('body')) { this.advance(); body = this.parseExpr(); }
-    this.eatNewline();
-    return Node('Gmail', { to, subject, body, line: tok.line, col: tok.col });
   }
 
   // ── use <key>  (global form — standalone statement) ───────────────────────

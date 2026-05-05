@@ -524,6 +524,36 @@ const BUILTIN_DEFS = {
         .replace('dddd', ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d.getDay()]);
     }
   },
+  email: {
+    params: ['to', 'subject', 'body'],
+    call: async (args, node, interp) => {
+      const to = String(args[0] ?? '');
+      const subject = String(args[1] ?? '');
+      const body = String(args[2] ?? '');
+
+      if (!to) throw new Error("email: missing recipient address");
+
+      const raw = [
+        `To: ${to}`,
+        `Subject: ${subject}`,
+        `Content-Type: text/plain; charset="UTF-8"`,
+        `MIME-Version: 1.0`,
+        '',
+        body,
+      ].join('\r\n');
+
+      const encoded = btoa(unescape(encodeURIComponent(raw)))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+      await interp.runtime._googleAPI(
+        'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+        { method: 'POST', body: JSON.stringify({ raw: encoded }) }
+      );
+
+      interp.onOutput?.(`Email sent to ${to}`);
+      return true;
+    }
+  },
 };
 
 function ivxToPlain(value) {
@@ -1168,35 +1198,6 @@ class IVXRuntime {
     return handle;
   }
 
-  // ── gmail to <addr> subject <subj> body <body> ────────────────────────────
-  async _executeGmail(node, env) {
-    const to = node.to ? String(await this._interp.evalExpr(node.to, env)) : '';
-    const subject = node.subject ? String(await this._interp.evalExpr(node.subject, env)) : '';
-    const body = node.body ? String(await this._interp.evalExpr(node.body, env)) : '';
-
-    if (!to) throw new RuntimeError("email: missing recipient address", node.line);
-
-    // Build RFC 2822 message and base64url-encode it
-    const raw = [
-      `To: ${to}`,
-      `Subject: ${subject}`,
-      `Content-Type: text/plain; charset="UTF-8"`,
-      `MIME-Version: 1.0`,
-      '',
-      body,
-    ].join('\r\n');
-
-    const encoded = btoa(unescape(encodeURIComponent(raw)))
-      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
-    await this._googleAPI(
-      'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
-      { method: 'POST', body: JSON.stringify({ raw: encoded }) }
-    );
-
-    this._interp.onOutput?.(`Email sent to ${to}`);
-  }
-
   // ── wait block: Level 1 polling execution ────────────────────────────────
   async _executeWaitBlock(node, env) {
     const POLL_MS = 5000;  // poll every 5 seconds
@@ -1586,11 +1587,6 @@ class Interpreter {
         // post <url> <body> [use <key>]
         // Result stored in 'response' by default, or assign via make response post ...
         return await this._executePost(node, env, { storeResponse: true });
-      }
-
-      case 'Gmail': {
-        await this._executeGmail(node, env);
-        break;
       }
 
       case 'Save': {
@@ -1983,7 +1979,6 @@ class Interpreter {
   _serializeForSave(v, f) { return this.runtime._serializeForSave(v, f); }
   async _evalAskExpr(node, env) { return this.runtime._evalAskExpr(node, env); }
   async _evalSheetsOpenExpr(node, env) { return this.runtime._evalSheetsOpenExpr(node, env); }
-  async _executeGmail(node, env) { return this.runtime._executeGmail(node, env); }
   async _executeWaitBlock(node, env) { return this.runtime._executeWaitBlock(node, env); }
 
 
@@ -2446,7 +2441,8 @@ class Interpreter {
     // Built-in: body is null, delegate to _callBuiltin
     if (callee.body === null) {
       try {
-        return this._callBuiltin(node.name, args, node) ?? NONE;
+        const res = await this._callBuiltin(node.name, args, node);
+        return res ?? NONE;
       } catch (e) {
         this.globals.set('err', e.message ?? String(e));
         return NONE;

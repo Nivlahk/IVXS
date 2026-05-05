@@ -54,8 +54,12 @@ const AppsScriptTranspiler = (() => {
       }
       case 'UnaryOp':
         return `!${emitExpr(node.operand, globals)}`;
-      case 'Call':
+      case 'Call': {
+        if (node.name === 'email') {
+          return `GmailApp.sendEmail(${node.args[0] ? emitExpr(node.args[0], globals) : '""'}, ${node.args[1] ? emitExpr(node.args[1], globals) : '""'}, ${node.args[2] ? emitExpr(node.args[2], globals) : '""'})`;
+        }
         return `${node.name}(${node.args.map(a => emitExpr(a, globals)).join(', ')})`;
+      }
       case 'Invoke':
         return `${emitExpr(node.callee, globals)}(${node.args.map(a => emitExpr(a, globals)).join(', ')})`;
       case 'MemberAccess':
@@ -78,12 +82,6 @@ const AppsScriptTranspiler = (() => {
       }
       case 'Say':
         return `${indent}Logger.log(${E(node.expr)});`;
-      case 'Gmail': {
-        const to      = node.to      ? E(node.to)      : '""';
-        const subject = node.subject ? E(node.subject) : '""';
-        const body    = node.body    ? E(node.body)     : '""';
-        return `${indent}GmailApp.sendEmail(${to}, ${subject}, ${body});`;
-      }
       case 'If': {
         let out = `${indent}if (${E(node.condition)}) {\n${B(node.body)}\n${indent}}`;
         if (node.else_?.length) out += ` else {\n${B(node.else_)}\n${indent}}`;
@@ -213,7 +211,7 @@ ${deleteSelf}
         if (!n || typeof n !== 'object') return;
         if (Array.isArray(n)) { n.forEach(scanNode); return; }
         switch (n.type) {
-          case 'Gmail':       services.add('gmail');  break;
+          case 'Call':        if (n.name === 'email') services.add('gmail'); break;
           case 'SheetsOpen':  services.add('sheets'); break;
           case 'Save':        services.add('drive');  break;
         }
