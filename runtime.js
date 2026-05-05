@@ -791,7 +791,7 @@ class IVXRuntime {
     return val;
   }
 
-
+  _ivxToPlain(value) {
     if (value === NONE || value === null || value === undefined) return null;
     if (Array.isArray(value)) return value.map(v => this._ivxToPlain(v));
     if (value instanceof Map) {
