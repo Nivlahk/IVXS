@@ -12,18 +12,17 @@
 'use strict';
 
 // ── DOM refs for editor UI ────────────────────────────────────────────────────
-const srcEl  = /** @type {HTMLTextAreaElement} */ (document.getElementById('src'));
-const errEl  = document.getElementById('err');
+const srcEl = /** @type {HTMLTextAreaElement} */ (document.getElementById('src'));
+const errEl = document.getElementById('err');
 
 const STARTER = `make name "World"
 make count 3
 loop y? < count
-  say "Hello {name}! (message {y + 1})"
+  print "Hello {name}! (message {y + 1})"
   make y + 1
 if count > 1
-  say "Sent {count} greetings"
-else
-  say "Sent one greeting"`;
+  print "Sent {count} greetings"
+else print "Sent one greeting"`;
 
 srcEl.value = STARTER;
 
@@ -34,7 +33,7 @@ let _parseTimer;
 IVX.bus.on('src_changed', ({ source }) => {
   clearTimeout(_parseTimer);
   // Color the text IMMEDIATELY so it's never invisible
-  updateHighlight(); 
+  updateHighlight();
 
   _parseTimer = setTimeout(() => {
     try {
@@ -42,12 +41,12 @@ IVX.bus.on('src_changed', ({ source }) => {
       // Run Phase A Diagnostics on a delay
       const diagnostics = IVXDiagnostics.getDiagnostics(source);
       updateHighlight(diagnostics); // Add squiggles after pause
-      
-      IVX.bus.emit('ast_parsed', { 
-        graph, 
+
+      IVX.bus.emit('ast_parsed', {
+        graph,
         errors: graph.validationErrors || [] // Only show structural parser errors in header
       });
-    } catch(err) {
+    } catch (err) {
       IVX.bus.emit('ast_error', { message: err.message });
     }
   }, 150);
@@ -167,7 +166,7 @@ function _ivxInit() {
   IVX.bus.emit('src_changed', { source: srcEl.value });
   // Dismiss loading screen
   const loader = document.getElementById('ivx-loader');
-  const app    = document.getElementById('app');
+  const app = document.getElementById('app');
   if (loader) {
     setTimeout(() => {
       loader.classList.add('done');
@@ -186,9 +185,9 @@ function exportSVG() {
   const pad = 20;
   // Clone the canvas SVG and set a clean viewBox covering the full graph
   const clone = svg.cloneNode(true);
-  clone.setAttribute('viewBox', `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad*2} ${bbox.height + pad*2}`);
-  clone.setAttribute('width',  String(bbox.width  + pad*2));
-  clone.setAttribute('height', String(bbox.height + pad*2));
+  clone.setAttribute('viewBox', `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`);
+  clone.setAttribute('width', String(bbox.width + pad * 2));
+  clone.setAttribute('height', String(bbox.height + pad * 2));
   clone.style.background = '#0f0f14';
   // Inline the CSS animation keyframes so the exported SVG is self-contained
   const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
@@ -253,15 +252,15 @@ function exportAsSVG() {
 function exportAsPNG() {
   const svgStr = exportSVG();
   const blob = new Blob([svgStr], { type: 'image/svg+xml' });
-  const url  = URL.createObjectURL(blob);
-  const img  = new Image();
-  const pad  = 20;
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  const pad = 20;
   img.onload = () => {
-    const w = graphBounds.width  + pad*2;
-    const h = graphBounds.height + pad*2;
+    const w = graphBounds.width + pad * 2;
+    const h = graphBounds.height + pad * 2;
     const canvas = document.createElement('canvas');
     // Render at 2x for crisp export on high-DPI screens
-    canvas.width  = w * 2;
+    canvas.width = w * 2;
     canvas.height = h * 2;
     const ctx2d = canvas.getContext('2d');
     ctx2d.scale(2, 2);
@@ -276,24 +275,24 @@ function exportAsPNG() {
 
 document.getElementById('export-btn').addEventListener('click', () => {
   const fmt = document.getElementById('export-fmt').value;
-  if      (fmt === 'json') exportJSON();
-  else if (fmt === 'svg')  exportAsSVG();
-  else if (fmt === 'png')  exportAsPNG();
+  if (fmt === 'json') exportJSON();
+  else if (fmt === 'svg') exportAsSVG();
+  else if (fmt === 'png') exportAsPNG();
 });
 // ── Syntax highlighting ───────────────────────────────────────────────────────
-const hlEl     = document.getElementById('src-hl');
+const hlEl = document.getElementById('src-hl');
 const gutterEl = document.getElementById('src-gutter-inner');
 const scrollEl = document.getElementById('src-scroll');
 
 function escHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // Keyword sets for the tokenizing highlighter
-const _KW_NODE     = new Set(['if','fork','loop','dot','con','take','say','print','give','fun','class','init','end','from','make','note','for','in','wait','download','del','ask','post','use','key','sheets','email','by','try','err']);
-const _KW_FLOW     = new Set(['so','then','else']);
-const _KW_OUTGOING = new Set(['prev','next']);
-const _KW_LOGIC    = new Set(['not','and','or','same','is','yes','no','none']);
+const _KW_NODE = new Set(['if', 'fork', 'loop', 'dot', 'con', 'take', 'say', 'print', 'give', 'fun', 'class', 'init', 'end', 'from', 'make', 'note', 'for', 'in', 'wait', 'download', 'del', 'ask', 'post', 'use', 'key', 'sheets', 'email', 'by', 'try', 'err']);
+const _KW_FLOW = new Set(['so', 'then', 'else']);
+const _KW_OUTGOING = new Set(['prev', 'next']);
+const _KW_LOGIC = new Set(['not', 'and', 'or', 'same', 'is', 'yes', 'no', 'none']);
 
 // Tokenize a raw source line into typed spans, then emit HTML.
 // Handles strings, numbers, lists, dicts, keywords — all before HTML escaping
@@ -314,19 +313,19 @@ function highlightLine(line, allVars = new Set(), allClasses = new Set()) {
     // String literal — detect URL type and highlight {interpolations}
     if (code[i] === '"') {
       // Check for triple quote
-      if (code[i+1] === '"' && code[i+2] === '"') {
+      if (code[i + 1] === '"' && code[i + 2] === '"') {
         let j = i + 3;
-        while (j < code.length && !(code[j] === '"' && code[j+1] === '"' && code[j+2] === '"')) j++;
+        while (j < code.length && !(code[j] === '"' && code[j + 1] === '"' && code[j + 2] === '"')) j++;
         if (j < code.length) j += 3;
         push(code.slice(i, j), 'kw-string');
         i = j; continue;
       }
       let j = i + 1;
-      while (j < code.length && !(code[j] === '"' && code[j-1] !== '\\')) j++;
+      while (j < code.length && !(code[j] === '"' && code[j - 1] !== '\\')) j++;
       if (j < code.length) j++;
-      const raw     = code.slice(i, j);
-      const strVal  = raw.slice(1, -1);
-      const isUrl   = strVal.startsWith('http://') || strVal.startsWith('https://');
+      const raw = code.slice(i, j);
+      const strVal = raw.slice(1, -1);
+      const isUrl = strVal.startsWith('http://') || strVal.startsWith('https://');
       const baseCls = isUrl ? 'kw-url' : 'kw-string';
       // Split on {expr} patterns and highlight interpolations semantically
       const parts = strVal.split(/(\{[^}]+\})/);
@@ -342,16 +341,16 @@ function highlightLine(line, allVars = new Set(), allClasses = new Set()) {
             let prevInnerSeg = '';
             for (const seg of innerSegs) {
               if (!seg) continue;
-              if (seg === '.' || seg === ',' ) { push(seg, 'kw-dict'); prevInnerSeg = seg; continue; }
-              if (seg === '(' || seg === ')')  { push(seg, 'kw-funcall'); prevInnerSeg = seg; continue; }
-              if (seg === '[' || seg === ']')  { push(seg, 'kw-list'); prevInnerSeg = seg; continue; }
-              if (/^\d/.test(seg))             { push(seg, 'kw-number'); prevInnerSeg = seg; continue; }
-              if (allClasses.has(seg))          { push(seg, 'kw-classname'); prevInnerSeg = seg; continue; }
+              if (seg === '.' || seg === ',') { push(seg, 'kw-dict'); prevInnerSeg = seg; continue; }
+              if (seg === '(' || seg === ')') { push(seg, 'kw-funcall'); prevInnerSeg = seg; continue; }
+              if (seg === '[' || seg === ']') { push(seg, 'kw-list'); prevInnerSeg = seg; continue; }
+              if (/^\d/.test(seg)) { push(seg, 'kw-number'); prevInnerSeg = seg; continue; }
+              if (allClasses.has(seg)) { push(seg, 'kw-classname'); prevInnerSeg = seg; continue; }
               if (seg === 'self' || seg === 'super') { push(seg, 'kw-classname'); prevInnerSeg = seg; continue; }
               // If followed by ( it's a method call, if preceded by . it's a field, otherwise a variable
               const nextIdx = innerSegs.indexOf(seg) + 1;
               const nextSeg = innerSegs[nextIdx] ?? '';
-              if (nextSeg === '(')      push(seg, 'kw-funcall');
+              if (nextSeg === '(') push(seg, 'kw-funcall');
               else if (prevInnerSeg === '.') push(seg, 'kw-var');
               else if (allVars.has(seg)) push(seg, 'kw-var');
               else push(seg, 'kw-var');
@@ -388,7 +387,7 @@ function highlightLine(line, allVars = new Set(), allClasses = new Set()) {
       push(code.slice(i, j), 'kw-dict'); i = j; continue;
     }
     // Number literal (integer or float)
-    if (/[\d]/.test(code[i]) || (code[i] === '-' && /\d/.test(code[i+1]||''))) {
+    if (/[\d]/.test(code[i]) || (code[i] === '-' && /\d/.test(code[i + 1] || ''))) {
       let j = i;
       if (code[j] === '-') j++;
       while (j < code.length && /[\d.]/.test(code[j])) j++;
@@ -400,16 +399,16 @@ function highlightLine(line, allVars = new Set(), allClasses = new Set()) {
       while (j < code.length && /[\w]/.test(code[j])) j++;
       const word = code.slice(i, j);
       const isFunCall = code[j] === '(';
-      const isLazy    = code[j] === '?' && !isFunCall;
+      const isLazy = code[j] === '?' && !isFunCall;
       let cls = '';
-      if (allClasses.has(word))            cls = 'kw-classname';
-      else if (isFunCall)                  cls = 'kw-funcall';
+      if (allClasses.has(word)) cls = 'kw-classname';
+      else if (isFunCall) cls = 'kw-funcall';
       else if (word === 'self' || word === 'super') cls = 'kw-classname';
-      else if (_KW_NODE.has(word))         cls = 'kw-node';
-      else if (_KW_FLOW.has(word))         cls = 'kw-flow';
-      else if (_KW_OUTGOING.has(word))     cls = 'kw-outgoing';
-      else if (_KW_LOGIC.has(word))        cls = 'kw-logic';
-      else if (allVars.has(word))          cls = 'kw-var';
+      else if (_KW_NODE.has(word)) cls = 'kw-node';
+      else if (_KW_FLOW.has(word)) cls = 'kw-flow';
+      else if (_KW_OUTGOING.has(word)) cls = 'kw-outgoing';
+      else if (_KW_LOGIC.has(word)) cls = 'kw-logic';
+      else if (allVars.has(word)) cls = 'kw-var';
       prevWasMake = (word === 'make') && !isFunCall;
       push(word, cls); i = j;
       // ? suffix — same color as the variable, just marks lazy declaration
@@ -456,7 +455,7 @@ function highlightSource(src, diagnostics = []) {
   const lazyMatches = src.match(/\b([A-Za-z_]\w*)\?/g);
   if (lazyMatches) lazyMatches.forEach(m => { allVars.add(m.slice(0, -1)); });
   // Loop iterators always color as variables — they act like variables
-  ['i','ii','iii','j','jj','jjj','k','kk','kkk'].forEach(v => allVars.add(v));
+  ['i', 'ii', 'iii', 'j', 'jj', 'jjj', 'k', 'kk', 'kkk'].forEach(v => allVars.add(v));
   // Function parameters color as variables (handles name, name?, name * 3, name? 100)
   const funMatches = src.match(/\b(?:fun\s+\w+|init)\s*\(([^)]+)\)/g);
   if (funMatches) funMatches.forEach(m => {
@@ -489,7 +488,7 @@ function highlightSource(src, diagnostics = []) {
 }
 
 function updateHighlight(diagnostics = []) {
-  const src   = srcEl.value;
+  const src = srcEl.value;
   const lines = src.split('\n');
   const count = lines.length;
 
@@ -502,12 +501,12 @@ function updateHighlight(diagnostics = []) {
   gutterEl.textContent = gutter;
 
   // Size the highlight and textarea to content so scroll container works
-  const lineH   = 13 * 1.7; // font-size * line-height
-  const padV    = 10 * 2;   // top + bottom padding
-  const minH    = scrollEl.clientHeight || 300;
+  const lineH = 13 * 1.7; // font-size * line-height
+  const padV = 10 * 2;   // top + bottom padding
+  const minH = scrollEl.clientHeight || 300;
   const contentH = Math.max(minH, count * lineH + padV);
-  hlEl.style.height    = contentH + 'px';
-  srcEl.style.height   = contentH + 'px';
+  hlEl.style.height = contentH + 'px';
+  srcEl.style.height = contentH + 'px';
 
   // Sync gutter scroll position with scroll container
   gutterEl.style.top = -scrollEl.scrollTop + 'px';
