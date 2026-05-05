@@ -838,8 +838,15 @@ class Parser {
   }
 
   parseUseImport() {
-    // bare 'use' at statement level is now reserved — kept for future use
-    const tok = this.advance();
+    const tok = this.advance(); // eat 'use'
+    // use cred "name" — activate a named credential from the credentials store
+    if (this.peek().type === T.IDENTIFIER && this.peek().value === 'cred') {
+      this.advance(); // eat 'cred'
+      const name = this.parseExpr();
+      this.eatNewline();
+      return Node('UseCred', { name, line: tok.line, col: tok.col });
+    }
+    // bare 'use' — reserved, ignore
     this.eatNewline();
     return null;
   }
@@ -1648,6 +1655,17 @@ class Parser {
       return this.parsePostfix(Node('SheetsOpen', { name, line: tok.line, col: tok.col }));
     }
 
+    // get "/path" [{params}] — credentialed HTTP GET expression
+    // make users get "/users"
+    // make users get "/users" {active: yes}
+    if (tok.type === T.KEYWORD && tok.value === 'get') {
+      this.advance(); // eat 'get'
+      const url = this.parseExpr();
+      let params = null;
+      if (this.check(T.LBRACE)) params = this.parseDict();
+      return this.parsePostfix(Node('Get', { url, params, line: tok.line, col: tok.col }));
+    }
+
     // Nothing matched
     this.error(`Unexpected token '${tok.value ?? tok.type}'`, tok);
     return null;
@@ -1947,6 +1965,8 @@ class TypeChecker {
       End: () => { },
       Dot: () => { },
       Import: () => { },
+      UseCred: () => { },
+      Get: (node, env) => { this.checkExpr(node.url, env); },
     };
   }
 
@@ -2232,6 +2252,12 @@ class TypeChecker {
         if (node.credential) this.checkExpr(node.credential, env);
         this.checkExpr(node.prompt, env);
         return TYPE.STRING;
+
+      case 'Get':
+        // get "/path" — HTTP GET, returns unknown (dict/list/string depending on server)
+        this.checkExpr(node.url, env);
+        if (node.params) this.checkExpr(node.params, env);
+        return TYPE.UNKNOWN;
 
       case 'BoolLit':
         return node.value === null ? TYPE.NONE : TYPE.BOOLEAN;
