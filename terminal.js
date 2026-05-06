@@ -55,9 +55,11 @@ function termErrorLine(message, lineNum) {
 
 // _escHtml: use the shared escHtml() defined in ivx-editor.js
 
+let _cancelTermInput = null;
+
 // ── Inline input — returns a Promise that resolves when user hits Enter ───────
 function termInput(varName) {
-  return new Promise(resolve => {
+  return new Promise((resolve, reject) => {
     const row = document.createElement('div');
     row.className = 'term-input-row';
 
@@ -76,8 +78,15 @@ function termInput(varName) {
     termMsgs.scrollTop = termMsgs.scrollHeight;
     field.focus();
 
+    _cancelTermInput = () => {
+      field.disabled = true;
+      field.style.display = 'none';
+      reject(new Error('Execution stopped by user'));
+    };
+
     field.addEventListener('keydown', e => {
       if (e.key !== 'Enter') return;
+      _cancelTermInput = null;
       const val = field.value;
       // Lock the input row and show sent bubble
       field.disabled = true;
@@ -95,6 +104,8 @@ function termInput(varName) {
 // ── Run button ────────────────────────────────────────────────────────────────
 let _running = false;
 let _resumeBreakpoint = null; // module-level so the resume click can access it
+let _currentInterp = null;
+let _cancelWait = null;
 
 window._ivxResumeBreakpoint = () => {
   if (_resumeBreakpoint) { _resumeBreakpoint(); _resumeBreakpoint = null; }
@@ -106,7 +117,12 @@ termRun.addEventListener('click', async () => {
     window._ivxResumeBreakpoint();
     return;
   }
-  if (_running) return;
+  if (_running) {
+    if (_currentInterp) _currentInterp.abort();
+    if (_cancelTermInput) { _cancelTermInput(); _cancelTermInput = null; }
+    if (_cancelWait) { _cancelWait(); _cancelWait = null; }
+    return;
+  }
   _running = true;
   termRun.textContent = '⏹ Running';
   termRun.classList.add('running');
@@ -160,7 +176,10 @@ termRun.addEventListener('click', async () => {
       termErrorLine(e.message ?? String(e), line ?? null);
       flagErrorNode(line, col, e.message ?? String(e));
     },
-    onWait: (n) => new Promise(r => setTimeout(r, n * 100)),
+    onWait: (n) => new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, n * 100);
+      _cancelWait = () => { clearTimeout(timer); reject(new Error('Execution stopped by user')); };
+    }),
     onStep: async (srcLine) => {
       // srcLine is 1-based from AST; graph nodes are 0-based
       const nodeId = lineToNodeId.get(srcLine - 1);
@@ -185,6 +204,8 @@ termRun.addEventListener('click', async () => {
     },
   });
 
+  _currentInterp = interp;
+
   try {
     await interp.run(srcEl.value, { ignoreTypeErrors: true });
     interpGlobals = interp.globals;
@@ -198,6 +219,7 @@ termRun.addEventListener('click', async () => {
   termRun.textContent = '▶ Run';
   termRun.classList.remove('running');
   _running = false;
+  _currentInterp = null;
 
   // ── Deploy wait blocks to Apps Script ──────────────────────────────────────
   try {

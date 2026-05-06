@@ -1416,12 +1416,13 @@ class Interpreter {
     // onStep(srcLine) — called before each statement executes with the 1-based source line
     this.onStep = options.onStep ?? null;
 
-    // Max loop iterations — safety valve against infinite loops
     this.maxIterations = options.maxIterations ?? 100_000;
 
     this.globals = new Env();
     // Built-in: err starts as none
     this.globals.set('err', NONE);
+
+    this._aborted = false;
 
     // Register built-in functions
     this._registerBuiltins();
@@ -1450,6 +1451,10 @@ class Interpreter {
     };
   }
 
+  abort() {
+    this._aborted = true;
+  }
+
   // ── Execute a block of statements ─────────────────────────────────────────
   async execBlock(stmts, env) {
     for (const stmt of stmts) {
@@ -1465,6 +1470,7 @@ class Interpreter {
 
   // ── Execute a single statement ────────────────────────────────────────────
   async execStmt(node, env) {
+    if (this._aborted) throw new RuntimeError('Execution stopped by user', node?.line);
     // Fire onStep so the renderer can highlight the active node
     if (this.onStep && node.line != null) this.onStep(node.line);
     switch (node.type) {
