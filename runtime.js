@@ -747,14 +747,14 @@ class IVXRuntime {
     if (provider === 'gemini') {
       const key = this.apiKey || this._interp.globals.get('__credential__');
       if (!key) throw new Error("No API key provided. Use: key \"your-key\"");
-      
+
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
       });
-      
+
       const data = await res.json();
       return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
     }
@@ -1893,6 +1893,7 @@ class Interpreter {
 
   async _evalStringLit(node, env) {
     let sv = node.value;
+
     if (typeof sv === 'string' && sv.includes('{')) {
       const parts = [];
       let i = 0;
@@ -2479,6 +2480,8 @@ class Interpreter {
       case '>=': return left >= right;
       case 'is': return ivxEqual(left, right);
       case 'in': return ivxIn(left, right, node);
+      case 'not in': return !ivxIn(left, right, node);
+
       case 'same': return (Number.isInteger(left) && Number.isInteger(right)) ? ~(left ^ right) : isTruthy(left) === isTruthy(right);
       case 'xor': return (Number.isInteger(left) && Number.isInteger(right)) ? (left ^ right) : isTruthy(left) !== isTruthy(right);
       case 'nand': return (Number.isInteger(left) && Number.isInteger(right)) ? ~(left & right) : !(isTruthy(left) && isTruthy(right));
@@ -2560,11 +2563,17 @@ function ivxEqual(a, b) {
 }
 
 function ivxIn(left, right, node) {
-  if (Array.isArray(right)) return right.some(v => ivxEqual(v, left));
-  if (right instanceof Map) return right.has(left);
-  if (typeof right === 'string') return String(right).includes(String(left));
-  throw new RuntimeError(`'in' requires list, dict, or string`, node?.line);
+  if (right === NONE || right === undefined) return false;
+  try {
+    if (Array.isArray(right)) return right.some(v => ivxEqual(v, left));
+    if (right instanceof Map) return right.has(left);
+    if (typeof right === 'string') return String(right).includes(String(left));
+  } catch (e) {
+    return false;
+  }
+  return false;
 }
+
 
 // Convert an IVX value to an iterable of [primary, secondary] pairs
 function toIterable(value, node) {

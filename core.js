@@ -1346,6 +1346,21 @@ class Parser {
       (t.type === T.KEYWORD && ['is', 'in'].includes(t.value))
     );
 
+    // Check for 'not in' compound operator
+    if (tok.type === T.KEYWORD && tok.value === 'not') {
+      const next = this.peek(1);
+      if (next.type === T.KEYWORD && next.value === 'in') {
+        this.advance(); // eat 'not'
+        this.advance(); // eat 'in'
+        op = 'not in';
+        right = parseClauseExpr();
+        left = this._impliedSubject ?? Node('Identifier', { name: '?', line: tok.line });
+        this._impliedOp = op;
+        return Node('BinOp', { op, left, right, line: tok.line });
+      }
+    }
+
+
     const isArithOp = t => t && t.type === T.OP && ['+', '-', '*', '/', '//', '%', '^'].includes(t.value);
 
     // Parse arithmetic sub-expressions but stop before comparison and logical operators
@@ -1504,6 +1519,8 @@ class Parser {
     // Excel-style cell literal: A1, BC12 (unquoted) inside brackets.
     const a = this.peek();
     const b = this.peek(1);
+    console.log(`[_parseIndexAtom] a.type=${a.type} a.value=${a.value} b.type=${b.type}`);
+
 
     // Case 1: Lexed as IDENTIFIER + NUMBER (e.g. "A" then "1")
     if (a.type === T.IDENTIFIER && b.type === T.NUMBER && Number.isInteger(b.value) && b.value >= 0) {
