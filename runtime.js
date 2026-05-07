@@ -533,21 +533,16 @@ const BUILTIN_DEFS = {
 
       if (!to) throw new Error("email: missing recipient address");
 
-      const raw = [
-        `To: ${to}`,
-        `Subject: ${subject}`,
-        `Content-Type: text/plain; charset="UTF-8"`,
-        `MIME-Version: 1.0`,
-        '',
-        body,
-      ].join('\r\n');
-
-      const encoded = btoa(unescape(encodeURIComponent(raw)))
-        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      // Robust Unicode-safe Base64 for Gmail
+      const emailContent = `To: ${to}\nSubject: ${subject}\n\n${body}`;
+      const base64 = btoa(encodeURIComponent(emailContent).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode('0x' + p1)));
 
       await interp.runtime._googleAPI(
         'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
-        { method: 'POST', body: JSON.stringify({ raw: encoded }) }
+        {
+          method: 'POST',
+          body: JSON.stringify({ raw: base64 })
+        }
       );
 
       interp.onOutput?.(`Email sent to ${to}`);
@@ -1066,8 +1061,8 @@ class IVXRuntime {
 
     try {
       if (model === 'gemini' || model === 'google') {
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${credential}`,
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${credential}`;
+        const res = await fetch(url,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
