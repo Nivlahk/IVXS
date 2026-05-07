@@ -533,9 +533,10 @@ const BUILTIN_DEFS = {
 
       if (!to) throw new Error("email: missing recipient address");
 
-      // Robust Unicode-safe Base64 for Gmail
+      // Robust Unicode-safe Base64URL for Gmail
       const emailContent = `To: ${to}\nSubject: ${subject}\n\n${body}`;
-      const base64 = btoa(encodeURIComponent(emailContent).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode('0x' + p1)));
+      const base64 = btoa(encodeURIComponent(emailContent).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode('0x' + p1)))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
       await interp.runtime._googleAPI(
         'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
@@ -544,6 +545,7 @@ const BUILTIN_DEFS = {
           body: JSON.stringify({ raw: base64 })
         }
       );
+
 
       interp.onOutput?.(`Email sent to ${to}`);
       return true;
@@ -1145,14 +1147,19 @@ class IVXRuntime {
   // ── Google service helpers ────────────────────────────────────────────────
 
   _googleToken() {
-    // driveToken is the shared OAuth token for all Google services
+    // driveToken is the shared OAuth token from the browser UI
     if (typeof driveToken !== 'undefined' && driveToken) return driveToken;
+    // Fallback: use the key set via 'key "..."' command
+    const globalCred = this._interp.globals.get('__credential__');
+    if (globalCred) return globalCred;
     return null;
   }
+
 
   async _googleAPI(url, opts = {}) {
     const token = this._googleToken();
     if (!token) throw new RuntimeError('Not signed in to Google. Click "Sign in to Google" first.', null);
+    console.log(`[IVX] Google API Call: ${url}`);
     const res = await fetch(url, {
       ...opts,
       headers: {
@@ -1161,6 +1168,7 @@ class IVXRuntime {
         ...(opts.headers || {}),
       },
     });
+
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       const msg = err?.error?.message ?? err?.error?.status ?? res.statusText;
@@ -2237,8 +2245,10 @@ class Interpreter {
     const target = await this.evalExpr(node.target, env);
     const isArrayTarget = Array.isArray(target);
 
-    const row = await this._resolveIndexSpec(node.rowSpec, env, node, 'Row', { allowString: isArrayTarget });
+    const isSheet = target instanceof Map && target.get('__type__') === 'sheets';
+    const row = await this._resolveIndexSpec(node.rowSpec, env, node, 'Row', { allowString: isArrayTarget || isSheet });
     const col = await this._resolveIndexSpec(node.colSpec, env, node, 'Column', { allowString: true });
+
 
     if (!isArrayTarget) {
       if (node.hasComma) {
