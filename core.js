@@ -1501,10 +1501,11 @@ class Parser {
   }
 
   _parseIndexAtom() {
-    // Excel-style cell literal: A0, BC12 (unquoted) inside brackets.
-    // Lexer tokenizes this as IDENTIFIER + NUMBER, so stitch it back.
+    // Excel-style cell literal: A1, BC12 (unquoted) inside brackets.
     const a = this.peek();
     const b = this.peek(1);
+
+    // Case 1: Lexed as IDENTIFIER + NUMBER (e.g. "A" then "1")
     if (a.type === T.IDENTIFIER && b.type === T.NUMBER && Number.isInteger(b.value) && b.value >= 0) {
       this.advance();
       this.advance();
@@ -1514,8 +1515,20 @@ class Parser {
         col: a.col,
       });
     }
+
+    // Case 2: Lexed as a single IDENTIFIER (e.g. "A1")
+    if (a.type === T.IDENTIFIER && /^[A-Za-z]+\d+$/.test(a.value)) {
+      this.advance();
+      return Node('StringLit', {
+        value: a.value,
+        line: a.line,
+        col: a.col,
+      });
+    }
+
     return this.parseExpr();
   }
+
 
   _inferClassFieldName(expr) {
     if (!expr) return '';

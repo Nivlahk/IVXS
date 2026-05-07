@@ -1936,8 +1936,17 @@ class Interpreter {
 
   // ── Execute a program from source ─────────────────────────────────────────
   async run(source, options = {}) {
-    const parsed = parse(source);
+    console.log("[IVX] run() started");
+    let parsed;
+    try {
+      parsed = parse(source);
+    } catch (e) {
+      console.error("[IVX] Parse crash:", e);
+      this.onError(new RuntimeError(`Parser crashed: ${e.message}`, 0));
+      return;
+    }
     const { errors: typeErrors } = typecheck(parsed);
+
     const hasParseErrors = parsed.errors.length > 0;
     if (typeErrors.length > 0 && (hasParseErrors || !options.ignoreTypeErrors)) {
       for (const e of typeErrors) this.onError(e);
