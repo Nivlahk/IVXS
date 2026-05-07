@@ -2086,9 +2086,7 @@ class Interpreter {
     const args = [];
     for (const arg of node.args) args.push(await this.evalExpr(arg, env));
     
-    if (!(callee instanceof IVXFunction) && !(callee instanceof IVXClass) && typeof callee !== 'function') {
-      console.error("[IVX] Non-callable:", node.callee.name ?? node.callee.type, callee);
-    }
+
 
 
     if (callee instanceof IVXFunction) {

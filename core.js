@@ -1341,6 +1341,8 @@ class Parser {
     const tok = this.peek();
     const tok1 = this.peek(1);
 
+    let left, op, right;
+
     const isCompOp = t => t && (
       (t.type === T.OP && ['=', '!=', '<', '>', '<=', '>='].includes(t.value)) ||
       (t.type === T.KEYWORD && ['is', 'in'].includes(t.value))
@@ -1360,13 +1362,8 @@ class Parser {
       }
     }
 
-
     const isArithOp = t => t && t.type === T.OP && ['+', '-', '*', '/', '//', '%', '^'].includes(t.value);
-
-    // Parse arithmetic sub-expressions but stop before comparison and logical operators
     const parseClauseExpr = () => this.parseExpr(4);
-
-    let left, op, right;
 
     if (isCompOp(tok)) {
       // No subject — use implied. e.g. "and < 4"
