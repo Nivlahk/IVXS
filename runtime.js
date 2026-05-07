@@ -1063,7 +1063,7 @@ class IVXRuntime {
 
     try {
       if (model === 'gemini' || model === 'google') {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${credential}`;
+        const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${credential}`;
         const res = await fetch(url,
           {
             method: 'POST',
@@ -1728,6 +1728,8 @@ class Interpreter {
           }
           const loopEnv = env.child();
           const r = await this.execBlock(node.body, loopEnv);
+          // Yield to browser UI thread
+          await new Promise(r => setTimeout(r, 0));
           if (r instanceof ReturnSignal) return r;
           if (r instanceof BreakSignal) break;
         }
@@ -1756,6 +1758,8 @@ class Interpreter {
           forEnv.set(node.iterVar, primary);
           forEnv.set(node.iterVar2, secondary);
           const r = await this.execBlock(node.body, forEnv);
+          // Yield to browser UI thread
+          await new Promise(r => setTimeout(r, 0));
           if (r instanceof ReturnSignal) return r;
           if (r instanceof BreakSignal) break;
         }

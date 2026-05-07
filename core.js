@@ -1328,7 +1328,7 @@ class Parser {
     // handled in parseConditionExpr; here only plain 'not <value>' is unary
     if (this.checkKw('not')) {
       const next = this.peek(1);
-      const isCompound = next && next.type === T.KEYWORD && ['and', 'or', 'same'].includes(next.value);
+      const isCompound = next && next.type === T.KEYWORD && ['and', 'or', 'same', 'in'].includes(next.value);
       if (!isCompound) {
         const tok = this.advance();
         const operand = this.parseConditionClause();
@@ -1336,85 +1336,70 @@ class Parser {
       }
     }
 
-    // Peek: do we have a subject (identifier/literal) followed by an operator?
-    // Or are we missing the subject (implied), or missing both subject and op?
     const tok = this.peek();
-    const tok1 = this.peek(1);
-
-    let left, op, right;
-
-    const isCompOp = t => t && (
-      (t.type === T.OP && ['=', '!=', '<', '>', '<=', '>='].includes(t.value)) ||
-      (t.type === T.KEYWORD && ['is', 'in'].includes(t.value))
-    );
-
-    // Check for 'not in' compound operator
-    if (tok.type === T.KEYWORD && tok.value === 'not') {
-      const next = this.peek(1);
-      if (next.type === T.KEYWORD && next.value === 'in') {
-        this.advance(); // eat 'not'
-        this.advance(); // eat 'in'
-        op = 'not in';
-        right = parseClauseExpr();
-        left = this._impliedSubject ?? Node('Identifier', { name: '?', line: tok.line });
-        this._impliedOp = op;
-        return Node('BinOp', { op, left, right, line: tok.line });
+    const isCompOp = t => {
+      if (!t) return false;
+      if (t.type === T.OP && ['=', '!=', '<', '>', '<=', '>='].includes(t.value)) return true;
+      if (t.type === T.KEYWORD && ['is', 'in'].includes(t.value)) return true;
+      if (t.type === T.KEYWORD && t.value === 'not') {
+        const next = this.peek(1);
+        return next && next.type === T.KEYWORD && next.value === 'in';
       }
-    }
+      return false;
+    };
+
+    const parseOp = () => {
+      const t = this.advance();
+      if (t.value === 'not') {
+        this.advance(); // eat 'in'
+        return 'not in';
+      }
+      return t.value;
+    };
 
     const isArithOp = t => t && t.type === T.OP && ['+', '-', '*', '/', '//', '%', '^'].includes(t.value);
-    const parseClauseExpr = () => this.parseExpr(4);
 
     if (isCompOp(tok)) {
       // No subject — use implied. e.g. "and < 4"
-      op = this.advance().value;
-      right = parseClauseExpr();
-      left = this._impliedSubject ?? Node('Identifier', { name: '?', line: tok.line });
+      const op = parseOp();
+      const right = this.parseExpr(4);
+      const left = this._impliedSubject ?? Node('Identifier', { name: '?', line: tok.line });
       this._impliedOp = op;
+      return Node('BinOp', { op, left, right, line: tok.line });
     } else if (isArithOp(tok) && this._impliedSubject) {
-      // Arithmetic op with implied subject — e.g. "and % 5 = 0" means "and go % 5 = 0"
-      // Build: impliedSubject <arithOp> <arithRight> <compOp> <compRight>
+      // Arithmetic op with implied subject — e.g. "and % 5 = 0"
       const arithOp = this.advance().value;
-      const arithRight = parseClauseExpr();
+      const arithRight = this.parseExpr(4);
       const arithNode = Node('BinOp', { op: arithOp, left: this._impliedSubject, right: arithRight, line: tok.line });
       if (isCompOp(this.peek())) {
-        op = this.advance().value;
-        right = parseClauseExpr();
-        left = arithNode;
+        const op = parseOp();
+        const right = this.parseExpr(4);
         this._impliedOp = op;
-      } else {
-        // No comp op — treat the arithmetic result as a boolean check
-        return arithNode;
+        return Node('BinOp', { op, left: arithNode, right, line: tok.line });
       }
-    } else if (!isCompOp(tok1) && this._impliedSubject) {
-      // Only the value is present — subject AND operator are implied
-      // e.g. "a = 3 or 5" → second clause is "5" meaning "a = 5"
-      right = parseClauseExpr();
-      left = this._impliedSubject;
-      op = this._impliedOp ?? '=';
+      return arithNode;
     } else {
       // Normal: subject op value
-      left = parseClauseExpr();
+      const left = this.parseExpr(4);
       if (isCompOp(this.peek())) {
-        op = this.advance().value;
-        right = parseClauseExpr();
-        // _impliedSubject should be the bare subject (leftmost identifier),
-        // not the whole arithmetic expression — so dig into BinOp to find it
-        let subj = left;
-        while (subj && subj.type === 'BinOp') subj = subj.left;
-        this._impliedSubject = subj;
+        const op = parseOp();
+        const right = this.parseExpr(4);
+        if (!this._impliedSubject) {
+            let subj = left;
+            while (subj && subj.type === 'BinOp') subj = subj.left;
+            this._impliedSubject = subj;
+        }
         this._impliedOp = op;
         return Node('BinOp', { op, left, right, line: left?.line });
+      } else if (this._impliedSubject && this._impliedOp) {
+        // e.g. "a = 3 or 5" -> second clause is "5"
+        return Node('BinOp', { op: this._impliedOp, left: this._impliedSubject, right: left, line: tok.line });
+      } else {
+        return left;
       }
-      // No operator found — just return the expression as-is (e.g. boolean check)
-      return left;
     }
-
-    // Keep _impliedSubject pointing to the original subject identifier
-    if (!this._impliedSubject) this._impliedSubject = left;
-    this._impliedOp = op;
-    return Node('BinOp', { op, left, right, line: left?.line });
   }
+
 
   // ── Expression parsing (Pratt / precedence climbing) ──────────────────────
   parseExpr(minPrec = 0) {
