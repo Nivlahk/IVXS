@@ -473,7 +473,9 @@ function highlightSource(src, diagnostics = []) {
   if (classMatches) classMatches.forEach(m => { const c = m.match(/class\s+([A-Za-z_]\w*)/); if (c) allClasses.add(c[1]); });
 
   const errorLines = new Map();
-  diagnostics.forEach(d => errorLines.set(d.line, d));
+  if (Array.isArray(diagnostics)) {
+    diagnostics.forEach(d => errorLines.set(d.line, d));
+  }
 
   return src.split('\n').map((line, i) => {
     const lineNum = i + 1;

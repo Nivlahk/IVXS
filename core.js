@@ -1947,7 +1947,10 @@ const BUILTIN_NAMES = new Set([
   'type', 'isString', 'isInt', 'isFloat', 'isBool', 'isList', 'isDict', 'isNone', 'isNum',
   // Misc
   'range', 'error',
+  // Automation / Integration
+  'email', 'ask', 'sheets',
 ]);
+
 
 class TypeChecker {
   constructor() {

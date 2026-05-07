@@ -1183,14 +1183,19 @@ class IVXRuntime {
     const token = this._googleToken();
     if (!token) throw new RuntimeError('Not signed in to Google. Click "Sign in to Google" first.', node.line);
 
-    // Find the spreadsheet by name in Drive
-    const q = encodeURIComponent(`name='${name}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`);
-    const listRes = await this._googleAPI(
-      `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=1`
-    );
-    const file = listRes?.files?.[0];
-    if (!file) throw new RuntimeError(`Spreadsheet "${name}" not found in Drive.`, node.line);
-    const spreadsheetId = file.id;
+    // If name looks like a Spreadsheet ID (long alphanumeric), use it directly
+    let spreadsheetId = name;
+    if (name.length < 30 || name.includes(' ') || name.includes('/')) {
+      // Find the spreadsheet by name in Drive
+      const q = encodeURIComponent(`name='${name}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`);
+      const listRes = await this._googleAPI(
+        `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=1`
+      );
+      const file = listRes?.files?.[0];
+      if (!file) throw new RuntimeError(`Spreadsheet "${name}" not found in Drive.`, node.line);
+      spreadsheetId = file.id;
+    }
+
     const interp = this;
 
     // Return a Map-like handle with read/write methods
@@ -2080,6 +2085,11 @@ class Interpreter {
     const callee = await this.evalExpr(node.callee, env);
     const args = [];
     for (const arg of node.args) args.push(await this.evalExpr(arg, env));
+    
+    if (!(callee instanceof IVXFunction) && !(callee instanceof IVXClass) && typeof callee !== 'function') {
+      console.error("[IVX] Non-callable:", node.callee.name ?? node.callee.type, callee);
+    }
+
 
     if (callee instanceof IVXFunction) {
       if (callee.body === null) {
