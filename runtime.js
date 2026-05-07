@@ -748,9 +748,10 @@ class IVXRuntime {
 
   async ask(provider, prompt) {
     if (provider === 'gemini') {
-      if (!this.apiKey) throw new Error("No API key provided.");
+      const key = this.apiKey || this._interp.globals.get('__credential__');
+      if (!key) throw new Error("No API key provided. Use: key \"your-key\"");
       
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${this.apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -758,10 +759,11 @@ class IVXRuntime {
       });
       
       const data = await res.json();
-      return data.candidates[0].content.parts[0].text;
+      return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
     }
     return "";
   }
+
 
 
   async _executePost(node, env, { storeResponse = false } = {}) {
@@ -2248,7 +2250,13 @@ class Interpreter {
         throw new RuntimeError(`2D indexing requires a list target`, node.line);
       }
       if (row.omitted) return target;
+
       if (row.isSlice) {
+        // Magic: sheets_handle[A1:B10] -> handle.read("A1:B10")
+        if (target instanceof Map && target.get('__type__') === 'sheets') {
+          const range = `${row.start}:${row.end}`;
+          return await target.get('read')(range);
+        }
         if (typeof target === 'string') {
           return target.slice(row.start ?? undefined, row.end ?? undefined);
         }
@@ -2256,8 +2264,21 @@ class Interpreter {
       }
 
       if (target instanceof Map) {
+        // Magic: sheets_handle[A1] -> handle.read("A1")
+        if (target.get('__type__') === 'sheets' && !target.has(row.value)) {
+          const res = await target.get('read')(row.value);
+          // If it's a single cell, unwrap it
+          if (Array.isArray(res) && res.length === 1 && Array.isArray(res[0]) && res[0].length === 1) {
+            return res[0][0];
+          }
+          // If it's a 1D column/row, return it as a flat list
+          if (Array.isArray(res) && res.length === 1) return res[0];
+          if (Array.isArray(res) && res.every(r => Array.isArray(r) && r.length === 1)) return res.map(r => r[0]);
+          return res;
+        }
         return target.has(row.value) ? target.get(row.value) : NONE;
       }
+
       if (typeof target === 'object' && target !== null) {
         return target[row.value] ?? NONE;
       }
