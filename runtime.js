@@ -554,6 +554,14 @@ const BUILTIN_DEFS = {
       return true;
     }
   },
+  ask: {
+    params: ['provider', 'prompt'],
+    call: async (args, node, interp) => {
+      const provider = String(args[0] ?? 'gemini').toLowerCase();
+      const prompt = String(args[1] ?? '');
+      return await interp.runtime.ask(provider, prompt);
+    }
+  },
 };
 
 function ivxToPlain(value) {
@@ -733,7 +741,28 @@ function tableJoin(leftTable, rightTable, leftCol, rightCol, kind = 'inner', nod
 class IVXRuntime {
   constructor(interp) {
     this._interp = interp;
+    this.apiKey = null;
   }
+
+  setKey(key) { this.apiKey = key; }
+
+  async ask(provider, prompt) {
+    if (provider === 'gemini') {
+      if (!this.apiKey) throw new Error("No API key provided.");
+      
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${this.apiKey}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      });
+      
+      const data = await res.json();
+      return data.candidates[0].content.parts[0].text;
+    }
+    return "";
+  }
+
 
   async _executePost(node, env, { storeResponse = false } = {}) {
     const url = await this._interp.evalExpr(node.url, env);
@@ -2040,7 +2069,7 @@ class Interpreter {
     if (callee instanceof IVXFunction) {
       if (callee.body === null) {
         try {
-          return this._callBuiltin(callee.name, args, node) ?? NONE;
+          return await this._callBuiltin(callee.name, args, node) ?? NONE;
         } catch (e) {
           this.globals.set('err', e.message ?? String(e));
           return NONE;
