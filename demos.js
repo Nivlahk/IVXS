@@ -129,29 +129,29 @@ const IVX_DEMOS = [
     svgFn: () => {
       const body = `
       <rect x="10" y="10" width="560" height="280" rx="6" fill="#0d0d12" stroke="#1e1e2e"/>
-      <text x="290" y="40" text-anchor="middle" font-family="monospace" font-size="14" fill="#e2e8f0" font-weight="bold">The Rules of Authority: Scope and Flow</text>
+      <text x="290" y="38" text-anchor="middle" font-family="monospace" font-size="14" fill="#e2e8f0" font-weight="bold">The Rules of Authority: Scope and Flow</text>
       
       <!-- 1. Finite Boundary -->
-      <rect x="40" y="65" width="480" height="55" rx="6" fill="#12121a" stroke="#f0a030" stroke-width="1.5"/>
-      <text x="60" y="88" font-family="monospace" font-size="12" fill="#f0a030" font-weight="bold">1. The Finite Boundary</text>
-      <text x="220" y="88" font-family="monospace" font-size="10" fill="#9ca3af">Commands aren't open-ended. You must</text>
-      <text x="220" y="104" font-family="monospace" font-size="10" fill="#9ca3af">define the start, the end, and every step.</text>
+      <rect x="40" y="55" width="480" height="70" rx="6" fill="#12121a" stroke="#f0a030" stroke-width="1.5"/>
+      <text x="60" y="78" font-family="monospace" font-size="12" fill="#f0a030" font-weight="bold">1. The Finite Boundary</text>
+      <text x="80" y="98" font-family="monospace" font-size="10" fill="#9ca3af">Commands aren't open-ended. You must</text>
+      <text x="80" y="114" font-family="monospace" font-size="10" fill="#9ca3af">define the start, the end, and every step.</text>
 
       <!-- 2. Discrete Logic -->
-      <rect x="40" y="130" width="480" height="55" rx="6" fill="#12121a" stroke="#4a7fff" stroke-width="1.5"/>
-      <text x="60" y="153" font-family="monospace" font-size="12" fill="#4a7fff" font-weight="bold">2. The Discrete Logic</text>
-      <text x="220" y="153" font-family="monospace" font-size="10" fill="#9ca3af">No "maybe" or "sort of". Every action</text>
-      <text x="220" y="169" font-family="monospace" font-size="10" fill="#9ca3af">reduces to absolute clarity: Yes or No.</text>
+      <rect x="40" y="135" width="480" height="70" rx="6" fill="#12121a" stroke="#4a7fff" stroke-width="1.5"/>
+      <text x="60" y="158" font-family="monospace" font-size="12" fill="#4a7fff" font-weight="bold">2. The Discrete Logic</text>
+      <text x="80" y="178" font-family="monospace" font-size="10" fill="#9ca3af">No "maybe" or "sort of". Every action</text>
+      <text x="80" y="194" font-family="monospace" font-size="10" fill="#9ca3af">reduces to absolute clarity: Yes or No.</text>
 
       <!-- 3. Two Flows -->
-      <rect x="40" y="195" width="480" height="75" rx="6" fill="#12121a" stroke="#cba6f7" stroke-width="1.5"/>
-      <text x="60" y="218" font-family="monospace" font-size="12" fill="#cba6f7" font-weight="bold">3. The Two Flows</text>
+      <rect x="40" y="215" width="480" height="75" rx="6" fill="#12121a" stroke="#cba6f7" stroke-width="1.5"/>
+      <text x="60" y="238" font-family="monospace" font-size="12" fill="#cba6f7" font-weight="bold">3. The Two Flows</text>
       
-      <circle cx="230" cy="235" r="4" fill="#4a9eff"/>
-      <text x="240" y="238" font-family="monospace" font-size="10" fill="#cdd6f4"><tspan fill="#4a9eff" font-weight="bold">Control Flow:</tspan> The sequence ("path"). Which order comes next.</text>
+      <circle cx="70" cy="255" r="4" fill="#4a9eff"/>
+      <text x="80" y="258" font-family="monospace" font-size="10" fill="#cdd6f4"><tspan fill="#4a9eff" font-weight="bold">Control Flow:</tspan> The sequence ("path"). Which order comes next.</text>
       
-      <circle cx="230" cy="255" r="4" fill="#4ade80"/>
-      <text x="240" y="258" font-family="monospace" font-size="10" fill="#cdd6f4"><tspan fill="#4ade80" font-weight="bold">Data Flow:</tspan> The information ("cargo"). Values created and moved.</text>
+      <circle cx="70" cy="275" r="4" fill="#4ade80"/>
+      <text x="80" y="278" font-family="monospace" font-size="10" fill="#cdd6f4"><tspan fill="#4ade80" font-weight="bold">Data Flow:</tspan> The information ("cargo"). Values created and moved.</text>
       `;
       return mkSvg(body, 580, 300);
     },
