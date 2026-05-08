@@ -1054,7 +1054,11 @@ class IVXRuntime {
       : this._interp.globals.get('__credential__') ?? null;
     const model = (node.model ?? 'gemini').toLowerCase();
 
-    if (!credential) {
+    // Determine if this is a cloud provider or a local one
+    const cloudProviders = ['gemini', 'google', 'chatgpt', 'gpt', 'claude', 'anthropic'];
+    const isCloud = cloudProviders.includes(model);
+
+    if (!credential && isCloud) {
       throw new RuntimeError(
         `ask ${model}: no API key. Add: make key "your-key" use key`,
         node.line
@@ -1062,6 +1066,25 @@ class IVXRuntime {
     }
 
     try {
+      // Local AI (Ollama) fallback
+      if (!isCloud || model === 'local') {
+        const ollamaModel = model === 'local' ? 'llama3' : model;
+        const res = await fetch('http://localhost:11434/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: ollamaModel,
+            messages: [{ role: 'user', content: String(prompt) }],
+            stream: false
+          }),
+        });
+        if (!res.ok) {
+          throw new RuntimeError(`Local AI (Ollama) error ${res.status}: ${res.statusText}`, node.line);
+        }
+        const data = await res.json();
+        return data?.message?.content ?? '';
+      }
+
       if (model === 'gemini' || model === 'google') {
         const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${credential}`;
         const res = await fetch(url,

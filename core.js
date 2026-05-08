@@ -1638,8 +1638,12 @@ class Parser {
     if (tok.type === T.KEYWORD && tok.value === 'ask') {
       this.advance(); // eat 'ask'
       const modelTok = this.peek();
-      const model = (modelTok.type === T.IDENTIFIER || modelTok.type === T.KEYWORD)
-        ? this.advance().value : 'chatgpt';
+      let model = 'chatgpt';
+      if (modelTok.type === T.IDENTIFIER || modelTok.type === T.KEYWORD) {
+        model = this.advance().value;
+      } else if (modelTok.type === T.STRING) {
+        model = 'local';
+      }
       const prompt = this.parseExpr();
       let credential = null;
       if (this.checkKw('use')) { this.advance(); credential = this.parseExpr(); }
