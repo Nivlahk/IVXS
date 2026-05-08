@@ -1068,21 +1068,23 @@ class IVXRuntime {
     try {
       // Local AI (Ollama) fallback
       if (!isCloud || model === 'local') {
-        const ollamaModel = model === 'local' ? 'llama3' : model;
-        const res = await fetch('http://127.0.0.1:11434/api/chat', {
+        const ollamaModel = model === 'local' ? 'gemma' : model;
+        const res = await fetch('http://localhost:11434/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             model: ollamaModel,
-            messages: [{ role: 'user', content: String(prompt) }],
+            prompt: String(prompt),
             stream: false
           }),
         });
         if (!res.ok) {
-          throw new RuntimeError(`Local AI (Ollama) error ${res.status}: ${res.statusText}`, node.line);
+          let extra = '';
+          if (res.status === 404) extra = `. Model '${ollamaModel}' not found. Have you pulled it? (ollama pull ${ollamaModel})`;
+          throw new RuntimeError(`Local AI (Ollama) error ${res.status}: ${res.statusText}${extra}`, node.line);
         }
         const data = await res.json();
-        return data?.message?.content ?? '';
+        return data?.response ?? '';
       }
 
       if (model === 'gemini' || model === 'google') {
@@ -1164,8 +1166,8 @@ class IVXRuntime {
     } catch (e) {
       if (e instanceof RuntimeError) throw e;
       let msg = e.message;
-      if (msg === 'Failed to fetch' && (!isCloud || model === 'local')) {
-        msg += ". Is Ollama running? If so, make sure OLLAMA_ORIGINS=\"*\" is set in your environment variables to allow browser access.";
+      if ((msg === 'Failed to fetch' || msg.includes('NetworkError')) && (!isCloud || model === 'local')) {
+        msg = "Could not connect to Ollama. Is it running? If so, make sure OLLAMA_ORIGINS=\"*\" is set in your environment variables to allow browser access.";
       }
       throw new RuntimeError(`ask ${model} failed: ${msg}`, node.line);
     }
