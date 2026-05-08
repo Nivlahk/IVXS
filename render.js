@@ -134,6 +134,13 @@ function commitNodeEditToSource(line, newText) {
   let ti = 0;
   if (ti < tokens.length && IN_KEYS.has(tokens[ti]))  { leadTokens.push(tokens[ti]); ti++; }
   if (ti < tokens.length && NODE_KEYS.has(tokens[ti])){ leadTokens.push(tokens[ti]); ti++; }
+  // Bug fix: for 'make' nodes, the first token after 'make' is the variable name.
+  // We must preserve it so that editing the value (the body text) doesn't lose the variable.
+  if (leadTokens.includes('make') && tokens.length > ti) {
+    leadTokens.push(tokens[ti]);
+    ti++;
+  }
+
   const trailTokens = [];
   // Check last token for outgoing keyword
   const allTail = tokens.slice(ti);
@@ -994,8 +1001,8 @@ function renderTableNode(node, pos, cx, cy, kind) {
 
   // ── Parse variable name and value ───────────────────────────────────────────
   const fullText = node.text.trim();
-  const stripped = fullText.replace(/^makes+/, '');
-  const nameMatch = stripped.match(/^([A-Za-z_]w*)s+([[{][sS]*)/);
+  const stripped = fullText.replace(/^make\s+/, '');
+  const nameMatch = stripped.match(/^([A-Za-z_]\w*)\s+([[{][\s\S]*)/);
   const varName  = nameMatch ? nameMatch[1] : null;
   const rawValue = nameMatch ? nameMatch[2].trim() : stripped;
   const inner    = rawValue.replace(/^[[{]/, '').replace(/[]}]$/, '').trim();

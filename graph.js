@@ -52,7 +52,7 @@ const INCOMING_KEYWORDS = ['then', 'else']; // 'then' is accepted but has no eff
 // in NODE_KEYWORDS, otherwise parseLine sets nodeKey='note' and the main loop's
 // else-branch silently creates a spurious Process node for every standalone
 // 'note ...' line, and KIND_TO_KEY has no entry for it so round-trips break.
-const NODE_KEYWORDS = ['if', 'fork', 'loop', 'dot', 'take', 'say', 'print', 'give', 'fun', 'end', 'from', 'wait', 'every', 'try'];
+const NODE_KEYWORDS = ['if', 'fork', 'loop', 'dot', 'take', 'say', 'print', 'give', 'fun', 'end', 'from', 'wait', 'every', 'try', 'make'];
 const OUTGOING_KEYWORDS = ['prev', 'next'];
 const NODE_KEYS = new Set(NODE_KEYWORDS);
 const IN_KEYS = new Set(INCOMING_KEYWORDS);
@@ -603,6 +603,26 @@ function parseivx(source) {
                 setLastExec(mergeConn);
                 node = mergeConn;
             }
+            else if (nodeKey === 'make') {
+                // 'make var value' -> title=var, text=value
+                const firstSpace = content.indexOf(' ');
+                const varName = firstSpace === -1 ? content : content.substring(0, firstSpace);
+                const rhsValue = firstSpace === -1 ? '' : content.substring(firstSpace + 1).trim();
+
+                let nodeMeta = meta;
+                if (rhsValue.startsWith('[')) nodeMeta = (nodeMeta ? nodeMeta + ' ' : '') + 'list';
+                else if (rhsValue.startsWith('{')) nodeMeta = (nodeMeta ? nodeMeta + ' ' : '') + 'dict';
+
+                node = addNode('Process', lineNum, rhsValue || '...', nodeMeta);
+                // Title badge: variable name (unless it's a list/dict which has its own title logic)
+                if (!nodeMeta.includes('list') && !nodeMeta.includes('dict')) node.title = varName;
+
+                flushUntil(indent, node);
+                if (!tryWireAsBranch(node)) {
+                    wireSeqAndUpdateTails(getLastExec(), node);
+                }
+                setLastExec(node);
+            }
             else if (nodeKey === 'fun') {
                 node = addNode('Function', lineNum, content, 'fun-header');
                 const savedBeforeFun = getLastExec();
@@ -622,16 +642,7 @@ function parseivx(source) {
                 continue;
             }
             else {
-                // Detect list/dict literals in make assignments so renderTableNode
-                // can render them as mini-sheets in the flowchart.
-                let nodeMeta = meta;
-                const makeRhs = content.replace(/^make\s+[A-Za-z_]\w*\s*/, '').trimStart();
-                if (makeRhs.startsWith('[')) nodeMeta = (nodeMeta ? nodeMeta + ' ' : '') + 'list';
-                else if (makeRhs.startsWith('{')) nodeMeta = (nodeMeta ? nodeMeta + ' ' : '') + 'dict';
-                node = addNode('Process', lineNum, content, nodeMeta);
-                // Title badge: variable name for any make assignment
-                const _makeM1 = content.match(/^make\s+([A-Za-z_]\w*)/);
-                if (_makeM1 && !nodeMeta.includes('list') && !nodeMeta.includes('dict')) node.title = _makeM1[1];
+                node = addNode('Process', lineNum, content, meta);
                 flushUntil(indent, node);
                 if (!tryWireAsBranch(node)) {
                     wireSeq(getLastExec(), node);
@@ -660,15 +671,7 @@ function parseivx(source) {
         }
         const hasNonIncomingKeyword = nodeKey || outgoing;
         if (content || hasNonIncomingKeyword) {
-            // Detect list/dict literals on make lines (make is not a nodeKey)
-            let fallMeta = meta;
-            const fallRhs = content.replace(/^make\s+[A-Za-z_]\w*\s*/, '').trimStart();
-            if (fallRhs.startsWith('[')) fallMeta = (fallMeta ? fallMeta + ' ' : '') + 'list';
-            else if (fallRhs.startsWith('{')) fallMeta = (fallMeta ? fallMeta + ' ' : '') + 'dict';
-            const n = addNode('Process', lineNum, content, fallMeta);
-            // Title badge: variable name for any make assignment
-            const _makeM2 = content.match(/^make\s+([A-Za-z_]\w*)/);
-            if (_makeM2 && !fallMeta.includes('list') && !fallMeta.includes('dict')) n.title = _makeM2[1];
+            const n = addNode('Process', lineNum, content, meta);
           // Respect branch scope by indent: dedenting out of a branch must flush
           // enclosing decisions before wiring this node.
           flushUntil(indent, n);
