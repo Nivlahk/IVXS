@@ -1000,12 +1000,9 @@ function buildParamColors(funText, headerId, nodes) {
 function renderTableNode(node, pos, cx, cy, kind) {
 
   // ── Parse variable name and value ───────────────────────────────────────────
-  const fullText = node.text.trim();
-  const stripped = fullText.replace(/^make\s+/, '');
-  const nameMatch = stripped.match(/^([A-Za-z_]\w*)\s+([[{][\s\S]*)/);
-  const varName  = nameMatch ? nameMatch[1] : null;
-  const rawValue = nameMatch ? nameMatch[2].trim() : stripped;
-  const inner    = rawValue.replace(/^[[{]/, '').replace(/[]}]$/, '').trim();
+  const varName = node.title || (node.text.trim().match(/^make\s+([A-Za-z_]\w*)/)?.[1]);
+  const rawValue = node.text.trim().replace(/^make\s+[A-Za-z_]\w*\s+/, '').trim();
+  const inner = rawValue.replace(/^[[{]/, '').replace(/[\]}]$/, '').trim();
 
   // ── Build rows ───────────────────────────────────────────────────────────────
   let rows = [];
@@ -1150,6 +1147,9 @@ function renderNodes(graph, positions, hidden) {
     const isFunCall = node.kind==='Process' && /^[A-Za-z_]\w*\s*\(/.test(raw);
     const isElse = node.kind==='Process' && raw.startsWith('else');
     let bodyLabel = isElse ? raw.slice(5).trim() : isFun ? raw.replace(/^fun(\s|$)/,'').trim() : raw||node.kind;
+    if (node.kind === 'Process' && node.title) {
+      bodyLabel = bodyLabel.replace(new RegExp(`^make\\s+${node.title}\\s+`), '');
+    }
     if (node.kind==='Decision') bodyLabel = fmtDecision(bodyLabel);
 
     const isFunHeader = node.kind==='Function' || meta.includes('fun-header');

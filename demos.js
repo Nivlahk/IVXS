@@ -85,6 +85,41 @@ function nodeShape(kind, label, fill, stroke = '#ccc') {
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:${W}px;height:${H}px;display:block">${shape}${text}</svg>`;
 }
 
+function tableNodeShape(varName, rows, kind) {
+  const CELL_H = 20, BADGE_H = 18;
+  const numRows = rows.length;
+  const numCols = Math.max(...rows.map(r => r.length), 1);
+  const totalW = 160;
+  const colW = (totalW - 12) / numCols;
+  const totalH = numRows * CELL_H;
+  const W = 160, H = BADGE_H + totalH + 12;
+  const cx = W / 2;
+  const badgeColor = kind === 'list' ? '#1e3a5f' : '#7c2d12';
+  const borderColor = kind === 'list' ? '#4b5563' : '#92400e';
+  const labelColor = kind === 'list' ? '#93c5fd' : '#fcd34d';
+
+  let body = `
+    <rect x="30" y="6" width="100" height="${BADGE_H}" rx="4" fill="${badgeColor}" stroke="#6b7280" stroke-width="1"/>
+    <text x="${cx}" y="16" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="10" fill="${labelColor}" font-weight="600">${varName}</text>
+    <rect x="6" y="${BADGE_H + 6}" width="${W-12}" height="${totalH}" rx="4" fill="#111" stroke="${borderColor}" stroke-width="1.5"/>
+  `;
+  
+  rows.forEach((row, ri) => {
+    const ry = BADGE_H + 6 + ri * CELL_H;
+    for (let c = 0; c < numCols; c++) {
+      const rx = 6 + c * colW;
+      if (c > 0) body += `<line x1="${rx}" y1="${ry}" x2="${rx}" y2="${ry + CELL_H}" stroke="${borderColor}" stroke-width="0.5"/>`;
+      if (ri > 0) body += `<line x1="${rx}" y1="${ry}" x2="${rx + colW}" y2="${ry}" stroke="${borderColor}" stroke-width="0.5"/>`;
+      const cell = String(row[c] ?? '');
+      if (cell) {
+        body += `<text x="${rx + colW/2}" y="${ry + CELL_H/2 + 1}" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="10" fill="#eee">${cell}</text>`;
+      }
+    }
+  });
+  
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:${W}px;height:${H}px;display:block">${body}</svg>`;
+}
+
 
 const IVX_DEMOS = [
   {
@@ -401,24 +436,22 @@ const IVX_DEMOS = [
         .ivx-ifhlb{animation:ivx-ifhlb 8s ease infinite}
         .ivx-ifhlc{animation:ivx-ifhlc 8s ease infinite}
       </style>
-      ${codePanel(330, 260)}
+      ${codePanel(330, 220)}
       ${codeLine(36, 82,  [['make', DC.K], [' score ', DC.V], ['85', DC.N]])}
       ${codeLine(36, 108, [['if', '#89b4fa'], [' score ', DC.V], ['>= 90', '#89b4fa']])}
-      ${codeLine(50, 132, [['print', DC.K], [' "A grade"', DC.S]])}
-      <rect x="28" y="142" width="314" height="22" rx="2"/>
-      ${codeLine(36, 158, [['else if', '#89b4fa'], [' score ', DC.V], ['>= 80', '#89b4fa']])}
-      ${codeLine(50, 182, [['print', DC.K], [' "B grade"', DC.S]])}
-      <rect x="28" y="192" width="314" height="22" rx="2"/>
-      ${codeLine(36, 208, [['else', '#89b4fa']])}
-      ${codeLine(50, 232, [['print', DC.K], [' "C grade"', DC.S]])}
-      ${termPanel(370, 20, 190, 260)}
+      ${codeLine(50, 134, [['print', DC.K], [' "A grade"', DC.S]])}
+      <rect x="28" y="146" width="314" height="22" rx="2" fill="${DC.M}" fill-opacity="0.05"/>
+      ${codeLine(36, 162, [['else if', '#89b4fa'], [' score ', DC.V], ['>= 80', '#89b4fa'], [' print', DC.K], [' "B grade"', DC.S]])}
+      <rect x="28" y="172" width="314" height="22" rx="2" fill="${DC.M}" fill-opacity="0.05"/>
+      ${codeLine(36, 188, [['else', '#89b4fa'], [' print', DC.K], [' "C grade"', DC.S]])}
+      ${termPanel(370, 20, 190, 220)}
       <text x="384" y="70"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ifa">score = 85</text>
       <text x="384" y="88"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ifa">85 ≥ 90? no</text>
-      <text x="384" y="108" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ifb">85 ≥ 80? yes</text>
-      <text x="384" y="148" font-family="monospace" font-size="22" fill="#ED8936" font-weight="bold" class="ivx-ifb">B grade</text>
-      <text x="384" y="196" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ifc">score = 65</text>
-      <text x="384" y="214" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ifc">65 ≥ 80? no →</text>
-      <text x="384" y="248" font-family="monospace" font-size="16" fill="#ED8936" font-weight="bold" class="ivx-ifc">C grade</text>
+      <text x="384" y="120" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ifb">85 ≥ 80? yes</text>
+      <text x="384" y="160" font-family="monospace" font-size="22" fill="#ED8936" font-weight="bold" class="ivx-ifb">B grade</text>
+      <text x="384" y="188" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ifc">score = 65</text>
+      <text x="384" y="206" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ifc">65 ≥ 80? no →</text>
+      <text x="384" y="240" font-family="monospace" font-size="16" fill="#ED8936" font-weight="bold" class="ivx-ifc">C grade</text>
     `),
   },
   {
@@ -435,14 +468,13 @@ const IVX_DEMOS = [
         .ivx-elb{animation:ivx-elb 7s ease infinite}
         .ivx-elhlb{animation:ivx-elhlb 7s ease infinite}
       </style>
-      ${codePanel(330, 220)}
+      ${codePanel(330, 200)}
       ${codeLine(36, 82,  [['make', DC.K], [' temp ', DC.V], ['15', DC.N]])}
       ${codeLine(36, 108, [['if', '#89b4fa'], [' temp ', DC.V], ['> 20', '#89b4fa']])}
-      ${codeLine(50, 132, [['print', DC.K], [' "warm"', DC.S]])}
-      <rect x="28" y="142" width="314" height="22" rx="2"/>
-      ${codeLine(36, 158, [['else', '#89b4fa']])}
-      ${codeLine(50, 182, [['print', DC.K], [' "cold"', DC.S]])}
-      ${termPanel(370, 20, 190, 220)}
+      ${codeLine(50, 134, [['print', DC.K], [' "warm"', DC.S]])}
+      <rect x="28" y="146" width="314" height="22" rx="2" fill="${DC.M}" fill-opacity="0.05"/>
+      ${codeLine(36, 162, [['else', '#89b4fa'], [' print', DC.K], [' "cold"', DC.S]])}
+      ${termPanel(370, 20, 190, 200)}
       <text x="384" y="70"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ela">temp = 15</text>
       <text x="384" y="88"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ela">15 &gt; 20? no</text>
       <text x="384" y="108" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-ela">→ else branch</text>
@@ -900,7 +932,7 @@ const IVX_DEMOS = [
   // ── type-string ─────────────────────────────────────────────────────────────
   {
     id: 'type-string', label: 'string', color: '#ce9178',
-    tagline: 'Text in double quotes — supports interpolation with {var}',
+    tagline: 'Text in double quotes — combine with & or use interpolation {var}',
     node: () => nodeShape('rect', '"Hello"', '#1e2d3e'),
     insert: '"" ',
     svgFn: () => {
@@ -911,9 +943,9 @@ const IVX_DEMOS = [
       ${codeLine(36, 122, [['make ', DC.K], ['c ', DC.V], ['"\\u007ba\\u007d, \\u007bb\\u007d!"', DC.S]])}
       ${codeLine(36, 152, [['print ', DC.K], ['size', DC.F], ['(a)', DC.D]])}
       ${codeLine(36, 174, [['print ', DC.K], ['upper', DC.F], ['(a)', DC.D]])}
-      ${codeLine(36, 196, [['print ', DC.K], ['a ', DC.V], ['+ " " + ', DC.K], ['b', DC.V]])}
+      ${codeLine(36, 196, [['print ', DC.K], ['a ', DC.V], ['& " " & ', DC.K], ['b', DC.V]])}
       ${codeLine(36, 218, [['print ', DC.K], ['a', DC.V], ['[0]', DC.M]])}
-      ${codeLine(36, 248, [['note + size() upper() lower()', DC.M]])}
+      ${codeLine(36, 248, [['note & size() upper() lower()', DC.M]])}
       ${codeLine(36, 262, [['note split() trim() replace()', DC.M]])}
       ${termPanel(330, 20, 230, 280)}
       <text x="344" y="78"  font-family="monospace" font-size="11" fill="${DC.M}">c =</text>
@@ -961,27 +993,25 @@ const IVX_DEMOS = [
   // ── type-float ──────────────────────────────────────────────────────────────
   {
     id: 'type-float', label: 'float', color: '#14b8a6',
-    tagline: 'Decimal numbers — use flt() to convert, / always gives float',
+    tagline: 'Decimal numbers — / always gives float, // gives integer',
     node: () => nodeShape('rect', '3.14', '#1e2d3e'),
     insert: '0.0',
     svgFn: () => {
       const body = `
-      ${codePanel(310, 240)}
+      ${codePanel(310, 220)}
       ${codeLine(36, 78,  [['make ', DC.K], ['x ', DC.V], ['3.14', DC.N]])}
-      ${codeLine(36, 100, [['make ', DC.K], ['y ', DC.V], ['flt', DC.F], ['(2)', DC.D]])}
-      ${codeLine(36, 130, [['print ', DC.K], ['x ', DC.V], ['* 2', DC.K]])}
-      ${codeLine(36, 152, [['print ', DC.K], ['round', DC.F], ['(x, 1)', DC.D]])}
-      ${codeLine(36, 174, [['print ', DC.K], ['int', DC.F], ['(x)', DC.D]])}
-      ${codeLine(36, 196, [['print ', DC.K], ['7 / 2', DC.K]])}
-      ${codeLine(36, 222, [['note / always gives float', DC.M]])}
-      ${codeLine(36, 236, [['note // always gives integer', DC.M]])}
-      ${termPanel(330, 20, 230, 240)}
+      ${codeLine(36, 108, [['print ', DC.K], ['x ', DC.V], ['* 2', DC.K]])}
+      ${codeLine(36, 130, [['print ', DC.K], ['round', DC.F], ['(x, 1)', DC.D]])}
+      ${codeLine(36, 152, [['print ', DC.K], ['int', DC.F], ['(x)', DC.D]])}
+      ${codeLine(36, 174, [['print ', DC.K], ['7 / 2', DC.K]])}
+      ${codeLine(36, 204, [['note / always gives float', DC.M]])}
+      ${termPanel(330, 20, 230, 220)}
       <text x="344" y="100" font-family="monospace" font-size="13" fill="#14b8a6">6.28</text>
       <text x="344" y="128" font-family="monospace" font-size="13" fill="#14b8a6">3.1</text>
       <text x="344" y="156" font-family="monospace" font-size="13" fill="${DC.N}">3</text>
       <text x="344" y="184" font-family="monospace" font-size="13" fill="#14b8a6">3.5</text>
       `;
-      return mkSvg(body, 580, 260);
+      return mkSvg(body, 580, 240);
     },
   },
 
@@ -1041,7 +1071,7 @@ const IVX_DEMOS = [
   {
     id: 'type-list', label: 'list', color: '#9ca3af',
     tagline: 'Ordered collection — index with [n], iterate with for',
-    node: () => nodeShape('rect', '[1, 2, 3]', '#1e2d3e'),
+    node: () => tableNodeShape('nums', [['10'], ['20'], ['30']], 'list'),
     insert: '[]',
     svgFn: () => {
       const body = `
@@ -1063,11 +1093,34 @@ const IVX_DEMOS = [
     },
   },
 
+  {
+    id: 'type-list-2d', label: '2D list', color: '#9ca3af',
+    tagline: 'Grids and tables — rows separated by ; or nested []',
+    node: () => tableNodeShape('grid', [['1','2'],['3','4']], 'list'),
+    insert: '[;]',
+    svgFn: () => {
+      const body = `
+      ${codePanel(310, 260)}
+      ${codeLine(36, 78,  [['make ', DC.K], ['grid ', DC.V], ['[1, 2; 3, 4]', DC.M]])}
+      ${codeLine(36, 100, [['print ', DC.K], ['grid', DC.V], ['[0, 1]', DC.M]])}
+      ${codeLine(36, 122, [['print ', DC.K], ['grid', DC.V], ['[1, 0]', DC.M]])}
+      ${codeLine(36, 150, [['note also nested: [[1,2],[3,4]]', DC.M]])}
+      ${codeLine(36, 172, [['note access: grid[row, col]', DC.M]])}
+      ${termPanel(330, 20, 230, 260)}
+      <text x="344" y="100" font-family="monospace" font-size="13" fill="#9ca3af">2</text>
+      <text x="344" y="128" font-family="monospace" font-size="13" fill="#9ca3af">3</text>
+      <text x="344" y="160" font-family="monospace" font-size="10" fill="${DC.M}">0,1 → Row 0, Col 1</text>
+      <text x="344" y="174" font-family="monospace" font-size="10" fill="${DC.M}">1,0 → Row 1, Col 0</text>
+      `;
+      return mkSvg(body, 580, 280);
+    },
+  },
+
   // ── type-dict ───────────────────────────────────────────────────────────────
   {
     id: 'type-dict', label: 'dict', color: '#7a4d2e',
     tagline: 'Key-value pairs — access with ["key"], check with in',
-    node: () => nodeShape('rect', '{key: val}', '#1e2d3e'),
+    node: () => tableNodeShape('p', [['name','Alice'],['age','30']], 'dict'),
     insert: '{}',
     svgFn: () => {
       const pairs = '{"name": "Alice", "age": 30}';
@@ -1546,7 +1599,7 @@ const IVX_DEMO_MAP = Object.fromEntries(IVX_DEMOS.filter(d => d && d.id).map(d =
 const IVX_DEMO_SECTIONS = [
   { label: 'Introduction', ids: ['intro-cmd', 'intro-scope', 'intro-map'] },
   { label: 'Data',         ids: ['make', 'print', 'say', 'take'] },
-  { label: 'Types',        ids: ['type-string', 'type-integer', 'type-float', 'type-boolean', 'type-none', 'type-list', 'type-dict'] },
+  { label: 'Types',        ids: ['type-string', 'type-integer', 'type-float', 'type-boolean', 'type-none', 'type-list', 'type-list-2d', 'type-dict'] },
   { label: 'Logic Operators', ids: ['logic-is', 'logic-not', 'logic-and', 'logic-or', 'logic-same'] },
   { label: 'Control Flow', ids: ['if', 'else', 'loop', 'for', 'end', 'dot', 'try'] },
   { label: 'Functions',    ids: ['give', 'fun', 'class'] },

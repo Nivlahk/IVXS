@@ -615,7 +615,7 @@ function parseivx(source) {
 
                 node = addNode('Process', lineNum, rhsValue || '...', nodeMeta);
                 // Title badge: variable name (unless it's a list/dict which has its own title logic)
-                if (!nodeMeta.includes('list') && !nodeMeta.includes('dict')) node.title = varName;
+                node.title = varName;
 
                 flushUntil(indent, node);
                 if (!tryWireAsBranch(node)) {

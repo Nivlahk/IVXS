@@ -2474,7 +2474,8 @@ class Interpreter {
       if (leftArr || rightArr) {
         const applyOp = (a, b) => {
           switch (node.op) {
-            case '+': return typeof a === 'string' ? String(a) + String(b) : a + b;
+            case '+': return a + b;
+            case '&': return String(a) + String(b);
             case '-': return a - b;
             case '*': return a * b;
             case '/': return b === 0 ? NONE : a / b;
@@ -2504,7 +2505,8 @@ class Interpreter {
     }
 
     switch (node.op) {
-      case '+': return typeof left === 'string' ? String(left) + String(right) : left + right;
+      case '+': return left + right;
+      case '&': return String(left) + String(right);
       case '-': return left - right;
       case '*': return left * right;
       case '/': if (right === 0) throw new RuntimeError('Division by zero', node.line);

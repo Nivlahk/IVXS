@@ -80,7 +80,7 @@ const KEYWORDS = new Set([
 // Two-character operators — must be checked before single-char ones
 const TWO_CHAR_OPS = new Set(['//', '!=', '>=', '<=']);
 // Single-character operators
-const ONE_CHAR_OPS = new Set(['+', '-', '/', '*', '%', '^', '=', '<', '>', '.']);
+const ONE_CHAR_OPS = new Set(['+', '-', '/', '*', '%', '^', '=', '<', '>', '.', '&']);
 
 // Python-style escape sequences resolved inside string literals
 const ESCAPE_MAP = {
@@ -442,7 +442,7 @@ const PREC = {
   'not': 3, // unary, handled separately
   '=': 4, '!=': 4, '<': 4, '>': 4, '<=': 4, '>=': 4, 'is': 4,
   'in': 4,
-  '+': 5, '-': 5,
+  '+': 5, '-': 5, '&': 5,
   '*': 6, '/': 6, '//': 6, '%': 6,
   '^': 7, // right-associative
 };
