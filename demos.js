@@ -298,24 +298,26 @@ const IVX_DEMOS = [
   },
   {
     id: 'say', label: 'say', color: '#a78bfa',
-    tagline: 'Speak text aloud via the browser\'s built-in voice synthesis',
+    tagline: 'Like print, but you can hear the output.',
     node: () => nodeShape('ellipse', 'say "hello"', '#5b3fa8'),
     insert: 'say ',
-    svgFn: () => {
-      const body = `
-      ${codePanel(310, 200)}
-      ${codeLine(36, 82,  [['say ', DC.K], ['"Hello, world!"', DC.S]])}
-      ${codeLine(36, 108, [['say ', DC.K], ['name', DC.V]])}
-      ${codeLine(36, 134, [['say ', DC.K], ['"You scored \u007bscore\u007d"', DC.S]])}
-      ${codeLine(36, 170, [['note speaks via browser TTS', DC.M]])}
-      ${termPanel(330, 20, 220, 200)}
-      <text x="344" y="82"  font-family="monospace" font-size="18">🔊</text>
-      <text x="370" y="84"  font-family="monospace" font-size="12" fill="${DC.S}">"Hello, world!"</text>
-      <text x="344" y="112" font-family="monospace" font-size="18">🔊</text>
-      <text x="370" y="114" font-family="monospace" font-size="12" fill="${DC.V}">Alice</text>
-      `;
-      return mkSvg(body, 580, 220);
-    },
+    svgFn: () => mkSvg(`
+      <style>
+        @keyframes ivx-say1{0%,10%,100%{opacity:0}20%,92%{opacity:1}}
+        @keyframes ivx-say2{0%,40%,100%{opacity:0}50%,92%{opacity:1}}
+        .ivx-say1{animation:ivx-say1 6s ease infinite}
+        .ivx-say2{animation:ivx-say2 6s ease infinite}
+      </style>
+      ${codePanel(330, 200)}
+      ${codeLine(36, 82,  [['make', DC.K], [' name ', DC.V], ['"Alice"', DC.S]])}
+      ${codeLine(36, 108, [['say', '#a78bfa'], [' "Hello, ', DC.S], ['\u007bname\u007d', DC.V], ['!"', DC.S]])}
+      ${codeLine(36, 134, [['say', '#a78bfa'], [' "Welcome back."', DC.S]])}
+      ${termPanel(370, 20, 190, 200)}
+      <text x="384" y="74"  font-family="monospace" font-size="18" class="ivx-say1">🔊</text>
+      <text x="410" y="76"  font-family="monospace" font-size="13" fill="#a78bfa" class="ivx-say1" font-weight="bold">Hello, Alice!</text>
+      <text x="384" y="110" font-family="monospace" font-size="18" class="ivx-say2">🔊</text>
+      <text x="410" y="112" font-family="monospace" font-size="13" fill="#a78bfa" class="ivx-say2" font-weight="bold">Welcome back.</text>
+    `),
   },
   {
     id: 'take', label: 'take', color: DC.G,
@@ -345,11 +347,9 @@ const IVX_DEMOS = [
       <text x="384" y="72"  font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-tkp1">name ›</text>
       <rect x="422" y="59" width="120" height="18" rx="3" fill="#1e1e2e" stroke="${DC.G}" stroke-width="0.8" class="ivx-tkp1"/>
       <text x="428" y="72"  font-family="monospace" font-size="11" fill="${DC.D}" class="ivx-tkt1">Alice</text>
-      <rect x="455" y="61" width="2" height="14" fill="${DC.G}" class="ivx-tkp1 ivx-tkcur"/>
       <text x="384" y="102" font-family="monospace" font-size="11" fill="${DC.M}" class="ivx-tkp2">age ›</text>
       <rect x="420" y="89" width="120" height="18" rx="3" fill="#1e1e2e" stroke="${DC.G}" stroke-width="0.8" class="ivx-tkp2"/>
       <text x="426" y="102" font-family="monospace" font-size="11" fill="${DC.D}" class="ivx-tkt2">30</text>
-      <rect x="439" y="91" width="2" height="14" fill="${DC.G}" class="ivx-tkp2 ivx-tkcur"/>
       <text x="384" y="138" font-family="monospace" font-size="11" fill="#ED8936" class="ivx-tkout">Hi Alice,</text>
       <text x="384" y="154" font-family="monospace" font-size="11" fill="#ED8936" class="ivx-tkout">you are 30</text>
     `),
