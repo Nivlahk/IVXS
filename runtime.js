@@ -1069,7 +1069,7 @@ class IVXRuntime {
       // Local AI (Ollama) fallback
       if (!isCloud || model === 'local') {
         const ollamaModel = model === 'local' ? 'llama3' : model;
-        const res = await fetch('http://localhost:11434/api/chat', {
+        const res = await fetch('http://127.0.0.1:11434/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1163,7 +1163,11 @@ class IVXRuntime {
 
     } catch (e) {
       if (e instanceof RuntimeError) throw e;
-      throw new RuntimeError(`ask ${model} failed: ${e.message}`, node.line);
+      let msg = e.message;
+      if (msg === 'Failed to fetch' && (!isCloud || model === 'local')) {
+        msg += ". Is Ollama running? If so, make sure OLLAMA_ORIGINS=\"*\" is set in your environment variables to allow browser access.";
+      }
+      throw new RuntimeError(`ask ${model} failed: ${msg}`, node.line);
     }
   }
 
