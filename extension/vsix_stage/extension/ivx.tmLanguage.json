@@ -1,0 +1,28 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "IVX",
+  "scopeName": "source.ivx",
+  "patterns": [
+    {
+      "match": "note\\s+.*$",
+      "name": "comment.line.note.ivx"
+    },
+    {
+      "match": "\\b(if|fork|loop|dot|end|take|give|fun|say|text|make|del|save|wait|class|try|use|key|email|sheets|http|time)\\b",
+      "name": "keyword.control.node.ivx"
+    },
+    {
+      "match": "\\b(else|then)\\b",
+      "name": "keyword.incoming.ivx"
+    },
+    {
+      "match": "\\b(prev|next)\\b",
+      "name": "keyword.outgoing.ivx"
+    },
+    {
+      "name": "string.quoted.double.ivx",
+      "begin": "\"",
+      "end": "\""
+    }
+  ]
+}

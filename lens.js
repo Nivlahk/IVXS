@@ -14,550 +14,756 @@
 (function() {
 'use strict';
 
-// v10 row metadata
-const ROW_META = {
-  0x0: 'SYS   [op(8), args…]  — system/privileged, latency-ordered within row\n00–04: single-cycle  05–06: pipeline flush  07–09: memory/cache\n0A–0C: unbounded stall  0D–0E: trap entry  0F: terminal',
-  0x1: 'LI    [op, rd, imm×6]  — load immediate\n10–17: fixed-width zero/sign-ext  18–19: PC-relative (PIC)',
-  0x2: 'JMP   [op, r?, r?, off…]  — all branches in one row\nOffset = target_addr − branch_addr (relative to THIS instruction)',
-  0x3: 'P3    [op, rd, imm×6]  — rd = rd op sign_ext(imm48)',
-  0x4: 'P5    [op, rd, rs, imm×5]  — 2 registers + 5-byte immediate',
-  0x5: 'P6    [op, rd, rs1, rs2, imm×4]  — workhorse: 3 registers + 4-byte imm',
-  0x6: 'FP    [op, rd, rs1, rs2, imm×4]  — IEEE 754 double\nimm[2:0]=rounding mode (0=RNE,1=RTZ,2=RDN,3=RUP,4=RMM)\nimm[7:3]=exception enable mask (NX,UF,OF,DZ,NV)',
-  0x7: 'MEM   [op, rd/rs, rb1, rb2, off×4]  — load (70–77) / store (78–7B)\neffective_addr = rb1 + rb2 + sign_ext(off32)',
-  0x8: 'MEMS  [op, rd/rs, rb1, rb2, off×4]  — sized load (80–87) / sized store (88–8B)\nSame dual-base addressing; off sign-ext 32-bit',
-  0x9: 'P4    [op, rd, addr×6]  — load+combine fused: rd = rd op mem[addr48]',
-  0xA: 'ATOM  [op, rd, rb1, rb2, off×4]  — atomic RMW: rd←old; mem←old op rv\nOp nibble mirrors universal table',
-  0xB: 'VALU  [op, vd, vs1, vs2, imm×4]  — SIMD arith, 4-wide 64-bit integer\nRegs 4-aligned; imm[3:0]=lane suppress mask; imm[11:4]=bcast imm (rs2=ZR)',
-  0xC: 'VMEM  [op, vd/rd, rb1, rb2, off×4]  — SIMD memory + reductions\nVector reg 4-aligned; GP reg bases',
-  0xD: '—     Reserved — future extension space',
-  0xE: '—     Reserved — future extension space',
-  0xF: 'PACK  [op_a, r1a, r2a, r3a, op_b, r1b, r2b, r3b]  — two ops in one 8-byte word\nAll sources read before any write commits (precise exception model)\nDiv-in-both-slots illegal; one-div-slot: div commits after non-div',
+// ── SEER ISA v13-real — rewritten against the ACTUAL, verified hardware ──
+// The previous v10 scheme here (row/nibble-organized, 8-byte instructions,
+// a VALU/VMEM 4-wide SIMD engine, a dual-issue "PACK" format) does not
+// match the real SEER RTL and never has -- confirmed directly against
+// seer_pkg.sv and the encoder/decoder this session's own toolchain uses,
+// which has itself been verified against 5000+ regression vectors and,
+// as of tonight, actual FPGA hardware via the "Send & verify" tool.
+// Real SEER instructions are 1 byte (OB format only: sei/cli/sysret/hlt/
+// nop/ebreak/ecall/wfe) or 4 bytes (every other format) -- never 8, and
+// there is no vector/SIMD engine or dual-issue format anywhere in the RTL.
+//
+// OPCODES/FORMAT and the encode()/decodeOperands() logic below are ported
+// directly from that already-proven toolchain, not reinvented -- this is
+// the single, real source of truth other files in Vertex should also
+// treat as the ISA now that the old lens tables are retired.
+const OPCODES = {
+  "sei":0x00,"cli":0x01,"sysret":0x02,"hlt":0x03,
+  "clrtag":0x04,"swmode.sub":0x05,"swmode.isa":0x06,
+  "rdctrl":0x07,"wrctrl":0x08,"sev":0x09,"hprobe":0x0A,
+  "dcz":0x0B,"vxchg":0x0C,"tlbi":0x0D,"rdrnd":0x0E,"io":0x0F,
+  "nop":0x10,"ebreak":0x11,"ecall":0x12,"wfe":0x13,
+  "popcnt":0x14,"clz":0x15,"fence":0x16,"csel":0x17,
+  "jmpr":0x18,"jmp":0x19,"jeq":0x1A,"jne":0x1B,
+  "jlt":0x1C,"jltu":0x1D,"jge":0x1E,"jgeu":0x1F,
+  "li.64":0x20,"li.captr":0x21,"li.cn":0x22,"li.pcrel":0x23,
+  "sts32":0x24,"sts64":0x25,"st":0x25,
+  "ld.s32":0x26,"ld64":0x27,"ld":0x27,
+  "dcf.c":0x28,"dcf.i":0x29,"dcf.ci":0x2A,"ics":0x2B,
+  "bset":0x30,"bclr":0x31,"btst":0x32,"bflp":0x33,
+  "rol":0x34,"ror":0x35,"bswap":0x36,"brev":0x37,
+  "bext":0x38,"bins":0x39,"bperm":0x3A,"pdep":0x3B,
+  "pext":0x3C,"clmul":0x3D,"crc32":0x3E,"bfly":0x3F,
+  "eqi":0x40,"andi":0x41,"nandi":0x42,"ori":0x43,
+  "nori":0x44,"xori":0x45,"xnri":0x46,"slli":0x47,
+  "srli":0x48,"srai":0x49,"slti":0x4A,"addi":0x4B,
+  "subi":0x4C,"muli":0x4D,
+  "eq":0x50,"and":0x51,"nand":0x52,"or":0x53,
+  "nor":0x54,"xor":0x55,"xnor":0x56,"sll":0x57,
+  "srl":0x58,"sra":0x59,"slt":0x5A,"add":0x5B,
+  "sub":0x5C,"mul":0x5D,"mod":0x5E,"div":0x5F,
+  "fadd":0x70,"fsub":0x71,"fmul":0x72,"fdiv":0x73,
+  "fsqrt":0x74,"feq":0x75,"flt":0x76,"fmin":0x77,
+  "fmax":0x78,"fabs":0x79,"fneg":0x7A,"f2i":0x7B,"i2f":0x7C,
 };
 
-// OP names from universal table (low nibble)
-const OP_NAMES = {
-  0x0:'eq',  0x1:'not', 0x2:'and', 0x3:'nand',
-  0x4:'or',  0x5:'nor', 0x6:'xor', 0x7:'xnor',
-  0x8:'sll', 0x9:'srl', 0xA:'sra', 0xB:'slt',
-  0xC:'add', 0xD:'sub', 0xE:'mul', 0xF:'div'
+// OB=1 byte, everything else=4 bytes [op, b1, b2, b3].
+// A[rd,rs1,rs2] C[rd,rs,imm8] D[rd/rs,cap,ptr] U2[rd,rs] F1[rd] G1[imm8]
+// LI16[rd,imm16] BR[rs1,rs2,cn_off8] JM[off16,link] JR[rs1,rs2,link]
+// CS[rd,rst,rsf] CR[rd,ctrl] CW[rs,ctrl,imm8] BITP[rd,pos6] BITW[rd,width]
+// MEM3[cap,ptr,mode] RAW3[b1,b2,b3] PP = pseudo-op (li, ret)
+const FORMAT = {
+  "sei":"OB","cli":"OB","sysret":"OB","hlt":"OB",
+  "nop":"OB","ebreak":"OB","ecall":"OB","wfe":"OB",
+  "clrtag":"F1","tlbi":"F1","rdrnd":"F1",
+  "swmode.sub":"G1","swmode.isa":"G1","sev":"G1","fence":"G1",
+  "rdctrl":"CR","wrctrl":"CW",
+  "hprobe":"U2","dcz":"U2","popcnt":"U2","clz":"U2",
+  "fsqrt":"U2","fabs":"U2","fneg":"U2","f2i":"U2","i2f":"U2",
+  "vxchg":"RAW3","io":"RAW3","bext":"RAW3","bins":"RAW3",
+  "csel":"CS","jmpr":"JR","jmp":"JM",
+  "jeq":"BR","jne":"BR","jlt":"BR","jltu":"BR","jge":"BR","jgeu":"BR",
+  "li.64":"LI16","li.captr":"LI16","li.cn":"LI16","li.pcrel":"LI16",
+  "sts32":"D","sts64":"D","st":"D","ld.s32":"D","ld64":"D","ld":"D",
+  "dcf.c":"MEM3","dcf.i":"MEM3","dcf.ci":"MEM3","ics":"MEM3",
+  "bset":"BITP","bclr":"BITP","btst":"BITP","bflp":"BITP",
+  "bswap":"BITW","brev":"BITW",
+  "rol":"A","ror":"A","bperm":"A","pdep":"A","pext":"A",
+  "clmul":"A","crc32":"A","bfly":"A",
+  "eqi":"C","andi":"C","nandi":"C","ori":"C","nori":"C","xori":"C",
+  "xnri":"C","slli":"C","srli":"C","srai":"C","slti":"C","addi":"C",
+  "subi":"C","muli":"C",
+  "eq":"A","and":"A","nand":"A","or":"A","nor":"A","xor":"A","xnor":"A",
+  "sll":"A","srl":"A","sra":"A","slt":"A","add":"A","sub":"A","mul":"A",
+  "mod":"A","div":"A",
+  "fadd":"A","fsub":"A","fmul":"A","fdiv":"A","feq":"A","flt":"A",
+  "fmin":"A","fmax":"A",
+  "ret":"PP","li":"PP",
 };
 
-// SYS row (0x0_) — latency-ordered
-const SYS_NAMES = {
-  0x0:'nop',      0x1:'popcnt',   0x2:'clz',      0x3:'rdctrl',
-  0x4:'wrctrl',   0x5:'sysret',   0x6:'rfi',       0x7:'fence',
-  0x8:'sfence',   0x9:'cflush',   0xA:'tlbflush',  0xB:'out',
-  0xC:'in',       0xD:'ebreak',   0xE:'ecall',     0xF:'hlt'
-};
+const REVERSE_OPCODES = {};
+for (const [mnem, op] of Object.entries(OPCODES)) {
+  if (!(op in REVERSE_OPCODES)) REVERSE_OPCODES[op] = mnem;
+}
 
-// JMP row (0x2_)
-const JMP_NAMES = {
-  0x0:'jmp', 0x1:'jmpr', 0x2:'jz', 0x3:'jne',
-  0x4:'jlt', 0x5:'jgt',  0x6:'jle',0x7:'jge'
-};
+// Register aliases -- zr is permanent (hardwired zero, seer_regfile.sv's
+// own exemption); sp/fp/ra sit at the top of whatever depth is configured.
+// 256 is used as a fixed default here since lens.js runs standalone,
+// without the rest of the toolchain's CURRENT_REG_DEPTH global -- matches
+// the toolchain's own default exactly (sp=254,fp=253,ra=252).
+const REG_DEPTH = 256;
+function getRegAlias() {
+  return { zr: 255, sp: REG_DEPTH - 2, fp: REG_DEPTH - 3, ra: REG_DEPTH - 4 };
+}
+function regName(n) {
+  const ra = getRegAlias();
+  const alias = { 255: "zr", [ra.sp]: "sp", [ra.fp]: "fp", [ra.ra]: "ra" };
+  return alias[n] !== undefined ? alias[n] : "r" + n;
+}
+function parseReg(tok) {
+  tok = tok.trim().replace(/,$/, "");
+  const low = tok.toLowerCase();
+  const REG_ALIAS = getRegAlias();
+  if (low in REG_ALIAS) return REG_ALIAS[low];
+  const m = /^r(\d+)$/i.exec(tok);
+  if (m) {
+    const n = parseInt(m[1], 10);
+    if (n >= 0 && n <= 255) return n;
+  }
+  throw new Error(`invalid register: ${tok}`);
+}
+function parseImm(tok, bits) {
+  tok = tok.trim().replace(/,$/, "").replace(/@(lo16|pcrel|cn)$/, "");
+  let v;
+  if (/^[+-]?0x/i.test(tok)) v = parseInt(tok, 16);
+  else if (/^[+-]?0b/i.test(tok)) v = parseInt(tok.replace(/0b/i, ""), 2);
+  else if (tok.length === 3 && tok[0] === "'" && tok[2] === "'") v = tok.charCodeAt(1);
+  else v = parseInt(tok, 10);
+  if (Number.isNaN(v)) throw new Error(`invalid immediate: ${tok}`);
+  if (bits < 32) {
+    const unsignedMax = (1 << bits) - 1, signedMin = -(1 << (bits - 1));
+    if (v > unsignedMax || v < signedMin) {
+      throw new Error(`immediate ${v} does not fit in ${bits} bits (valid range ${signedMin}..${unsignedMax})`);
+    }
+    const mask = (1 << bits) - 1;
+    return v & mask;
+  }
+  const range = Math.pow(2, bits);
+  return v < 0 ? v + range : v % range;
+}
+function toOnesComplementRaw(off, bits) {
+  const maxVal = (1 << (bits - 1)) - 1, minVal = -(1 << (bits - 1));
+  if (off > maxVal || off < minVal) {
+    throw new Error(`offset ${off} does not fit in a signed ${bits}-bit field (valid range ${minVal}..${maxVal})`);
+  }
+  const mask = (1 << bits) - 1;
+  const signBit = 1 << (bits - 1);
+  return (off & signBit) ? (off - 1) & mask : off;
+}
+function fromOnesComplementRaw(raw, bits) {
+  const mask = (1 << bits) - 1;
+  const signBit = 1 << (bits - 1);
+  if (!(raw & signBit)) return raw;
+  const bumped = (raw + 1) & mask;
+  return (bumped & signBit) ? bumped - (mask + 1) : bumped;
+}
+function s8(b) { return b & 0x80 ? b - 256 : b; }
 
-// LI row (0x1_)
-const LI_NAMES = {
-  0x0:'li.u8', 0x1:'li.s8', 0x2:'li.u16', 0x3:'li.s16',
-  0x4:'li.u32',0x5:'li.s32',0x6:'li.u48', 0x7:'li.s48',
-  0x8:'li.pcrel.u', 0x9:'li.pcrel.s'
-};
+// Encode one instruction -> array of byte values (length 1 for OB, 4 otherwise).
+function encode(mnem, ops) {
+  mnem = mnem.toLowerCase().replace(/,$/, "");
+  if (!(mnem in FORMAT)) throw new Error(`unknown mnemonic: ${mnem}`);
+  const fmt = FORMAT[mnem];
+  const op = OPCODES[mnem];
+  const R = i => parseReg(ops[i]);
+  const I = (i, b = 8) => parseImm(ops[i], b);
+  const need = n => { if (ops.length < n) throw new Error(`${mnem}: expected ${n} operand(s), got ${ops.length}`); };
 
-// FP row (0x6_): 60–6A are FP-only prefix; 6B–6F mirror universal table
-const FP_NAMES = {
-  0x0:'feq',0x1:'fneg',0x2:'fabs',0x3:'ffloor',0x4:'fceil',0x5:'fround',
-  0x6:'fjgt',0x7:'f2i',0x8:'i2f',0x9:'fsqrt',
-  0xB:'flt',0xC:'fadd',0xD:'fsub',0xE:'fmul',0xF:'fdiv'
-};
+  switch (fmt) {
+    case "OB":   return [op];
+    case "A":    need(3); return [op, R(0), R(1), R(2)];
+    case "C":    need(3); return [op, R(0), R(1), I(2,8)];
+    case "D":    need(3); return [op, R(0), R(1), R(2)];
+    case "U2":   need(2); return [op, R(0), R(1), 0];
+    case "F1":   need(1); return [op, R(0), 0, 0];
+    case "G1":   return [op, (ops.length ? I(0,8) : 0) & 0xFF, 0, 0];
+    case "JR":   need(3); return [op, R(0), R(1), R(2)];
+    case "CS":   need(3); return [op, R(0), R(1), R(2)];
+    case "CR":   need(2); return [op, R(0), I(1,8), 0];
+    case "CW":   { need(2); const imm = ops.length >= 3 ? I(2,8) : 0; return [op, R(0), I(1,8), imm & 0xFF]; }
+    case "BITP": need(2); return [op, R(0), I(1,6) & 0x3F, 0];
+    case "BITW": need(2); return [op, R(0), I(1,8), 0];
+    case "MEM3": { need(2); const mode = ops.length >= 3 ? I(2,8) : 0; return [op, R(0), R(1), mode & 0xFF]; }
+    case "RAW3": { need(2); const b3 = ops.length >= 3 ? R(2) : 0; return [op, R(0), R(1), b3]; }
+    case "LI16": {
+      // CORRECTION: an earlier pass here added toOnesComplementRaw
+      // handling for li.pcrel specifically, reasoning it needed the same
+      // signed treatment as BR/JM (which are CN-table-relative). That
+      // reasoning was wrong -- checked directly against
+      // extracted_from_soak2.js's own LI16 case just now, and it uses
+      // plain parseImm masking uniformly for every LI16 mnemonic,
+      // li.pcrel included, with no special-casing at all. Confirmed by
+      // the real cross-check test disagreeing on li.pcrel r1, -20 (0xFFEB
+      // vs the proven 0xFFEC) -- reverted to match.
+      need(2);
+      const imm = I(1,16);
+      return [op, R(0), (imm>>8)&0xFF, imm&0xFF];
+    }
+    case "BR":   { need(3); const off = parseRawInt(ops[2]); return [op, R(0), R(1), toOnesComplementRaw(off, 8)]; }
+    case "JM": {
+      need(1);
+      const off = parseRawInt(ops[0]);
+      const raw = toOnesComplementRaw(off, 16);
+      const link = ops.length >= 2 ? R(1) : 255;
+      return [op, (raw>>8)&0xFF, raw&0xFF, link];
+    }
+    case "PP":
+      if (mnem === "ret") return [0x19, 0x00, 0x00, 0x00]; // jmp 0 = return
+      if (mnem === "li") {
+        need(2);
+        const rd = R(0);
+        // BUGFIX (found via a regression -- this had reverted to the old,
+        // wrong 0x20/li.64 at some point during later edits, caught by
+        // real Vertex output showing "li.64 sp, 0x6000" where "li.captr"
+        // was expected; the same wrong-opcode symptom was actually
+        // visible in an earlier trace too and should have been chased
+        // down then). Real hardware uses li.captr=0x21 for this case, not
+        // li.64=0x20 -- confirmed directly against extracted_from_soak2.js's
+        // own encode() again here, not just trusted from memory.
+        let raw = ops[1].trim().replace(/,$/, "");
+        let v;
+        if (/^[+-]?0x/i.test(raw)) v = parseInt(raw, 16);
+        else if (/^[+-]?0b/i.test(raw)) v = parseInt(raw.replace(/0b/i, ""), 2);
+        else v = parseInt(raw, 10);
+        if (Number.isNaN(v)) throw new Error(`li: invalid immediate: ${raw}`);
+        if (v >= 0 && v <= 0xFFFF) return [0x21, rd, (v>>8)&0xFF, v&0xFF];
+        if (v < 0 && v >= -128) return [0x4B, rd, 255, v & 0xFF];
+        throw new Error(`li: ${raw} out of range (0..0xFFFF or -128..-1; use li.pcrel/li.cn or a multi-op sequence)`);
+      }
+      throw new Error(`unhandled pseudo-op: ${mnem}`);
+    default: throw new Error(`unknown format: ${fmt}`);
+  }
+}
+function tokIsHexOrBin(tok) { return /^[+-]?0[xXbB]/.test(tok.trim()); }
 
-// MEM row (0x7_): 70–77 loads, 78–7B stores
-const MEM_NAMES = {
-  0x0:'ld.u8',0x1:'ld.s8',0x2:'ld.u16',0x3:'ld.s16',
-  0x4:'ld.u32',0x5:'ld.s32',0x6:'ld.u64',0x7:'ld.s64',
-  0x8:'st.8',0x9:'st.16',0xA:'st.32',0xB:'st.64'
-};
-
-// MEMS row (0x8_): 80–87 sized loads, 88–8B sized stores
-const MEMS_NAMES = {
-  0x0:'lds.u8',0x1:'lds.s8',0x2:'lds.u16',0x3:'lds.s16',
-  0x4:'lds.u32',0x5:'lds.s32',0x6:'lds.u64',0x7:'lds.s64',
-  0x8:'sts.8',0x9:'sts.16',0xA:'sts.32',0xB:'sts.64'
-};
-
-// VALU row (0xB_)
-const VALU_NAMES = {
-  0x0:'veq',0x1:'vsra',0x2:'vand',0x3:'vmax',
-  0x4:'vor',0x5:'vmin',0x6:'vxor',0x7:'vblend',
-  0x8:'vsll',0x9:'vsrl',0xA:'vbcast',0xB:'vcmplt',
-  0xC:'vadd',0xD:'vsub',0xE:'vmul',0xF:'vfma'
-};
-
-// VMEM row (0xC_)
-const VMEM_NAMES = { 0x0:'vld64',0x1:'vst64',0x2:'vredadd',0x3:'vredmax' };
-
-// ── Helpers ──────────────────────────────────────────────────────────
-function se(v, bits) {
-  if (v >= (1 << (bits-1))) v -= (1 << bits);
+// Raw, UNMASKED integer parse -- for BR/JM offset fields specifically,
+// which need the true signed value handed to toOnesComplementRaw, not
+// parseImm's own masked-to-unsigned-range result (see the bug note where
+// this is used, in encode()'s BR/JM cases).
+function parseRawInt(tok) {
+  tok = tok.trim().replace(/,$/, "");
+  let v;
+  if (/^[+-]?0x/i.test(tok)) v = parseInt(tok, 16);
+  else if (/^[+-]?0b/i.test(tok)) v = parseInt(tok.replace(/0b/i, ""), 2);
+  else v = parseInt(tok, 10);
+  if (Number.isNaN(v)) throw new Error(`invalid immediate: ${tok}`);
   return v;
 }
-function reg(n) { return n === 255 ? 'ZR' : `R${n}`; }
-function seLE(bytes) {
-  let v = 0;
-  for (let i = bytes.length-1; i >= 0; i--) v = (v * 256 + bytes[i]);
-  const bits = bytes.length * 8;
-  if (v >= Math.pow(2, bits-1)) v -= Math.pow(2, bits);
-  return v;
+
+// Mirror of encode(): format + the 3 post-opcode bytes -> operand token strings.
+function decodeOperands(fmt, bytes) {
+  const [b1, b2, b3] = bytes;
+  switch (fmt) {
+    case "OB":   return [];
+    case "A":    return [regName(b1), regName(b2), regName(b3)];
+    case "C":    return [regName(b1), regName(b2), String(s8(b3))];
+    case "D":    return [regName(b1), regName(b2), regName(b3)];
+    case "U2":   return [regName(b1), regName(b2)];
+    case "F1":   return [regName(b1)];
+    case "G1":   return [String(b1)];
+    case "JR":   return [regName(b1), regName(b2), regName(b3)];
+    case "CS":   return [regName(b1), regName(b2), regName(b3)];
+    case "CR":   return [regName(b1), String(b2)];
+    case "CW":   return [regName(b1), String(b2), String(b3)];
+    case "BITP": return [regName(b1), String(b2 & 0x3F)];
+    case "BITW": return [regName(b1), String(b2)];
+    case "MEM3": return [regName(b1), regName(b2), String(b3)];
+    case "RAW3": return [regName(b1), regName(b2), regName(b3)];
+    case "LI16": { const imm=(b2<<8)|b3; return [regName(b1), "0x"+imm.toString(16).toUpperCase()]; }
+    case "BR":   return [regName(b1), regName(b2), String(fromOnesComplementRaw(b3, 8))];
+    case "JM": {
+      const raw16 = (b1<<8)|b2;
+      const offStr = String(fromOnesComplementRaw(raw16, 16));
+      return (b3 !== 255) ? [offStr, regName(b3)] : [offStr];
+    }
+    default: return [b1,b2,b3].map(String);
+  }
 }
+
+// Instruction byte-length for a given opcode -- 1 for OB, 4 otherwise. The
+// caller MUST use this instead of assuming a fixed width, since real SEER
+// instructions are variable length.
+function instrLength(opcode) {
+  const mnem = REVERSE_OPCODES[opcode];
+  return (mnem && FORMAT[mnem] === "OB") ? 1 : 4;
+}
+
+// ── Simulator (ported from the Soak Tester, adapted this session) ──────────
+// Adapted to take a raw bytes array directly instead of calling its own
+// separate parseProgram/assembleLine internally -- this file already has a
+// proven assembler (assembleSource, above); building a second, parallel one
+// just to feed the simulator would reintroduce exactly the kind of
+// duplication that caused this whole rewrite (two copies of "how SEER
+// bytes work" that can silently drift apart). The simulator's own main
+// loop already worked directly off a flat bytes array either way (decoding
+// via REVERSE_OPCODES, the same way disasm() does), so only the few lines
+// that used to call parseProgram needed to change.
+const SIM_ZR = 255;
+function simU64(v) { return BigInt.asUintN(64, v); }
+function simS64(v) { return BigInt.asIntN(64, v); }
+function simS8(x)  { return x & 0x80 ? BigInt(x - 256) : BigInt(x); }
+function hex2(b) { return b.toString(16).padStart(2,"0").toUpperCase(); }
+
+const SIM_ALU_R = {
+  eq:   (a,b) => a===b ? 1n : 0n,        and:  (a,b) => simU64(a & b),
+  nand: (a,b) => simU64(~(a & b)),        or:   (a,b) => simU64(a | b),
+  nor:  (a,b) => simU64(~(a | b)),        xor:  (a,b) => simU64(a ^ b),
+  xnor: (a,b) => simU64(~(a ^ b)),        sll:  (a,b) => simU64(a << (b & 63n)),
+  srl:  (a,b) => simU64(a >> (b & 63n)),  sra:  (a,b) => simU64(simS64(a) >> (b & 63n)),
+  slt:  (a,b) => simS64(a) < simS64(b) ? 1n : 0n,
+  add:  (a,b) => simU64(a + b),           sub:  (a,b) => simU64(a - b),
+  mul:  (a,b) => simU64(simS64(a) * simS64(b)),
+  mod:  (a,b) => b===0n ? 0n : simU64(simS64(a) % simS64(b)),
+  div:  (a,b) => b===0n ? 0n : simU64(simS64(a) / simS64(b)),
+};
+const SIM_ALU_I_MNEM = {eqi:'eq',andi:'and',nandi:'nand',ori:'or',nori:'nor',xori:'xor',
+  xnri:'xnor',slli:'sll',srli:'srl',srai:'sra',slti:'slt',addi:'add',subi:'sub',muli:'mul'};
+
+// bytes: flat Uint8Array/Array of the whole program's bytes (dense-packed,
+// no per-instruction padding -- matches the real loader's actual layout).
+function simulateProgram(bytes, maxSteps=200000, regDepth=256) {
+  if (!bytes || bytes.length === 0) return {error: "empty program"};
+  bytes = Array.from(bytes);
+  while (bytes.length % 4 !== 0) bytes.push(0);
+
+  const reg = new Array(256).fill(0n);
+  const mem = new Map();
+  const rstack = [];
+  const cnTable = new Array(256).fill(null);
+  let stagedCnIndex = null;
+  let cnCount = 0;
+  let pc = 0;
+  let halted = false;
+  let steps = 0;
+  const trace = [];
+
+  const localZr = regDepth - 1;
+  const isHardZero = r => r === SIM_ZR || r === localZr;
+  const isNotImpl = r => regDepth < 256 && !isHardZero(r) && r >= regDepth;
+  const RD = r => {
+    if (isHardZero(r)) return 0n;
+    if (isNotImpl(r)) throw {__regNotImpl: r};
+    return reg[r];
+  };
+  const WR = (r, v) => {
+    if (isHardZero(r)) return;
+    if (isNotImpl(r)) throw {__regNotImpl: r};
+    reg[r] = simU64(v);
+  };
+
+  try {
+  while (!halted && steps < maxSteps) {
+    steps++;
+    const stepPc = pc;
+    let stepWrite = null;
+    if (pc < 0 || pc >= bytes.length) return {error: `PC ${pc} out of bounds`, trace, steps};
+    const op = bytes[pc];
+    const mnem = REVERSE_OPCODES[op];
+    if (mnem === undefined) return {error: `unimplemented/unknown opcode 0x${hex2(op)} at PC ${pc}`, trace, steps};
+    const fmt = FORMAT[mnem];
+
+    if (fmt === "OB") {
+      if (mnem === 'hlt') { halted = true; }
+      else if (mnem === 'nop') { cnCount++; }
+      trace.push({pc: stepPc, waddr: null, wdata: null});
+      pc = pc + 1;
+      continue;
+    }
+
+    if (pc + 3 >= bytes.length) return {error: `truncated instruction at PC ${pc}`, trace, steps};
+    const b1 = bytes[pc+1], b2 = bytes[pc+2], b3 = bytes[pc+3];
+    let nextPc = pc + 4;
+    let isCallJmp = false;
+
+    if (mnem in SIM_ALU_R) {
+      WR(b1, SIM_ALU_R[mnem](RD(b2), RD(b3)));
+    } else if (mnem in SIM_ALU_I_MNEM) {
+      WR(b1, SIM_ALU_R[SIM_ALU_I_MNEM[mnem]](RD(b2), simS8(b3)));
+    } else if (mnem === 'li.64') {
+      const addr = Number(RD(b1)) + (Number(simS8(b3)) << 3);
+      WR(b1, mem.get(addr) ?? 0n);
+    } else if (mnem === 'li.captr') {
+      WR(b1, BigInt((b2 << 8) | b3));
+    } else if (mnem === 'li.pcrel') {
+      const off = (b2 << 8) | b3;
+      const signedOff = off & 0x8000 ? off - 0x10000 : off;
+      WR(b1, simU64(BigInt(pc + signedOff)));
+    } else if (mnem === 'li.cn') {
+      const idx = (b2 << 8) | b3;
+      if (cnTable[idx] === null) return {error: `li.cn: table index ${idx} not registered`, trace, steps};
+      WR(b1, BigInt(cnTable[idx]));
+    } else if (mnem === 'li.cn.reg') {
+      const idx = Number(RD(b2)) & 0xFF;
+      if (cnTable[idx] === null) return {error: `li.cn.reg: table index ${idx} not registered`, trace, steps};
+      WR(b1, BigInt(cnTable[idx]));
+    } else if (mnem === 'ld64') {
+      WR(b1, mem.get(Number(RD(b2))+Number(RD(b3))) ?? 0n);
+    } else if (mnem === 'ld.s32') {
+      const v = Number((mem.get(Number(RD(b2))+Number(RD(b3))) ?? 0n) & 0xFFFFFFFFn);
+      WR(b1, simU64(BigInt(v & 0x80000000 ? v - 0x100000000 : v)));
+    } else if (mnem === 'sts32') {
+      mem.set(Number(RD(b2))+Number(RD(b3)), RD(b1) & 0xFFFFFFFFn);
+    } else if (mnem === 'sts64') {
+      mem.set(Number(RD(b2))+Number(RD(b3)), RD(b1));
+    } else if (mnem === 'popcnt') {
+      let v = RD(b2), c = 0n; while (v) { c += v & 1n; v >>= 1n; } WR(b1, c);
+    } else if (mnem === 'clz') {
+      const v = RD(b2); WR(b1, v === 0n ? 64n : BigInt(64 - v.toString(2).length));
+    } else if (mnem === 'bset') {
+      WR(b1, RD(b1) | (1n << BigInt(b2 & 63)));
+    } else if (mnem === 'btst') {
+      WR(b1, (RD(b1) >> BigInt(b2 & 63)) & 1n);
+    } else if (mnem === 'rdctrl') {
+      WR(b1, 0n);
+    } else if (mnem === 'wrctrl') {
+      const wrctrlVal = (b1 === SIM_ZR) ? BigInt(b3) : RD(b1);
+      if (b2 === 14) { stagedCnIndex = Number(wrctrlVal) & 0xFF; }
+      else if (b2 === 15) {
+        if (stagedCnIndex === null) return {error: `wrctrl 0x0F committed with no staged index (missing prior wrctrl ...,14)`, trace, steps};
+        const targetPc = Number(wrctrlVal);
+        if (targetPc < 0 || targetPc >= bytes.length || bytes[targetPc] !== 0x10) {
+          return {error: `CN registration fault: wrctrl committed PC ${targetPc} as slot ${stagedCnIndex}, `
+                        + `but that address is not a nop (found 0x${(bytes[targetPc]||0).toString(16)}) -- `
+                        + `likely a wrong li.pcrel/li.captr offset in the setup prologue`, trace, steps};
+        }
+        cnTable[stagedCnIndex] = targetPc + 1;
+        stagedCnIndex = null;
+      }
+    } else if (fmt === "BR") {
+      const a = RD(b1), bb = RD(b2);
+      const cond = {jeq:a===bb, jne:a!==bb, jlt:simS64(a)<simS64(bb),
+                    jltu:a<bb, jge:simS64(a)>=simS64(bb), jgeu:a>=bb}[mnem];
+      if (cond) {
+        const off = fromOnesComplementRaw(b3, 8);
+        const idx = (cnCount + off) & 0xFF;
+        if (cnTable[idx] === null) return {error: `branch to unregistered CN slot ${idx} (cnCount=${cnCount}, off=${off})`, trace, steps};
+        nextPc = cnTable[idx];
+      }
+    } else if (mnem === 'jmp') {
+      const raw16 = (b1 << 8) | b2;
+      if (raw16 === 0) {
+        if (!rstack.length) return {error: `return-stack underflow at PC ${pc}`, trace, steps};
+        const frame = rstack.pop();
+        nextPc = frame.pc; cnCount = frame.cnCount;
+      } else {
+        const off = fromOnesComplementRaw(raw16, 16);
+        const idx = (cnCount + off) & 0xFF;
+        if (cnTable[idx] === null) return {error: `jmp to unregistered CN slot ${idx} (cnCount=${cnCount}, off=${off})`, trace, steps};
+        nextPc = cnTable[idx];
+        if (b3 !== SIM_ZR) {
+          WR(b3, BigInt(pc + 5));
+          rstack.push({pc: pc + 5, cnCount});
+          cnCount = 0;
+          isCallJmp = true;
+        }
+      }
+    } else if (mnem === 'jmpr') {
+      const tgt = Number(simU64(RD(b1) + RD(b2)));
+      if (b3 !== SIM_ZR) { WR(b3, BigInt(pc + 5)); rstack.push({pc: pc+5, cnCount}); cnCount = 0; }
+      nextPc = tgt;
+    } else {
+      return {error: `unimplemented mnemonic "${mnem}" (0x${hex2(op)}) at PC ${pc}`, trace, steps};
+    }
+
+    if (fmt !== "BR" && mnem !== 'jmp' && mnem !== 'jmpr') {
+      const writeMnems = new Set([...Object.keys(SIM_ALU_R), ...Object.keys(SIM_ALU_I_MNEM),
+        'li.64','li.captr','li.pcrel','li.cn','li.cn.reg','ld64','ld.s32','popcnt','clz','bset','btst','rdctrl']);
+      if (writeMnems.has(mnem) && !isHardZero(b1)) stepWrite = [b1, RD(b1)];
+    } else if (mnem === 'jmp') {
+      if (isCallJmp && !isHardZero(b3)) stepWrite = [b3, RD(b3)];
+    } else if (mnem === 'jmpr') {
+      if (!isHardZero(b3)) stepWrite = [b3, RD(b3)];
+    }
+
+    trace.push({pc: stepPc, waddr: stepWrite ? stepWrite[0] : null,
+                 wdata: stepWrite ? BigInt.asIntN(64, stepWrite[1]) & 0xFFFFFFFFFFFFFFFFn : null});
+    pc = nextPc;
+  }
+  if (steps >= maxSteps) return {error: `exceeded ${maxSteps} steps without halting -- infinite loop?`, trace, steps};
+  return {reg, mem, steps, halted, trace, cnCount};
+  } catch (e) {
+    if (e && e.__regNotImpl !== undefined) {
+      return {error: `register r${e.__regNotImpl} is not implemented at regDepth=${regDepth} `
+        + `(real hardware would raise TRAP_ILLEGAL_INSTR here) -- PC ${pc}`, trace, steps};
+    }
+    throw e;
+  }
+}
+
+
 const F = (s,e,t,tip) => ({start:s, end:e, type:t, tip});
 
-// ── v10 Disassembler ─────────────────────────────────────────────────
-function disasm(b8) {
-  const b = Array.from(b8);
-  const hi = b[0] >> 4;
-  const lo = b[0] & 0xF;
-  const meta = ROW_META[hi] || 'Unknown row';
+const FORMAT_DOC = {
+  OB:   'No operands -- single byte, no operand bytes follow.',
+  A:    '[op, rd, rs1, rs2] -- rd = rs1 OP rs2.',
+  C:    '[op, rd, rs, imm8] -- rd = rs OP sign_ext(imm8).',
+  D:    '[op, rd/rs, cap, ptr] -- memory op; effective address = cap-relative + ptr.',
+  U2:   '[op, rd, rs] -- unary/2-register op.',
+  F1:   '[op, rd] -- single-register op.',
+  G1:   '[op, imm8] -- single immediate op.',
+  LI16: '[op, rd, imm16] -- rd = 16-bit immediate (zero/sign-extended per mnemonic).',
+  BR:   '[op, rs1, rs2, cn_off8] -- conditional branch; target resolved via the CN table at cn_off8.',
+  JM:   '[op, off16, link] -- unconditional jump/call; PC-relative via the CN table, link reg defaults to zr.',
+  JR:   '[op, rs1, rs2, link] -- register-indirect jump; target = rs1+rs2 (NOT CN-table validated).',
+  CS:   '[op, rd, rst, rsf] -- conditional select: rd = cond ? rst : rsf.',
+  CR:   '[op, rd, ctrl_id] -- read a control register.',
+  CW:   '[op, rs, ctrl_id, imm8] -- write a control register.',
+  BITP: '[op, rd, pos6] -- single-bit operation at bit position pos.',
+  BITW: '[op, rd, width] -- bit-width operation.',
+  MEM3: '[op, cap, ptr, mode] -- cache/memory-fence style op.',
+  RAW3: '[op, b1, b2, b3] -- raw 3-byte operand instruction.',
+};
 
-  // 0x0_ SYS — latency-ordered within row
-  if (hi === 0x0) {
-    const n = SYS_NAMES[lo] ?? `sys_${lo.toString(16)}`;
-    // popcnt / clz: [op, rd, rs, 0×5]
-    if (lo === 0x1 || lo === 0x2) {
-      return { mnem:`${n}  ${reg(b[1])} ← ${reg(b[2])}`,
-        fields:[F(0,1,'opcode',n),F(1,2,'register',`rd=${reg(b[1])}`),F(2,3,'register',`rs=${reg(b[2])}`),F(3,8,'immediate','padding')],
-        meta };
-    }
-    // rdctrl / wrctrl: [op, r, ctrl_id, 0…]
-    if (lo === 0x3 || lo === 0x4) {
-      return { mnem:`${n}  ${reg(b[1])}, ctrl[${b[2]}]`,
-        fields:[F(0,1,'opcode',n),F(1,2,'register',`rd/rs=${reg(b[1])}`),F(2,3,'immediate',`ctrl_id=${b[2]}`),F(3,8,'immediate','padding')],
-        meta };
-    }
-    // fence: [op, mode, 0×6]
-    if (lo === 0x7) {
-      return { mnem:`fence  mode=0x${b[1].toString(16).padStart(2,'0')}`,
-        fields:[F(0,1,'opcode','fence'),F(1,2,'immediate',`mode=0x${b[1].toString(16).padStart(2,'0')}`),F(2,8,'immediate','padding')],
-        meta: meta+'\nmode bits[3:0]=predecessor(R/W/I/O), bits[7:4]=successor\n0x00=full barrier  0xFF=full I/O+memory barrier' };
-    }
-    // cflush: [op, rb, off_lo, off_hi, 0×4]
-    if (lo === 0x9) {
-      const off = se(b[2] | (b[3]<<8), 16);
-      return { mnem:`cflush  ${reg(b[1])}, off=${off}`,
-        fields:[F(0,1,'opcode','cflush'),F(1,2,'register',reg(b[1])),F(2,4,'offset',`off16=${off}`),F(4,8,'immediate','padding')],
-        meta: meta+'\ncflush [op, rb, off_lo, off_hi, 0×4]\nFlushes cache line at reg[rb]+sign_ext(off16); rb=ZR→literal physical address' };
-    }
-    return { mnem:n, fields:[F(0,1,'opcode',n),F(1,8,'immediate','padding')], meta };
+// v13-real disassembler. Takes a byte array of AT LEAST instrLength(bytes[0])
+// bytes (1 for OB, 4 otherwise) -- callers must slice using instrLength(),
+// not a fixed width, since real SEER instructions are variable length.
+function disasm(bytes) {
+  const b = Array.from(bytes);
+  const op = b[0];
+  const mnem = REVERSE_OPCODES[op];
+
+  if (mnem === undefined) {
+    return { mnem: `??? 0x${op.toString(16).toUpperCase().padStart(2,'0')}`,
+      fields: [F(0,1,'opcode','Unrecognized opcode -- not in the real SEER OPCODES table')],
+      meta: 'Unrecognized encoding', len: 1 };
   }
 
-  // 0x1_ LI — [op, rd, imm×6]
-  if (hi === 0x1) {
-    const n = LI_NAMES[lo] ?? `li_${lo.toString(16)}`;
-    if (lo === 0xF) { // ZR pseudo
-      return { mnem:`ZR  (r255 — reads always 0, writes silently discarded)`,
-        fields:[F(0,1,'opcode','ZR'),F(1,8,'immediate','hardwired zero register')], meta };
-    }
-    if (lo >= 0xA && lo <= 0xE) {
-      return { mnem:`— (reserved)`, fields:[F(0,1,'opcode','—'),F(1,8,'immediate','reserved')], meta };
-    }
-    const isPCRel = lo === 0x8 || lo === 0x9;
-    const imm = seLE(b.slice(2,8));
-    const mnemStr = isPCRel
-      ? `${n}  ${reg(b[1])}, PC${imm>=0?'+':''}${imm}`
-      : `${n}  ${reg(b[1])}, #${imm}`;
-    return { mnem: mnemStr,
-      fields:[F(0,1,'opcode',n),F(1,2,'register',`rd=${reg(b[1])}`),F(2,8,'immediate',isPCRel?`PC-relative offset=${imm}`:`value=${imm}`)],
-      meta: meta+(isPCRel?'\nrd = (instr_addr + sign_ext(imm48)) — enables PIC address materialisation in one instruction':'') };
+  const fmt = FORMAT[mnem];
+  const len = fmt === 'OB' ? 1 : 4;
+  const meta = FORMAT_DOC[fmt] || '';
+
+  if (fmt === 'OB') {
+    return { mnem, fields: [F(0,1,'opcode',mnem)], meta, len };
   }
 
-  // 0x2_ JMP — all branches
-  if (hi === 0x2) {
-    const n = JMP_NAMES[lo] ?? `j${lo.toString(16)}`;
-    if (lo >= 0x8) return { mnem:'— (reserved)', fields:[F(0,1,'opcode','—'),F(1,8,'immediate','reserved')], meta };
-    if (lo === 0x0) { // jmp unconditional
-      const off = seLE(b.slice(1,8));
-      return { mnem:`jmp  ${off>=0?'+':''}${off}`,
-        fields:[F(0,1,'opcode','jmp'),F(1,8,'branch',`PC-relative offset = ${off>=0?'+':''}${off}`)],
-        meta: meta+'\nUnconditional jump. Range: ±2^55 bytes' };
-    }
-    if (lo === 0x1) { // jmpr
-      return { mnem:`jmpr  ${reg(b[1])}, link=${reg(b[2])}`,
-        fields:[F(0,1,'opcode','jmpr'),F(1,2,'register',`r_offset=${reg(b[1])}`),F(2,3,'register',`r_link=${reg(b[2])}`),F(3,8,'immediate','padding')],
-        meta: meta+'\ntarget = branch_addr + sign_ext(r_offset)\nif r_link ≠ ZR: r_link = branch_addr + 8 (call semantics)' };
-    }
-    if (lo === 0x2) { // jz
-      const off = seLE(b.slice(2,8));
-      return { mnem:`jz  ${reg(b[1])},  ${off>=0?'+':''}${off}`,
-        fields:[F(0,1,'opcode','jz'),F(1,2,'register',`cond=${reg(b[1])}`),F(2,8,'branch',`offset=${off>=0?'+':''}${off}`)],
-        meta: meta+`\nJump if ${reg(b[1])} == 0` };
-    }
-    const off = seLE(b.slice(3,8));
-    const condMap = {jne:'≠',jlt:'<(s)',jgt:'>(s)',jle:'≤(s)',jge:'≥(s)'};
-    return { mnem:`${n}  ${reg(b[1])}, ${reg(b[2])},  ${off>=0?'+':''}${off}`,
-      fields:[F(0,1,'opcode',n),F(1,2,'register',`r1=${reg(b[1])}`),F(2,3,'register',`r2=${reg(b[2])}`),F(3,8,'branch',`offset=${off>=0?'+':''}${off}`)],
-      meta: meta+`\nJump if ${reg(b[1])} ${condMap[n]||'?'} ${reg(b[2])}. All comparisons signed.` };
+  const ops = decodeOperands(fmt, [b[1], b[2], b[3]]);
+  const mnemStr = ops.length ? `${mnem}  ${ops.join(', ')}` : mnem;
+
+  // Field layout per format -- byte ranges within [0,4), types chosen to
+  // match the colour taxonomy the existing pill renderer already uses
+  // (opcode/register/immediate/offset/branch/memory).
+  let fields;
+  switch (fmt) {
+    case 'A': case 'D': case 'JR': case 'CS': case 'RAW3':
+      fields = [F(0,1,'opcode',mnem), F(1,2,'register',`${ops[0]}`),
+                F(2,3,'register',`${ops[1]}`), F(3,4,'register',`${ops[2]}`)];
+      break;
+    case 'C':
+      fields = [F(0,1,'opcode',mnem), F(1,2,'register',`rd=${ops[0]}`),
+                F(2,3,'register',`rs=${ops[1]}`), F(3,4,'immediate',`imm8=${ops[2]}`)];
+      break;
+    case 'U2':
+      fields = [F(0,1,'opcode',mnem), F(1,2,'register',`rd=${ops[0]}`),
+                F(2,3,'register',`rs=${ops[1]}`), F(3,4,'immediate','padding')];
+      break;
+    case 'F1':
+      fields = [F(0,1,'opcode',mnem), F(1,2,'register',ops[0]), F(2,4,'immediate','padding')];
+      break;
+    case 'G1':
+      fields = [F(0,1,'opcode',mnem), F(1,4,'immediate',`imm8=${ops[0]}`)];
+      break;
+    case 'LI16':
+      fields = [F(0,1,'opcode',mnem), F(1,2,'register',`rd=${ops[0]}`), F(2,4,'immediate',`imm16=${ops[1]}`)];
+      break;
+    case 'BR':
+      fields = [F(0,1,'opcode',mnem), F(1,2,'register',`rs1=${ops[0]}`),
+                F(2,3,'register',`rs2=${ops[1]}`), F(3,4,'branch',`cn_off8=${ops[2]}`)];
+      break;
+    case 'JM':
+      fields = ops.length === 2
+        ? [F(0,1,'opcode',mnem), F(1,3,'branch',`off16=${ops[0]}`), F(3,4,'register',`link=${ops[1]}`)]
+        : [F(0,1,'opcode',mnem), F(1,3,'branch',`off16=${ops[0]}`), F(3,4,'immediate','link=zr (no call)')];
+      break;
+    case 'CR':
+      fields = [F(0,1,'opcode',mnem), F(1,2,'register',ops[0]), F(2,4,'immediate',`ctrl_id=${ops[1]}`)];
+      break;
+    case 'CW':
+      fields = [F(0,1,'opcode',mnem), F(1,2,'register',ops[0]),
+                F(2,3,'immediate',`ctrl_id=${ops[1]}`), F(3,4,'immediate',`imm8=${ops[2]}`)];
+      break;
+    case 'BITP':
+      fields = [F(0,1,'opcode',mnem), F(1,2,'register',ops[0]), F(2,4,'immediate',`pos=${ops[1]}`)];
+      break;
+    case 'BITW':
+      fields = [F(0,1,'opcode',mnem), F(1,2,'register',ops[0]), F(2,4,'immediate',`width=${ops[1]}`)];
+      break;
+    case 'MEM3':
+      fields = [F(0,1,'opcode',mnem), F(1,2,'register',`cap=${ops[0]}`),
+                F(2,3,'register',`ptr=${ops[1]}`), F(3,4,'immediate',`mode=${ops[2]}`)];
+      break;
+    default:
+      fields = [F(0,1,'opcode',mnem), F(1,4,'immediate','operand bytes')];
   }
 
-  // 0x3_ P3 — [op, rd, imm×6]  rd = rd op sign_ext(imm48)
-  if (hi === 0x3) {
-    const n = OP_NAMES[lo] ?? `op${lo.toString(16)}`;
-    const imm = seLE(b.slice(2,8));
-    return { mnem:`p3.${n}  ${reg(b[1])}, #${imm}`,
-      fields:[F(0,1,'opcode',n),F(1,2,'register',`rd=${reg(b[1])}`),F(2,8,'immediate',`imm48=${imm}`)],
-      meta: meta+`\nrd = rd ${n} sign_ext(imm48)` };
-  }
-
-  // 0x4_ P5 — [op, rd, rs, imm×5]
-  if (hi === 0x4) {
-    const n = OP_NAMES[lo] ?? `op${lo.toString(16)}`;
-    const imm = seLE(b.slice(3,8));
-    return { mnem:`p5.${n}  ${reg(b[1])}, ${reg(b[2])}, #${imm}`,
-      fields:[F(0,1,'opcode',n),F(1,2,'register',`rd=${reg(b[1])}`),F(2,3,'register',`rs=${reg(b[2])}`),F(3,8,'immediate',`imm40=${imm}`)],
-      meta: meta+`\nrd = rs ${n} sign_ext(imm40)` };
-  }
-
-  // 0x5_ P6 — [op, rd, rs1, rs2, imm×4]  workhorse
-  if (hi === 0x5) {
-    const n = OP_NAMES[lo] ?? `op${lo.toString(16)}`;
-    const imm = seLE(b.slice(4,8));
-    return { mnem:`p6.${n}  ${reg(b[1])}, ${reg(b[2])}, ${reg(b[3])}${imm!==0?', #'+imm:''}`,
-      fields:[F(0,1,'opcode',n),F(1,2,'register',`rd=${reg(b[1])}`),F(2,3,'register',`rs1=${reg(b[2])}`),F(3,4,'register',`rs2=${reg(b[3])}`),F(4,8,'immediate',imm!==0?`imm32=${imm}`:'padding')],
-      meta: meta+`\nrd = rs1 ${n} rs2` };
-  }
-
-  // 0x6_ FP — [op, rd, rs1, rs2, imm×4]
-  if (hi === 0x6) {
-    const n = FP_NAMES[lo] ?? `fp_${lo.toString(16)}`;
-    if (lo === 0xA) return { mnem:'— (reserved)', fields:[F(0,1,'opcode','—'),F(1,8,'immediate','reserved')], meta };
-    const imm = seLE(b.slice(4,8));
-    const rmNames = ['RNE','RTZ','RDN','RUP','RMM'];
-    const rm = rmNames[imm & 0x7] ?? `rm${imm&0x7}`;
-    // fjgt uses full imm as branch offset
-    if (lo === 0x6) {
-      return { mnem:`fjgt  ${reg(b[1])}, ${reg(b[2])}, offset=${imm}`,
-        fields:[F(0,1,'opcode','fjgt'),F(1,2,'register',`r1=${reg(b[1])}`),F(2,3,'register',`r2=${reg(b[2])}`),F(3,4,'register','padding'),F(4,8,'branch',`offset=${imm}`)],
-        meta: meta+'\nFloat branch: if f(r1) > f(r2): PC += offset' };
-    }
-    return { mnem:`${n}  ${reg(b[1])}, ${reg(b[2])}, ${reg(b[3])}${imm!==0?`  [${rm}]`:''}`,
-      fields:[F(0,1,'opcode',n),F(1,2,'register',`rd=${reg(b[1])}`),F(2,3,'register',`rs1=${reg(b[2])}`),F(3,4,'register',`rs2=${reg(b[3])}`),F(4,8,'immediate',imm!==0?`rm=${rm} exc_mask=${(imm>>3)&0x1F}`:'padding (RNE, no traps)')],
-      meta };
-  }
-
-  // 0x7_ MEM — loads 70–77, stores 78–7B
-  if (hi === 0x7) {
-    const n = MEM_NAMES[lo] ?? '—';
-    if (!MEM_NAMES[lo]) return { mnem:'— (reserved)', fields:[F(0,1,'opcode','—'),F(1,8,'immediate','reserved')], meta };
-    const off = seLE(b.slice(4,8));
-    const isStore = lo >= 0x8;
-    if (isStore)
-      return { mnem:`${n}  [${reg(b[2])}+${reg(b[3])}+${off}] ← ${reg(b[1])}`,
-        fields:[F(0,1,'opcode',n),F(1,2,'register',`rs=${reg(b[1])}`),F(2,3,'register',`rb1=${reg(b[2])}`),F(3,4,'register',`rb2=${reg(b[3])}`),F(4,8,'offset',`off32=${off}`)], meta };
-    return { mnem:`${n}  ${reg(b[1])}, [${reg(b[2])}+${reg(b[3])}+${off}]`,
-      fields:[F(0,1,'opcode',n),F(1,2,'register',`rd=${reg(b[1])}`),F(2,3,'register',`rb1=${reg(b[2])}`),F(3,4,'register',`rb2=${reg(b[3])}`),F(4,8,'offset',`off32=${off}`)], meta };
-  }
-
-  // 0x8_ MEMS — sized loads 80–87, sized stores 88–8B
-  if (hi === 0x8) {
-    const n = MEMS_NAMES[lo] ?? '—';
-    if (!MEMS_NAMES[lo]) return { mnem:'— (reserved)', fields:[F(0,1,'opcode','—'),F(1,8,'immediate','reserved')], meta };
-    const off = seLE(b.slice(4,8));
-    const isStore = lo >= 0x8;
-    if (isStore)
-      return { mnem:`${n}  [${reg(b[2])}+${reg(b[3])}+${off}] ← ${reg(b[1])}`,
-        fields:[F(0,1,'opcode',n),F(1,2,'register',`rs=${reg(b[1])}`),F(2,3,'register',`rb1=${reg(b[2])}`),F(3,4,'register',`rb2=${reg(b[3])}`),F(4,8,'offset',`off32=${off}`)], meta };
-    return { mnem:`${n}  ${reg(b[1])}, [${reg(b[2])}+${reg(b[3])}+${off}]`,
-      fields:[F(0,1,'opcode',n),F(1,2,'register',`rd=${reg(b[1])}`),F(2,3,'register',`rb1=${reg(b[2])}`),F(3,4,'register',`rb2=${reg(b[3])}`),F(4,8,'offset',`off32=${off}`)], meta };
-  }
-
-  // 0x9_ P4 — [op, rd, addr×6]  load+combine fused
-  if (hi === 0x9) {
-    const n = OP_NAMES[lo] ?? `op${lo.toString(16)}`;
-    let name = '?';
-    try { name = new TextDecoder().decode(new Uint8Array(b.slice(2,8))).replace(/\x00+$/,''); } catch(e) {}
-    const hex48 = '0x'+b.slice(2,8).map(x=>x.toString(16).padStart(2,'0')).join('');
-    return { mnem:`ld·${n}  ${reg(b[1])}, [${name||hex48}]`,
-      fields:[F(0,1,'opcode',`ld·${n}`),F(1,2,'register',`rd=${reg(b[1])}`),F(2,8,'memory',`addr48="${name||hex48}"`)],
-      meta: meta+`\nrd = rd ${n} mem[addr48]; addr = zero-padded UTF-8 name` };
-  }
-
-  // 0xA_ ATOM — [op, rd, rb1, rb2, off×4]
-  if (hi === 0xA) {
-    const atomNames = {0:'swap',2:'and',4:'or',6:'xor',0xB:'slt',0xC:'add',0xD:'sub'};
-    const n = atomNames[lo];
-    if (!n) return { mnem:'— (reserved)', fields:[F(0,1,'opcode','—'),F(1,8,'immediate','reserved')], meta };
-    const off = seLE(b.slice(4,8));
-    return { mnem:`a·${n}  ${reg(b[1])}, [${reg(b[2])}+${reg(b[3])}+${off}]`,
-      fields:[F(0,1,'opcode',`a·${n}`),F(1,2,'register',`rd(←old)=${reg(b[1])}`),F(2,3,'register',`rb1=${reg(b[2])}`),F(3,4,'register',`rb2=${reg(b[3])}`),F(4,8,'offset',`off32=${off}`)],
-      meta: meta+`\nrd ← old; mem ← old ${n} rv` };
-  }
-
-  // 0xB_ VALU — SIMD arith
-  if (hi === 0xB) {
-    const n = VALU_NAMES[lo] ?? `vop_${lo.toString(16)}`;
-    const imm4 = b.slice(4,8);
-    const lmask = imm4[0] & 0xF;
-    const bcast = se((imm4[0]>>4) | (imm4[1]<<4), 8);
-    const immNote = lmask ? `lane_mask=${lmask.toString(2).padStart(4,'0')}b` : (b[3]===255 ? `bcast_imm=${bcast}` : 'imm=0');
-    if (lo === 0xA) // vbcast: scalar src
-      return { mnem:`vbcast  V${b[1]}, ${reg(b[2])}`,
-        fields:[F(0,1,'opcode','vbcast'),F(1,2,'register',`vd=V${b[1]}`),F(2,3,'register',`rs(scalar)=${reg(b[2])}`),F(3,8,'immediate','padding')], meta };
-    return { mnem:`${n}  V${b[1]}, V${b[2]}, ${b[3]===255?`bcast(${bcast})`:'V'+b[3]}`,
-      fields:[F(0,1,'opcode',n),F(1,2,'register',`vd=V${b[1]}`),F(2,3,'register',`vs1=V${b[2]}`),F(3,4,'register',b[3]===255?'ZR(→bcast imm)':`vs2=V${b[3]}`),F(4,8,'immediate',immNote)],
-      meta };
-  }
-
-  // 0xC_ VMEM
-  if (hi === 0xC) {
-    const n = VMEM_NAMES[lo];
-    if (!n) return { mnem:'— (reserved)', fields:[F(0,1,'opcode','—'),F(1,8,'immediate','reserved')], meta };
-    const off = seLE(b.slice(4,8));
-    if (lo >= 2)
-      return { mnem:`${n}  ${reg(b[1])}, V${b[2]}`,
-        fields:[F(0,1,'opcode',n),F(1,2,'register',`rd(scalar)=${reg(b[1])}`),F(2,3,'register',`vs=V${b[2]}`),F(3,8,'immediate','padding')], meta };
-    const isStore = lo === 1;
-    if (isStore)
-      return { mnem:`vst64  [${reg(b[2])}+${reg(b[3])}+${off}] ← V${b[1]}`,
-        fields:[F(0,1,'opcode','vst64'),F(1,2,'register',`vd=V${b[1]}`),F(2,3,'register',`rb1=${reg(b[2])}`),F(3,4,'register',`rb2=${reg(b[3])}`),F(4,8,'offset',`off32=${off}`)], meta };
-    return { mnem:`vld64  V${b[1]}, [${reg(b[2])}+${reg(b[3])}+${off}]`,
-      fields:[F(0,1,'opcode','vld64'),F(1,2,'register',`vd=V${b[1]}`),F(2,3,'register',`rb1=${reg(b[2])}`),F(3,4,'register',`rb2=${reg(b[3])}`),F(4,8,'offset',`off32=${off}`)], meta };
-  }
-
-  // 0xD_ / 0xE_ — reserved
-  if (hi === 0xD || hi === 0xE) {
-    return { mnem:'— (reserved)', fields:[F(0,1,'opcode','—'),F(1,8,'immediate','reserved encoding space')], meta };
-  }
-
-  // 0xF_ PACK — [op_a, r1a, r2a, r3a, op_b, r1b, r2b, r3b]
-  if (hi === 0xF) {
-    const op_b = b[4];
-    const hi_b = op_b >> 4;
-    const lo_b = op_b & 0xF;
-    // Only pure RR packed pairs use this row; op_a's hi nibble is always 0xF
-    // but op_b's hi nibble encodes variant
-    const na = OP_NAMES[lo] ?? `op${lo.toString(16)}`;
-    const nb = OP_NAMES[lo_b] ?? `op${lo_b.toString(16)}`;
-    const mnem = `PACK  [${na} ${reg(b[1])},${reg(b[2])},${reg(b[3])}]  ‖  [${nb} ${reg(b[5])},${reg(b[6])},${reg(b[7])}]`;
-    return { mnem, isPack:true,
-      fields:[F(0,1,'opcode',`a:${na}`),F(1,2,'register',`rd_a=${reg(b[1])}`),F(2,3,'register',`rs1_a=${reg(b[2])}`),F(3,4,'register',`rs2_a=${reg(b[3])}`),
-              F(4,5,'opcode',`b:${nb}`),F(5,6,'register',`rd_b=${reg(b[5])}`),F(6,7,'register',`rs1_b=${reg(b[6])}`),F(7,8,'register',`rs2_b=${reg(b[7])}`)],
-      meta };
-  }
-
-  return { mnem:`??? 0x${b[0].toString(16).toUpperCase().padStart(2,'0')}`,
-    fields:[F(0,8,'opcode','Unknown')], meta:'Unrecognized encoding' };
+  return { mnem: mnemStr, fields, meta, len };
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// ASSEMBLER (updated for v10 row layout)
-// ═══════════════════════════════════════════════════════════════════════
-
-function operandsFor(opcode) {
-  const hi = (opcode >> 4) & 0xF;
-  const lo = opcode & 0xF;
-  // 0x0_ SYS — varies
-  if (hi === 0x0) {
-    if (lo===0x1||lo===0x2) return ['r','r'];      // popcnt, clz
-    if (lo===0x3||lo===0x4) return ['r','i'];      // rdctrl, wrctrl
-    if (lo===0x9) return ['r','i'];                // cflush [rb, off16]
-    if (lo===0x7) return ['i'];                    // fence [mode]
-    return [];
-  }
-  if (hi === 0x1) return ['i'];                    // LI [rd, imm×6] — rd separate
-  if (hi === 0x2) {
-    if (lo===0x0) return ['j'];
-    if (lo===0x1) return ['r','r'];
-    if (lo===0x2) return ['r','j'];
-    if (lo<=0x7) return ['r','r','j'];
-    return [];
-  }
-  if (hi === 0x3) return ['r','i'];               // P3
-  if (hi === 0x4) return ['r','r','i'];           // P5
-  if (hi === 0x5) return ['r','r','r','i'];       // P6
-  if (hi === 0x6) return ['r','r','r','i'];       // FP
-  if (hi === 0x7) return ['r','r','r','i'];       // MEM
-  if (hi === 0x8) return ['r','r','r','i'];       // MEMS
-  if (hi === 0x9) return ['r','m'];               // P4
-  if (hi === 0xA) return ['r','r','r','i'];       // ATOM
-  if (hi === 0xB) return ['r','r','r','i'];       // VALU
-  if (hi === 0xC) return ['r','r','r','i'];       // VMEM
-  if (hi === 0xF) return null;                    // PACK (special)
-  return [];
-}
-
-function immWidth(opcode) {
-  const hi = (opcode >> 4) & 0xF;
-  const lo = opcode & 0xF;
-  if (hi===0x0) { if(lo===0x9) return 2; return 1; }
-  if (hi===0x1) return 6;
-  if (hi===0x2) { if(lo===0x0) return 7; if(lo===0x2) return 6; return 5; }
-  if (hi===0x3) return 6;
-  if (hi===0x4) return 5;
-  if (hi===0x5||hi===0x6||hi===0x7||hi===0x8) return 4;
-  if (hi===0xA||hi===0xB||hi===0xC) return 4;
-  return 1;
-}
-
-function encodeImm(val, width) {
-  const bits = BigInt(width * 8);
-  const min  = -(1n << (bits - 1n));
-  const umax =  (1n << bits) - 1n;
-  const v    = BigInt(val);
-  if (v < min || v > umax)
-    throw new Error(`Immediate ${val} out of range for ${width}-byte field`);
-  const buf = new Uint8Array(width);
-  let vv = v < 0n ? v + (1n << bits) : v;
-  for (let i = 0; i < width; i++) { buf[i] = Number(vv & 0xFFn); vv >>= 8n; }
-  return buf;
-}
-
-function memToBytes(name) {
-  const enc = new TextEncoder().encode(name);
-  if (enc.length > 6) throw new Error(`"${name}" is ${enc.length} UTF-8 bytes; max 6`);
-  const buf = new Uint8Array(6);
-  buf.set(enc);
-  return buf;
+const OPERAND_TYPES = {
+  OB:[], A:["reg","reg","reg"], C:["reg","reg","imm"], D:["reg","reg","reg"],
+  U2:["reg","reg"], F1:["reg"], G1:["imm"], JR:["reg","reg","reg"],
+  CS:["reg","reg","reg"], CR:["reg","imm"], CW:["reg","imm"],
+  BITP:["reg","imm"], BITW:["reg","imm"], MEM3:["reg","reg","imm"],
+  RAW3:["reg","reg","reg"], LI16:["reg","imm"], BR:["reg","reg","imm"],
+  JM:["imm"],
+};
+function operandTypesFor(mnem) {
+  if (mnem === "li") return ["reg","imm"];
+  if (mnem === "ret") return [];
+  return OPERAND_TYPES[FORMAT[mnem]] || [];
 }
 
 class AutoRegs {
   constructor(forbidden) {
-    this.pool=[]; this.counter=0; this.history=[];
-    for (let i=0;i<=255;i++) if (!forbidden.has(i)) this.pool.push(i);
+    this.pool = []; this.counter = 0; this.history = [];
+    for (let i = 0; i <= 255; i++) if (!forbidden.has(i)) this.pool.push(i);
   }
   next() {
     if (!this.pool.length) throw new Error('No auto registers available');
-    const r=this.pool[this.counter%this.pool.length]; this.counter++; this.history.push(r); return r;
+    const r = this.pool[this.counter % this.pool.length]; this.counter++; this.history.push(r); return r;
   }
   back(n) {
-    if (n<1) throw new Error('R-N: N must be >= 1');
-    if (n>this.history.length) throw new Error(`R-${n} requested but only ${this.history.length} auto-regs allocated`);
-    return this.history[this.history.length-n];
+    if (n < 1) throw new Error('R-N: N must be >= 1');
+    if (n > this.history.length) throw new Error(`R-${n} requested but only ${this.history.length} auto-regs allocated`);
+    return this.history[this.history.length - n];
   }
 }
 
 function collectNamed(lines) {
-  const named=new Set();
+  const named = new Set();
   for (const line of lines)
-    for (const tok of line.trim().split(/\s+/))
-      if (/^[Rr]\d+$/.test(tok)) { const n=parseInt(tok.slice(1)); if(n>=0&&n<=255) named.add(n); }
+    for (const tok of line.trim().split(/[\s,]+/))
+      if (/^[Rr]\d+$/.test(tok)) { const n = parseInt(tok.slice(1)); if (n >= 0 && n <= 255) named.add(n); }
   return named;
 }
 
+// Parses labels AND computes each instruction's real byte length (1 for OB
+// mnemonics, 4 otherwise) for correct address tracking -- the old version's
+// fixed "+= 8" per line does not hold for the real, variable-length ISA.
+// .string "text" -- a data directive, not a real instruction. Emits the
+// UTF-8 bytes of text followed by a single 0x00 terminator (the standard,
+// simplest convention for "one pointer, no separate length needed" --
+// matches this file's own assumption for how the output ecall service
+// consumes a string pointer, though that assumption is about a runtime
+// contract this file has no visibility into, not something verified here).
+function tryParseStringDirective(stripped) {
+  const m = stripped.match(/^\.string\s+(".*")\s*$/);
+  if (!m) return null;
+  let text;
+  try { text = JSON.parse(m[1]); }
+  catch (e) { return { error: `malformed .string literal: ${e.message}` }; }
+  const byteLen = new TextEncoder().encode(text).length + 1; // +1 for the null terminator
+  return { text, byteLen };
+}
+
 function parseLabels(source) {
-  const rawLines=source.split('\n'), labelTable={}, work=[];
-  let byteOffset=0;
+  const rawLines = source.split('\n'), labelTable = {}, work = [];
+  let byteOffset = 0;
   for (const raw of rawLines) {
-    // Strip inline comments and trim
     let stripped = raw.replace(/;.*$/, '').trim();
     if (!stripped) continue;
-    // Skip assembler directives like .org
+    const strDir = tryParseStringDirective(stripped);
+    if (strDir) {
+      if (strDir.error) { work.push({ kind: 'error', line: strDir.error, addr: byteOffset, srcLine: stripped }); continue; }
+      work.push({ kind: 'string', line: strDir.text, addr: byteOffset, srcLine: stripped });
+      byteOffset += strDir.byteLen;
+      continue;
+    }
     if (stripped.startsWith('.') && !stripped.includes(':')) continue;
     if (stripped.includes(':')) {
-      const colon=stripped.indexOf(':'), candidate=stripped.slice(0,colon).trim(), rest=stripped.slice(colon+1).trim();
-      let valid=candidate.length>0&&!candidate.includes(' ')&&!/^\d+$/.test(candidate);
-      if (valid&&/^[0-9a-fA-F]{1,2}$/.test(candidate)) valid=false;
+      const colon = stripped.indexOf(':'), candidate = stripped.slice(0, colon).trim(), rest = stripped.slice(colon + 1).trim();
+      let valid = candidate.length > 0 && !candidate.includes(' ') && !/^\d+$/.test(candidate);
       if (valid) {
-        if (labelTable[candidate]!==undefined) { work.push({kind:'error',line:`Duplicate label "${candidate}"`,addr:byteOffset,srcLine:stripped}); }
-        else { labelTable[candidate]=byteOffset; work.push({kind:'label',line:candidate,addr:byteOffset,srcLine:stripped}); }
-        if (rest) { work.push({kind:'instr',line:rest,addr:byteOffset,srcLine:rest}); byteOffset+=8; }
+        if (labelTable[candidate] !== undefined) { work.push({ kind: 'error', line: `Duplicate label "${candidate}"`, addr: byteOffset, srcLine: stripped }); }
+        else { labelTable[candidate] = byteOffset; work.push({ kind: 'label', line: candidate, addr: byteOffset, srcLine: stripped }); }
+        if (rest) {
+          const restStrDir = tryParseStringDirective(rest);
+          if (restStrDir) {
+            if (restStrDir.error) { work.push({ kind: 'error', line: restStrDir.error, addr: byteOffset, srcLine: rest }); }
+            else { work.push({ kind: 'string', line: restStrDir.text, addr: byteOffset, srcLine: rest }); byteOffset += restStrDir.byteLen; }
+          } else {
+            const mnem = rest.trim().split(/[\s,]+/)[0]?.toLowerCase();
+            const len = (mnem && FORMAT[mnem] === 'OB') ? 1 : 4;
+            work.push({ kind: 'instr', line: rest, addr: byteOffset, srcLine: rest });
+            byteOffset += len;
+          }
+        }
         continue;
       }
     }
-    work.push({kind:'instr',line:stripped,addr:byteOffset,srcLine:stripped}); byteOffset+=8;
+    const mnem = stripped.split(/[\s,]+/)[0]?.toLowerCase();
+    const len = (mnem && FORMAT[mnem] === 'OB') ? 1 : 4;
+    work.push({ kind: 'instr', line: stripped, addr: byteOffset, srcLine: stripped });
+    byteOffset += len;
   }
-  return {work,labelTable};
+  return { work, labelTable };
 }
 
-function parseReg(tok, auto) {
-  if (tok==='R'||tok==='r') return [auto.next(),'auto'];
-  const bm=tok.match(/^[Rr]-(\d+)$/); if(bm) return [auto.back(parseInt(bm[1])),'back'];
-  if (/^[Rr]\d+$/.test(tok)) { const n=parseInt(tok.slice(1)); if(n<0||n>255) throw new Error(`Reg ${n} out of range`); return [n,'named']; }
-  throw new Error(`Expected register, got "${tok}"`);
+function parseRegOrAuto(tok, auto) {
+  if (tok === 'R' || tok === 'r') return [auto.next(), 'auto'];
+  const bm = tok.match(/^[Rr]-(\d+)$/); if (bm) return [auto.back(parseInt(bm[1])), 'back'];
+  return [parseReg(tok), 'named'];
 }
 
+// Mnemonic-based assembler -- "add r1, r2, r3", not the old hex-opcode-
+// first "5B R1 R2 R3". Matches the real toolchain's own syntax so a
+// program written here and one written for the Soak Tester's Source box
+// mean the same thing.
 function assembleInstruction(tokens, auto, labelTable, instrAddr) {
   if (!tokens.length) throw new Error('Empty instruction');
-  const opcodeStr=tokens[0];
-  if (!/^[0-9a-fA-F]{1,2}$/.test(opcodeStr)) throw new Error(`Invalid opcode "${opcodeStr}"`);
-  const opcode=parseInt(opcodeStr,16);
-  const hi=(opcode>>4)&0xF;
-  const result=new Uint8Array(8); result[0]=opcode;
-  const resolved=[{text:opcodeStr.toUpperCase(),type:'opcode'}];
+  const mnem = tokens[0].toLowerCase().replace(/,$/, '');
+  if (!(mnem in FORMAT)) throw new Error(`unknown mnemonic: "${tokens[0]}"`);
+  const operToks = tokens.slice(1).map(t => t.replace(/,$/, ''));
+  const opTypes = operandTypesFor(mnem);
+  const resolved = [{ text: tokens[0], type: 'opcode' }];
 
-  // PACK row (0xF_) — special: [op_a, r1a, r2a, r3a, op_b, r1b, r2b, r3b]
-  if (hi===0xF) {
-    if (tokens.length!==8) throw new Error(`PACK needs 8 tokens: <op_a> R R R <op_b> R R R, got ${tokens.length}`);
-    if (!/^[0-9a-fA-F]{1,2}$/.test(tokens[4])) throw new Error(`Invalid second opcode "${tokens[4]}"`);
-    const opB=parseInt(tokens[4],16); result[4]=opB;
-    const regs=[tokens[1],tokens[2],tokens[3],tokens[5],tokens[6],tokens[7]];
-    for (let i=0;i<6;i++) {
-      const [ri,rt]=parseReg(regs[i],auto);
-      result[i<3?i+1:i+2]=ri;
-      resolved.push({text:regs[i],type:'register',regtype:rt,resolved:ri});
-      if (i===2) resolved.push({text:tokens[4].toUpperCase(),type:'opcode'});
+  // Resolve registers (including auto-allocation and labels-as-jump-targets)
+  // through the SAME operand list encode() will consume, so auto/back
+  // registers and label offsets work uniformly across every format.
+  const resolvedOps = operToks.map((tok, i) => {
+    const kind = opTypes[i];
+    if (kind === 'reg') {
+      const [ri, rt] = parseRegOrAuto(tok, auto);
+      resolved.push({ text: tok, type: 'register', regtype: rt, resolved: ri });
+      return 'r' + ri;
     }
-    return {bytes:result,resolvedTokens:resolved};
-  }
-
-  const schema=operandsFor(opcode);
-  const operToks=tokens.slice(1);
-
-  // LI row (0x1_): first operand after opcode is always rd, then imm×6
-  if (hi===0x1) {
-    if (operToks.length!==2) throw new Error(`LI: <rd> <imm>, got ${operToks.length} operands`);
-    const [ri,rt]=parseReg(operToks[0],auto);
-    result[1]=ri;
-    resolved.push({text:operToks[0],type:'register',regtype:rt,resolved:ri});
-    const imm=parseInt(operToks[1],10);
-    if (isNaN(imm)) throw new Error(`Expected immediate, got "${operToks[1]}"`);
-    const eb=encodeImm(imm,6);
-    for (let i=0;i<6;i++) result[2+i]=eb[i];
-    resolved.push({text:operToks[1],type:'immediate'});
-    return {bytes:result,resolvedTokens:resolved};
-  }
-
-  if (!schema) throw new Error(`No schema for opcode 0x${opcode.toString(16)}`);
-  if (operToks.length!==schema.length)
-    throw new Error(`Expected ${schema.length} operand(s) (${schema.join(',')}), got ${operToks.length}`);
-
-  let bytePos=1;
-  for (let i=0;i<schema.length;i++) {
-    const tok=operToks[i], kind=schema[i];
-    if (kind==='r') {
-      const [ri,rt]=parseReg(tok,auto);
-      result[bytePos++]=ri;
-      resolved.push({text:tok,type:'register',regtype:rt,resolved:ri});
-    } else if (kind==='i'||kind==='j') {
-      let value, tokenType='immediate', resolvedOffset=null;
-      if (kind==='j'&&labelTable[tok]!==undefined) {
-        resolvedOffset=labelTable[tok]-instrAddr; value=resolvedOffset; tokenType='label';
-      } else {
-        const p=parseInt(tok,10);
-        if (isNaN(p)) { if(kind==='j') throw new Error(`Undefined label "${tok}"`); throw new Error(`Expected decimal imm, got "${tok}"`); }
-        value=p;
-      }
-      const w=immWidth(opcode), eb=encodeImm(value,w);
-      for (const byt of eb) result[bytePos++]=byt;
-      resolved.push({text:tok,type:tokenType,resolved:resolvedOffset});
-    } else if (kind==='m') {
-      const mb=memToBytes(tok);
-      for (const byt of mb) result[bytePos++]=byt;
-      resolved.push({text:tok,type:'memory'});
+    // Bug found via real Vertex output, not caught by earlier testing:
+    // this only resolved labels for jmp's own first operand -- BR-format
+    // conditional branches (jeq/jne/jlt/...) target labels exactly as
+    // often (every loop condition and if-check does), and their offset
+    // operand is also 'imm' kind, so this now covers any immediate
+    // operand that happens to name a known label, not just jmp's.
+    if (kind === 'imm' && labelTable[tok] !== undefined) {
+      const off = labelTable[tok] - instrAddr;
+      resolved.push({ text: tok, type: 'label', resolved: off });
+      return String(off);
     }
-  }
-  return {bytes:result,resolvedTokens:resolved};
+    resolved.push({ text: tok, type: 'immediate' });
+    return tok;
+  });
+
+  const bytes = Uint8Array.from(encode(mnem, resolvedOps));
+  return { bytes, resolvedTokens: resolved };
 }
 
 function assembleSource(source) {
-  const {work,labelTable}=parseLabels(source);
-  const instrLines=work.filter(w=>w.kind==='instr').map(w=>w.line);
-  const named=collectNamed(instrLines);
-  const auto=new AutoRegs(named);
-  const results=[];
+  const { work, labelTable } = parseLabels(source);
+  const instrLines = work.filter(w => w.kind === 'instr').map(w => w.line);
+  const named = collectNamed(instrLines);
+  const auto = new AutoRegs(named);
+  const results = [];
   for (const entry of work) {
-    if (entry.kind==='label') { results.push({isLabel:true,name:entry.line,addr:entry.addr,srcLine:entry.srcLine}); }
-    else if (entry.kind==='error') { results.push({isLabel:false,bytes:null,resolvedTokens:null,srcLine:entry.srcLine,error:entry.line}); }
+    if (entry.kind === 'label') { results.push({ isLabel: true, name: entry.line, addr: entry.addr, srcLine: entry.srcLine }); }
+    else if (entry.kind === 'error') { results.push({ isLabel: false, bytes: null, resolvedTokens: null, srcLine: entry.srcLine, error: entry.line }); }
+    else if (entry.kind === 'string') {
+      const bytes = Uint8Array.from([...new TextEncoder().encode(entry.line), 0]);
+      results.push({ isLabel: false, bytes, resolvedTokens: [{ text: entry.srcLine, type: 'data' }], srcLine: entry.srcLine, error: null, addr: entry.addr });
+    }
     else {
-      const tokens=entry.line.split(/\s+/);
-      try { const {bytes,resolvedTokens}=assembleInstruction(tokens,auto,labelTable,entry.addr); results.push({isLabel:false,bytes,resolvedTokens,srcLine:entry.srcLine,error:null}); }
-      catch(e) { results.push({isLabel:false,bytes:null,resolvedTokens:null,srcLine:entry.srcLine,error:e.message}); }
+      const tokens = entry.line.split(/[\s,]+/).filter(Boolean);
+      try { const { bytes, resolvedTokens } = assembleInstruction(tokens, auto, labelTable, entry.addr); results.push({ isLabel: false, bytes, resolvedTokens, srcLine: entry.srcLine, error: null, addr: entry.addr }); }
+      catch (e) { results.push({ isLabel: false, bytes: null, resolvedTokens: null, srcLine: entry.srcLine, error: e.message, addr: entry.addr }); }
     }
   }
   return results;
@@ -566,7 +772,12 @@ function assembleSource(source) {
 // Expose under prefixed names to avoid collisions with any future global scope
 window.seerDisasm         = disasm;
 window.seerAssembleSource = assembleSource;
+window.seerEncode         = encode;
+window.seerInstrLength    = instrLength;
+window.simulateProgram    = simulateProgram;
+window.seerFormat         = FORMAT;
 })();
+
 
 // ── SEER ISA v18 compiler (integrated from ivx-seer.js) ─────────────────────
 // Sections 1–5: constants, emitter, expression text, statement compilers,
@@ -668,6 +879,29 @@ const R = { ZERO:'r255', FP:'r240', LINK:'r241', SP:'r242', SELF:'r243', HEAP:'r
 // 2. EMITTER
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Assigns each named variable a concrete, per-scope byte offset --
+// replacing the old, fictional "address = the variable's own name as a
+// string" scheme with the standard technique every real compiler backend
+// uses: a numeric stack-slot layout. One frame per lexical scope (capId),
+// slots handed out in the order variables are first referenced.
+class MemSlots {
+  constructor() { this.frames = new Map(); }
+  _frame(capId) {
+    if (!this.frames.has(capId)) this.frames.set(capId, { slots: new Map(), nextOffset: 0 });
+    return this.frames.get(capId);
+  }
+  slotFor(capId, name) {
+    const f = this._frame(capId);
+    if (f.slots.has(name)) return f.slots.get(name);
+    const off = f.nextOffset;
+    f.nextOffset += 8;
+    f.slots.set(name, off);
+    return off;
+  }
+  frameSize(capId) { return this._frame(capId).nextOffset; }
+}
+
+
 class SEEREmitter {
   constructor() {
     this.lines      = [];
@@ -682,6 +916,31 @@ class SEEREmitter {
     this._pendingComment = '';
     this.regAlloc      = new RegAlloc();
     this.lineAddressMap = new Map();
+    this.memSlots       = new MemSlots();
+    this.stringLiterals = new Map(); // text -> label, emitted as a data section at program end
+    this.stringSeq      = 0;
+    // Real CN-table registration -- see resolveCnJumps()'s own header
+    // comment for the full mechanism. Built to match the proven
+    // compileCFSource toolchain's own architecture (traced directly from
+    // extracted_v2.js this session): registered nodes get a real nop plus
+    // a global, never-resetting slot; jumps get resolved against a
+    // per-scope, reachability-aware local position counter, not a raw
+    // PC-relative distance.
+    this.cnNodes       = [];        // {name, lineIdx, slot} in emission order
+    this.cnNodeByName  = new Map();
+    this.cnJumps       = [];        // {lineIdx, mnem, r1, r2, targetName, isUnconditional, comment}
+    this.cnScopeStarts = [];        // {lineIdx, isGlobal} recorded at every pushScope, in order
+  }
+
+  // Interns a string constant, returning the label its data will be
+  // emitted under (at the end of the program, after hlt -- see the
+  // data-section emission in compileSEER's own footer). Repeated uses of
+  // the identical text share one copy rather than duplicating data.
+  internString(text) {
+    if (this.stringLiterals.has(text)) return this.stringLiterals.get(text);
+    const label = `.str_${this.stringSeq++}`;
+    this.stringLiterals.set(text, label);
+    return label;
   }
 
   noteSourceLine(line) {
@@ -720,7 +979,7 @@ class SEEREmitter {
     const nc  = this._pendingComment;
     this._pendingNid     = NID.BODY;
     this._pendingComment = '';
-    this.lines.push(`${this._pad()}00  ; [nid=0x${nid.toString(16).padStart(2,'0')}] ${nc || 'nop'}`);
+    this.lines.push(`${this._pad()}nop  ; [nid=0x${nid.toString(16).padStart(2,'0')}] ${nc || 'nop'}`);
     this.nodeCount++;
     this.pc++;
   }
@@ -728,7 +987,26 @@ class SEEREmitter {
   comment(text) { this.lines.push(`${this._pad()}; ${text}`); }
   blank()       { this.lines.push(''); }
 
+  // A label used as a jump target -- emits a REAL nop and registers it as
+  // a CN-table node (global slot, assigned later in resolveCnJumps()).
+  // Every jump/branch target in this file must go through this, not
+  // dataLabel -- see resolveCnJumps()'s own header comment for why a real
+  // nop instruction is required here, not just a text marker.
   label(name) {
+    this.lines.push(`${name}:`);
+    const lineIdx = this.lines.length;
+    this.instr('nop', `connector: ${name}`);
+    const node = { name, lineIdx, slot: undefined };
+    this.cnNodes.push(node);
+    this.cnNodeByName.set(name, node);
+    this.symbols.push({ label: name, pc: this.pc });
+    return name;
+  }
+
+  // For labels that are NEVER a jump target (.program_start, string-data
+  // labels) -- a plain text marker, no nop, no CN registration. Using
+  // label() for these would register a real, unnecessary CN slot.
+  dataLabel(name) {
     this.lines.push(`${name}:`);
     this.symbols.push({ label: name, pc: this.pc });
     return name;
@@ -746,96 +1024,336 @@ class SEEREmitter {
     if (this.capNext > 0xFF) this.capNext = 2;
     return id;
   }
-  pushScope(name, type) { const c = this.allocCap(); this.scopeStack.push({name,type,capId:c}); return c; }
-  popScope()            { return this.scopeStack.pop(); }
-  currentCap()          { return this.scopeStack.length ? this.scopeStack[this.scopeStack.length-1].capId : 1; }
+
+  // Real stack-frame prologue/epilogue. sp (r254) is bumped down by this
+  // scope's total local-variable size on entry, and back up on every exit
+  // path -- the standard convention every real ISA's calling convention
+  // uses, and the ONLY one that supports recursion correctly (a fixed,
+  // scope-indexed memory region -- the old CAPTBASE-era design's implicit
+  // assumption -- would have every recursive call share the same storage
+  // for its "distinct" local variables).
+  //
+  // The real complication: a scope's total frame size isn't known until
+  // ALL its variables have been discovered, which only happens once the
+  // scope's entire body has been compiled -- but the prologue has to be
+  // emitted BEFORE that body. Standard technique: emit a placeholder
+  // instruction now, remember exactly where it landed, and patch it with
+  // the real size once popScope() knows it. Same for every early-return
+  // epilogue (see returnFromScope) -- there can be more than one per
+  // scope, and none of them know the final size at the point they're
+  // emitted either.
+  pushScope(name, type) {
+    const c = this.allocCap();
+    const prologueLineIdx = this.lines.length;
+    this.lines.push('; STACK_PROLOGUE_PLACEHOLDER'); // patched in popScope()
+    this.pc++;
+    this.cnScopeStarts.push({ lineIdx: prologueLineIdx, isGlobal: type === 'global' });
+    this.scopeStack.push({ name, type, capId: c, prologueLineIdx, epilogueLineIndices: [] });
+    return c;
+  }
+
+  popScope() {
+    const scope = this.scopeStack.pop();
+    const size = this.memSlots.frameSize(scope.capId);
+    this.lines[scope.prologueLineIdx] =
+      `addi sp, sp, -${size}  ; reserve ${size} bytes for ${scope.name}'s locals (size patched here once known)`;
+    for (const idx of scope.epilogueLineIndices) {
+      this.lines[idx] =
+        `addi sp, sp, ${size}  ; restore sp before returning from ${scope.name}`;
+    }
+    return scope;
+  }
+
+  currentCap() { return this.scopeStack.length ? this.scopeStack[this.scopeStack.length-1].capId : 1; }
+
+  // ── CN-table resolution and registration prologue ──────────────────────────
+  // Traced directly from extracted_v2.js's own cfResolveMultiScope/
+  // cfGenerateSetup this session, not reinvented -- that reference
+  // implementation needed multiple documented rounds of real bugfixing to
+  // get this right (global vs local counters, reachability through
+  // fall-through vs jump-only arrivals, the jmp-offset-0-means-return
+  // hardware quirk), so this mirrors its structure closely rather than
+  // approximate it.
+  //
+  // Two counters, two purposes: a GLOBAL slot number (assigned to every
+  // registered node, never resets -- the physical 256-entry CN table is
+  // one shared hardware resource) and a LOCAL, per-scope position counter
+  // (resets at every pushScope, used for the branch/jump's own relative
+  // offset -- mirrors cn_count resetting on every linking jmpr and
+  // restoring on every return).
+  //
+  // Reachability: a node ONLY ever reached by jump (never fall-through --
+  // e.g. a while loop's own exit-landing node) must NOT increment the
+  // local position counter, even though it still needs its own slot.
+  // Only a registered node can ever reset "unreachable" back to
+  // "reachable" -- ordinary instructions and conditional branches never
+  // change it either way. A function scope's own entry point starts
+  // unreachable (nothing falls into it -- it's only ever reached via a
+  // call); the global/main scope starts reachable (its first instruction
+  // genuinely is fallen into from the setup prologue).
+  resolveCnJumps() {
+    const events = [];
+    for (const node of this.cnNodes) events.push({ kind: 'node', lineIdx: node.lineIdx, ref: node });
+    for (const jump of this.cnJumps) events.push({ kind: 'jump', lineIdx: jump.lineIdx, ref: jump });
+    for (const sb of this.cnScopeStarts) events.push({ kind: 'scopeStart', lineIdx: sb.lineIdx, ref: sb });
+    events.sort((a, b) => a.lineIdx - b.lineIdx);
+
+    let nextSlot = 1;
+    let nopCount = 0;
+    let prevWasUnconditionalExit = false;
+
+    for (const ev of events) {
+      if (ev.kind === 'scopeStart') {
+        nopCount = 0;
+        prevWasUnconditionalExit = !ev.ref.isGlobal;
+      } else if (ev.kind === 'node') {
+        if (!prevWasUnconditionalExit) nopCount += 1;
+        ev.ref.slot = nextSlot++;
+        prevWasUnconditionalExit = false;
+      } else if (ev.kind === 'jump') {
+        ev.ref.positionAtThisPoint = nopCount;
+        if (ev.ref.isUnconditional) prevWasUnconditionalExit = true;
+        // ordinary conditional branches (jz/jne/jge) leave reachability unchanged
+      }
+    }
+
+    // Resolve every jump's offset now that every node has a final slot.
+    for (const jump of this.cnJumps) {
+      const target = this.cnNodeByName.get(jump.targetName);
+      if (!target || target.slot === undefined) {
+        throw new Error(`internal error: jump target "${jump.targetName}" was referenced but never registered via label()`);
+      }
+      const off = target.slot - jump.positionAtThisPoint;
+      if (off < 0) {
+        throw new Error(`internal geometry error: jump to "${jump.targetName}" resolved to a negative CN offset `
+          + `(${off}) -- a codegen construct is counting connector nodes inconsistently between fall-through `
+          + `and jump-only arrivals. This is a compiler bug, not a program error.`);
+      }
+      this.lines[jump.lineIdx] = `${jump.mnem} ${jump.r1}, ${jump.r2}, ${off}` + (jump.comment ? `  ; ${jump.comment}` : '');
+    }
+
+    // Real byte addresses for every registered node, needed for the
+    // registration prologue's own li.pcrel computations. Walked AFTER
+    // patching every jump above, so every line is now real, final
+    // instruction text (not a placeholder) with a well-defined length.
+    const lineByteLength = (lineText) => {
+      const trimmed = lineText.trim();
+      if (!trimmed || trimmed.startsWith(';') || /:$/.test(trimmed)) return 0;
+      const codepart = trimmed.split(';')[0].trim();
+      if (!codepart) return 0;
+      const mnem = codepart.split(/[\s,]+/)[0].toLowerCase();
+      if (!(mnem in window.seerFormat)) return 0;
+      return window.seerFormat[mnem] === 'OB' ? 1 : 4;
+    };
+    let addr = 0;
+    const nodeByLineIdx = new Map(this.cnNodes.map(n => [n.lineIdx, n]));
+    for (let i = 0; i < this.lines.length; i++) {
+      if (nodeByLineIdx.has(i)) nodeByLineIdx.get(i).addr = addr;
+      addr += lineByteLength(this.lines[i]);
+    }
+
+    // ── Registration prologue ──────────────────────────────────────────────
+    // Mirrors cfGenerateSetup exactly: per node, in slot order, stage +
+    // li.pcrel + commit (12 bytes/node), then zero the scratch register --
+    // a program reading it before writing it would otherwise see leftover
+    // registration garbage instead of a clean 0 (a real, documented bug in
+    // the reference toolchain, fixed the same way here). r247 is used as
+    // the scratch register here -- distinct from r245 (stack-slot offset)
+    // and r246 (unary-not), avoiding any collision with either.
+    const CTRL_STAGE = 14, CTRL_COMMIT = 15;
+    const BYTES_PER_NODE = 12;
+    const orderedNodes = [...this.cnNodes].sort((a, b) => a.slot - b.slot);
+    const totalRegistrationLen = orderedNodes.length * BYTES_PER_NODE;
+    const totalPrologueLen = totalRegistrationLen + 4; // + the final "li r247, 0" cleanup
+
+    const prologueLines = [];
+    orderedNodes.forEach((node, i) => {
+      const ownAddr = i * BYTES_PER_NODE + 4; // the li.pcrel instruction is 2nd of 3 in this node's block
+      const targetRealAddr = totalPrologueLen + node.addr;
+      const off = targetRealAddr - ownAddr;
+      prologueLines.push(`wrctrl zr, ${CTRL_STAGE}, ${node.slot}`);
+      prologueLines.push(`li.pcrel r247, ${off}`);
+      prologueLines.push(`wrctrl r247, ${CTRL_COMMIT}`);
+    });
+    prologueLines.push('li r247, 0');
+
+    this.lines = [...prologueLines, ...this.lines];
+  }
+
+
+
+  // Every function-exit path (the implicit end AND every early "give")
+  // MUST go through this, not a raw jmpr('R241',...) -- otherwise an
+  // early return skips the stack-restore entirely and leaks frame space
+  // on every call. Verified this session: 3 real call sites needed this
+  // (Give, the implicit function end, and class-instance construction),
+  // found by grepping for jmpr('R241' rather than assumed.
+  //
+  // BUGFIX (found via a genuine infinite loop on real IVX source, not
+  // caught by earlier testing since the old, wrong opcodes never let a
+  // compiled program run far enough to expose it): the top-level/global
+  // scope is never actually CALLED the way a real function is -- nothing
+  // ever writes a return address into r241 for it. jmpr r241,zr,zr with
+  // r241 still at its default value of 0 jumps straight back to address
+  // 0 -- .program_start itself -- and the whole program reruns forever.
+  // The global scope's own "return" needs to mean "go to .program_end",
+  // not "jump wherever the (nonexistent) caller's link register points."
+  returnFromScope(nid, comment) {
+    const scope = this.scopeStack[this.scopeStack.length - 1];
+    if (scope) {
+      const idx = this.lines.length;
+      this.lines.push('; STACK_EPILOGUE_PLACEHOLDER'); // patched in popScope()
+      this.pc++;
+      scope.epilogueLineIndices.push(idx);
+    }
+    if (scope && scope.type === 'global') {
+      this.jmp('.program_end', nid, comment ?? 'end of program -- no caller to return to');
+    } else {
+      this.jmpr('R241', nid, comment);
+    }
+  }
 
   fresh(prefix) { return `.${prefix}_${this.labelSeq++}`; }
 
-  // ── Instruction helpers — all emit v10 hex-token format ────────────────────
+  // ── Instruction helpers — all emit real, mnemonic-based SEER text ─────────
+  // (matching the rewritten assembleSource()'s own syntax, "add r1, r2, r3"
+  // -- not the old hex-opcode-first "5B R1 R2 R3" this file used to emit).
+  // Every method below verified by encoding through the SAME shared
+  // encode() the assembler/disassembler use, so there is exactly one
+  // source of truth for the ISA now, not per-method hardcoded hex.
 
-  // reg normaliser: 'r240' → 'R240', 'R240' → 'R240'
-  _r(s) { return s.replace(/^[rR]/, 'R'); }
+  // reg normaliser: 'R240' → 'r240', 'r240' → 'r240' (real syntax is lowercase)
+  _r(s) { return s.toString().replace(/^R/, 'r'); }
 
-  jmp(target, targetNid, comment) {
-    this.instr(`20 ${target}`, comment);
+  // All four emit a PLACEHOLDER line, not resolved text -- the real
+  // offset depends on a global slot number and a per-scope, reachability-
+  // aware position counter that can only be computed once the ENTIRE
+  // program has been emitted (a later label might still move the count).
+  // resolveCnJumps() patches every one of these once that's known. See
+  // its own header comment for the full mechanism and why this two-pass
+  // approach is required at all, not a simplification.
+  //
+  // jmp specifically is never emitted as a raw jmp -- confirmed against
+  // this codebase directly (grepped every em.jmp call site: none pass a
+  // link register), and real hardware treats an all-zero jmp offset as
+  // "return" regardless of intent, matching a real, documented bug in the
+  // proven reference toolchain. Every jmp here becomes `jeq zr, zr, N`
+  // instead, which is unconditionally true for any resolved offset with
+  // zero collision risk -- the same fix the reference toolchain uses.
+  _cnJump(mnem, r1, r2, targetName, isUnconditional, comment) {
+    const lineIdx = this.lines.length;
+    this.lines.push('; CN_JUMP_PLACEHOLDER');
+    this.pc++;
+    this.cnJumps.push({ lineIdx, mnem, r1, r2, targetName, isUnconditional, comment });
   }
 
+  jmp(target, targetNid, comment) {
+    this._cnJump('jeq', 'zr', 'zr', target, true, comment);
+  }
+
+  // No standalone "jump if zero" exists on real hardware -- BR format always
+  // compares two registers. Encoded as jeq rcond, zr, target.
   jz(rcond, target, comment) {
-    // Jump if zero (condition FALSE) — opcode 0x22
-    this.instr(`22 ${this._r(rcond)} ${target}`, comment);
+    this._cnJump('jeq', this._r(rcond), 'zr', target, false, comment);
   }
 
   jne(r1, r2, target, targetNid, comment) {
-    this.instr(`23 ${this._r(r1)} ${this._r(r2)} ${target}`, comment);
+    this._cnJump('jne', this._r(r1), this._r(r2), target, false, comment);
   }
 
   jge(r1, r2, target, targetNid, comment) {
-    this.instr(`27 ${this._r(r1)} ${this._r(r2)} ${target}`, comment);
+    this._cnJump('jge', this._r(r1), this._r(r2), target, false, comment);
   }
 
+  // Real jmpr is format JR [rs1, rs2, link] -- target = rs1+rs2, register-
+  // indirect, NOT CN-table validated (confirmed against seer_core.sv this
+  // session: pc_update_val = rs1_val + rs2_val for jmpr specifically).
+  // No link register here (ordinary indirect jump, not a call) -> zr.
   jmpr(reg, targetNid, comment) {
-    this.instr(`21 ${this._r(reg)} R255`, comment);
+    this.instr(`jmpr ${this._r(reg)}, zr, zr`, comment);
   }
 
-  sts64(src, base, offset, cap, comment) {
-    // MEMS store.64: 8B src base R255 offset(int32)
-    this.instr(`8B ${this._r(src)} ${this._r(base)} R255 ${offset}`, comment);
+  // Real sts64/ld64 are format D [value_reg, base_reg, ptr_reg] -- two
+  // REGISTERS, no immediate-offset field. offsetOrName may be a variable
+  // NAME (resolved to a real numeric slot via MemSlots, scoped to cap /
+  // the current scope) or an already-numeric offset (e.g. array
+  // indexing). Either way the offset has to be loaded into a register
+  // before use -- r245 is a dedicated scratch for this, chosen outside
+  // both RegAlloc's variable pool (r0-r239) and the other reserved
+  // registers already in use elsewhere in this file (r240 was the old,
+  // retired frame base; r241 link; r243 class-instance self; r246 is the
+  // unary-not scratch -- see that method's own note).
+  //
+  // NOT covered by this fix, and genuinely different problems: R243-based
+  // calls (class instance fields, "self.x = ...") still use the OLD wrong
+  // opcodes -- object/heap storage is a separate design question from "a
+  // function's own local stack frame," and nothing initializes R243 to a
+  // real address anywhere in this file either. Left for its own pass.
+  sts64(src, base, offsetOrName, cap, comment) {
+    const capId = cap ?? this.currentCap();
+    const off = (typeof offsetOrName === 'number') ? offsetOrName : this.memSlots.slotFor(capId, offsetOrName);
+    this.instr(`li r245, ${off}`, `slot offset for ${typeof offsetOrName === 'string' ? offsetOrName : off}`);
+    this.instr(`sts64 ${this._r(src)}, ${this._r(base)}, r245`, comment);
+  }
+  lds64(dst, base, offsetOrName, cap, comment) {
+    const capId = cap ?? this.currentCap();
+    const off = (typeof offsetOrName === 'number') ? offsetOrName : this.memSlots.slotFor(capId, offsetOrName);
+    this.instr(`li r245, ${off}`, `slot offset for ${typeof offsetOrName === 'string' ? offsetOrName : off}`);
+    this.instr(`ld64 ${this._r(dst)}, ${this._r(base)}, r245`, comment);
   }
 
-  lds64(dst, base, offset, cap, comment) {
-    // MEMS load.u64: 86 dst base R255 offset(int32)
-    this.instr(`86 ${this._r(dst)} ${this._r(base)} R255 ${offset}`, comment);
-  }
-
+  // Real li has exactly one general form (the "li" pseudo-op: li.captr for
+  // 0..0xFFFF, addi rd,zr,imm for -128..-1) -- no separate li.s8/s16/s32/s48
+  // opcodes exist. Values outside -128..0xFFFF need li.pcrel/li.cn or a
+  // multi-op sequence (encode()'s own li case throws a clear error in that
+  // case rather than silently emitting something wrong).
   li(rd, val, comment) {
-    const v = Number(val);
-    const op = (!isNaN(v) && v >= -128    && v <= 127)    ? '11'   // li.s8
-             : (!isNaN(v) && v >= -32768  && v <= 32767)  ? '13'   // li.s16
-             : (!isNaN(v) && v >= -(1<<23) && v <= (1<<23)) ? '15' // li.s32
-             : '17';                                                 // li.s48
-    this.instr(`${op} ${this._r(rd)} ${val}`, comment);
+    this.instr(`li ${this._r(rd)}, ${val}`, comment);
   }
 
+  // Loads a pointer to STATIC text -- via the same real interning +
+  // li.pcrel mechanism StringLit uses now. IMPORTANT SCOPE NOTE: str here
+  // is whatever the caller already reduced the template to (including any
+  // literal "{name}"-style text verbatim) -- this does NOT evaluate or
+  // substitute placeholders. Real interpolation needs runtime number-to-
+  // string conversion and string concatenation, neither of which exist
+  // anywhere in this codebase; that's a separate, deeper piece of work
+  // than "a string literal has a real address now."
   li_str(rd, str, comment) {
-    // Encode string as li.s48 with up to 6 ASCII bytes — best effort for display
-    this.instr(`17 ${this._r(rd)} 0`, comment ?? `"${str}"`);
+    const label = this.internString(str);
+    this.instr(`li.pcrel ${this._r(rd)}, ${label}`, comment ?? `"${str}" (static text -- {placeholders} NOT substituted, see note above)`);
   }
 
   addi(rd, rs, imm, comment) {
-    // P5: add rd, rs, imm  → opcode 0x4C (P5 row 4_, op nibble C=add)
-    this.instr(`4C ${this._r(rd)} ${this._r(rs)} ${imm}`, comment);
+    this.instr(`addi ${this._r(rd)}, ${this._r(rs)}, ${imm}`, comment);
   }
 
+  // No dedicated ecall/wfe opcodes exist on real hardware (checked against
+  // the real OPCODES table directly -- "ecall" and "wfe" ARE real OB
+  // mnemonics, just at different byte values than this file assumed).
   ecall(svc, comment) {
-    // SYS ecall: opcode 0x0E only — assembler schema expects 0 operands
-    // Service ID is already loaded into R0 before this call
-    this.instr(`0E`, comment ?? `ecall svc=${svc}`);
+    this.instr(`ecall`, comment ?? `ecall svc=${svc}`);
   }
 
   wfe(comment) {
-    // SYS unbounded stall (0x0C) — closest to wait-for-event
-    this.instr(`0C`, comment);
+    this.instr(`wfe`, comment);
   }
 
   wrctrl(ctrlName, val, comment) {
-    // SYS wrctrl: 04 Rval ctrl_id
-    // ctrl_id is a small integer — map common names
     const id = typeof ctrlName === 'number' ? ctrlName
       : ctrlName?.toString().match(/\d+/)?.[0] ?? 0;
-    const rval = typeof val === 'string' ? this._r(val) : `R${val ?? 255}`;
-    this.instr(`04 ${rval} ${id}`, comment);
+    const rval = typeof val === 'string' ? this._r(val) : `r${val ?? 255}`;
+    this.instr(`wrctrl ${rval}, ${id}`, comment);
   }
 
   rdctrl(dst, ctrlName, comment) {
-    // SYS rdctrl: 03 Rdst ctrl_id
     const id = typeof ctrlName === 'number' ? ctrlName
       : ctrlName?.toString().match(/\d+/)?.[0] ?? 0;
-    this.instr(`03 ${this._r(dst)} ${id}`, comment);
+    this.instr(`rdctrl ${this._r(dst)}, ${id}`, comment);
   }
 
   hlt(comment) {
-    this.instr(`0F`, comment);
+    this.instr(`hlt`, comment);
   }
 }
 
@@ -875,10 +1393,10 @@ class RegAlloc {
     const v = this.alloc(name);
     if (v.reg) {
       // In a register — move to dst if different
-      if (v.reg !== dst) em.instr(`5C ${dst} ${v.reg} R255 0`, `${name} → ${dst}`);
+      if (v.reg !== dst) em.instr(`add ${em._r ? em._r(dst) : dst.toLowerCase()}, ${v.reg.toLowerCase()}, zr`, `${name} → ${dst}`);
       else               em.comment(`${name} already in ${dst}`);
     } else {
-      em.lds64(dst, 'R240', v.spill, em.currentCap(), `load spilled ${name}`);
+      em.lds64(dst, 'sp', v.spill, em.currentCap(), `load spilled ${name}`);
     }
     return dst;
   }
@@ -889,10 +1407,10 @@ class RegAlloc {
     const v = this.alloc(name);
     if (v.reg) {
       // Move src into the variable's home register
-      if (v.reg !== src) em.instr(`5C ${v.reg} ${src} R255 0`, `${src} → ${name}`);
+      if (v.reg !== src) em.instr(`add ${v.reg.toLowerCase()}, ${src.toLowerCase()}, zr`, `${src} → ${name}`);
       else               em.comment(`${name} already in ${v.reg}`);
     } else {
-      em.sts64(src, 'R240', v.spill, em.currentCap(), `spill ${name}`);
+      em.sts64(src, 'sp', v.spill, em.currentCap(), `spill ${name}`);
     }
   }
 
@@ -959,13 +1477,9 @@ function loadExpr(node, em, dst) {
       return dst;
 
     case 'StringLit': {
-      // Encode up to 6 ASCII bytes of the string into a li.s48 immediate
       const s = node.value ?? '';
-      let imm = 0n;
-      for (let i = 0; i < Math.min(s.length, 6); i++)
-        imm |= BigInt(s.charCodeAt(i)) << BigInt(i * 8);
-      const immStr = imm === 0n ? '0' : String(imm);
-      em.instr(`17 ${dst} ${immStr}`, `"${s.length > 12 ? s.slice(0,12)+'…' : s}"`);
+      const label = em.internString(s);
+      em.instr(`li.pcrel ${em._r(dst)}, ${label}`, `"${s.length > 12 ? s.slice(0,12)+'…' : s}"`);
       return dst;
     }
 
@@ -1006,27 +1520,76 @@ function loadExpr(node, em, dst) {
       // R5/R6 were leaking into value computations; R2/R3 are reserved for this
       loadExpr(node.left,  em, 'R2');
       loadExpr(node.right, em, 'R3');
-      const opMap = {
-        '+':    '5C', '-':   '5D', '*':  '5E', '/':  '5F',
-        '=':    '50', '!=':  '51',
-        '<':    '5B', '>':   '5B',   // > swaps operands below
-        '<=':   '5B', '>=':  '58',
-        'and':  '52', 'nand':'53',
-        'or':   '54', 'nor': '55',
-        'xor':  '56', 'same':'57',   // same = XNOR
-        'mod':  '60', '%':   '60',
+      // Direct 1:1 real-ALU-op mappings.
+      const REAL_OPMAP = {
+        '+':'add', '-':'sub', '*':'mul', '/':'div', 'mod':'mod', '%':'mod',
+        '=':'eq', 'and':'and', 'nand':'nand', 'or':'or', 'nor':'nor',
+        'xor':'xor', 'same':'xnor',
       };
-      const op = opMap[node.op] ?? '5C';
-      // > needs operands swapped (slt R0, R3, R2 = R3 < R2 = left > right)
-      const [l, r] = node.op === '>' ? ['R3','R2'] : ['R2','R3'];
-      em.instr(`${op} ${dst} ${l} ${r} 0`,
-        `${exprText(node.left)} ${node.op} ${exprText(node.right)}`);
+      const rd = em._r ? em._r(dst) : dst.toLowerCase();
+      const desc = `${exprText(node.left)} ${node.op} ${exprText(node.right)}`;
+      const op = REAL_OPMAP[node.op];
+      if (op) {
+        em.instr(`${op} ${rd}, r2, r3`, desc);
+        return dst;
+      }
+      // Comparison operators -- real ISA's value-producing comparison is
+      // "slt" (set less-than, format A: rd = (rs1 < rs2) ? 1 : 0), not a
+      // direct opcode per comparison. Each one built from slt plus, where
+      // needed, an operand swap or a boolean complement (xori rd, rd, 1 --
+      // rd is already a clean 0/1 from slt, so this correctly flips it).
+      switch (node.op) {
+        case '<':
+          em.instr(`slt ${rd}, r2, r3`, desc);
+          break;
+        case '>':
+          em.instr(`slt ${rd}, r3, r2`, desc); // right < left = left > right
+          break;
+        case '<=':
+          em.instr(`slt ${rd}, r3, r2`, `${desc} (via not(right<left))`); // rd = right<left = left>right
+          em.instr(`xori ${rd}, ${rd}, 1`, `complement -> left<=right`);
+          break;
+        case '>=':
+          em.instr(`slt ${rd}, r2, r3`, `${desc} (via not(left<right))`);
+          em.instr(`xori ${rd}, ${rd}, 1`, `complement -> left>=right`);
+          break;
+        case '!=':
+          // xor is nonzero iff different; slt zr,<that> normalizes to a
+          // clean 0/1 rather than leaving an arbitrary nonzero value,
+          // since downstream code may expect a real boolean, not just
+          // "truthy".
+          em.instr(`xor ${rd}, r2, r3`, desc);
+          em.instr(`slt ${rd}, zr, ${rd}`, `normalize to 0/1`);
+          break;
+        default:
+          em.instr(`; UNIMPLEMENTED comparison operator "${node.op}"`, '');
+      }
       return dst;
     }
 
     case 'UnaryOp': {
       loadExpr(node.operand, em, 'R2');
-      em.instr(`51 ${dst} R2 R255 0`, `not ${exprText(node.operand)}`);
+      const rd = em._r ? em._r(dst) : dst.toLowerCase();
+      // No direct unary-not ALU op exists on real hardware (same as most
+      // real ISAs -- e.g. classic MIPS has no NOT either).
+      //
+      // IMPORTANT SCOPE NOTE: this is boolean negation (xori 1), matching
+      // the compiler's OWN existing internal branch convention -- jz()
+      // elsewhere in this file already compiles to "jeq rcond, zr, target"
+      // (branch when a value is exactly zero), so 0=false/nonzero=true is
+      // already this compiler's working convention for anything feeding a
+      // branch, independent of this fix. That is NOT the same thing as
+      // runtime.js's own isTruthy() (checked directly this session: only
+      // none and false are falsy there -- 0 itself is truthy in IVX's
+      // user-facing semantics). This fix assumes node.operand already
+      // evaluates to a clean 0/1 (true for anything produced by a
+      // comparison or an explicit bool literal). Negating an arbitrary
+      // IVX value under its REAL truthy/falsy rules (0 truthy, empty
+      // string, etc.) would need a real value-representation design --
+      // how none/false/true/numbers/strings each become a concrete SEER
+      // word -- which nothing in SEEREmitter currently defines anywhere.
+      // Left as a separate, deeper question rather than silently assumed.
+      em.instr(`xori ${rd}, r2, 1`, `not ${exprText(node.operand)} (boolean negation; assumes a clean 0/1 operand -- see note above)`);
       return dst;
     }
 
@@ -1089,7 +1652,7 @@ function compileStmt(node, em) {
           cum += b.weight;
           const nextL = em.fresh('fork_next');
           em.li('R1', cum, `cumulative ${cum}`);
-          em.instr(`5B R2 R0 R1 0`, `R0 < ${cum}?`);
+          em.instr(`slt r2, r0, r1`, `R0 < ${cum}?`);
           em.jz('R2', nextL, `skip if random >= ${cum}`);
           for (const s of b.body) compileStmt(s, em);
           em.jmp(exitL, NID.CON, 'branch done');
@@ -1136,7 +1699,7 @@ function compileStmt(node, em) {
       em.li('R0', SVC.FETCH, 'file-pick service');
       em.li_str('R1', `.${ext}`, 'extension filter');
       em.ecall(SVC.FETCH, `file picker .${ext}`);
-      em.sts64('r0', 'R240', name, em.currentCap(), `${name} = file`);
+      em.sts64('r0', 'sp', name, em.currentCap(), `${name} = file`);
       break;
     }
 
@@ -1149,7 +1712,7 @@ function compileStmt(node, em) {
       em.blank();
       em.comment(`give ${val}  ; flowchart: GIVE node`);
       loadExpr(node.expr, em, 'R0');
-      em.jmpr('R241', NID.END, 'return — target must be registered END node');
+      em.returnFromScope(NID.END, 'return — target must be registered END node');
       break;
     }
 
@@ -1251,7 +1814,7 @@ function compileStmt(node, em) {
       em.blank();
       em.comment(`del ${node.name}`);
       em.li('R0', 0, 'zero tombstone');
-      em.sts64('r0', 'R240', node.name, em.currentCap(), `del ${node.name}`);
+      em.sts64('r0', 'sp', node.name, em.currentCap(), `del ${node.name}`);
       break;
     }
 
@@ -1428,7 +1991,7 @@ function compileFor(node, em) {
 
   // Setup: load iterable and length — CON_PREV nid rides on the first setup instr
   em.scheduleNode(NID.CON_PREV, 'for back-edge target');
-  em.lds64('r8', 'R240', tgt, cap, `load ${tgt}`);
+  em.lds64('r8', 'sp', tgt, cap, `load ${tgt}`);
   em.instr(`popcnt   r10, r8`, `len(${tgt}) → r10`);
   em.li('R9', 0, 'index = 0');
 
@@ -1438,10 +2001,9 @@ function compileFor(node, em) {
   em.jge('R9', 'r10', exitL, NID.CON, 'done');
 
   em.iLevel++;
-  em.instr(`lds.u64  r11, [r8+r9]  [cap=0x${cap.toString(16).padStart(2,'0')}]`,
-    `${iterName} = ${tgt}[${idxName}]`);
-  em.sts64('r11', 'R240', iterName, cap, `bind ${iterName}`);
-  em.sts64('r9',  'R240', idxName,  cap, `bind ${idxName}`);
+  em.instr(`ld64 r11, r8, r9`, `${iterName} = ${tgt}[${idxName}]`);
+  em.sts64('r11', 'sp', iterName, cap, `bind ${iterName}`);
+  em.sts64('r9',  'sp', idxName,  cap, `bind ${idxName}`);
 
   for (const stmt of node.body ?? []) compileStmt(stmt, em);
 
@@ -1472,8 +2034,13 @@ function compileFun(node, em) {
   // FUN nid on the first real instruction — wrctrl capability registration
   em.label(name);
   em.scheduleNode(NID.FUN, `fun ${name}`);
-  em.wrctrl(`CAPTBASE[0x${capHex}]`, 'R240',
-    `register frame capability cap_id=0x${capHex}`);
+  // Capability install removed -- the CAPTBASE mechanism this targeted no
+  // longer exists on real hardware (capability system stripped this
+  // session for timing; CFI stays intact via the CN-table/RAS, which
+  // never depended on it). Scope tracking (cap/capHex/pushScope) is kept
+  // as bookkeeping only -- it still identifies which lexical scope a
+  // variable belongs to for the stack-slot addressing sts64/lds64 need
+  // (see their own note), it just no longer emits a real instruction here.
 
   // Parameters: passed in r0, r1, ...
   em.iLevel++;
@@ -1481,7 +2048,7 @@ function compileFun(node, em) {
     const p    = params[i];
     const pname = typeof p === 'string' ? p : p.name;
     const pdef  = (p.defaultExpr && typeof p !== 'string') ? ` (default=${exprText(p.defaultExpr)})` : '';
-    em.sts64(`r${i}`, 'R240', pname, cap, `param ${pname}${pdef}`);
+    em.sts64(`r${i}`, 'sp', pname, cap, `param ${pname}${pdef}`);
   }
   em.blank();
 
@@ -1491,8 +2058,8 @@ function compileFun(node, em) {
   // Implicit function end — END nid on wrctrl (capability invalidation)
   em.blank();
   em.scheduleNode(NID.END, `end of fun ${name}`);
-  em.wrctrl(`CAPTBASE[0x${capHex}]`, 'R255', 'invalidate frame capability');
-  em.jmpr('R241', NID.END, `return from ${name}`);
+  // Capability invalidation removed -- see the install-site note above.
+  em.returnFromScope(NID.END, `return from ${name}`);
 
   em.popScope();
 }
@@ -1513,8 +2080,8 @@ function compileClass(node, em) {
     // FUN nid on wrctrl
     em.label(`${cname}__init`);
     em.scheduleNode(NID.FUN, `${cname} constructor`);
-    em.wrctrl(`CAPTBASE[0x${capHex}]`, 'R244',
-      `allocate ${cname} instance cap_id=0x${capHex}`);
+    // Capability install removed -- see the function-scope note above;
+    // same reasoning applies here for class instance allocation.
     em.iLevel++;
     for (let i = 0; i < (initFun.params ?? []).length; i++) {
       const p = initFun.params[i];
@@ -1524,8 +2091,8 @@ function compileClass(node, em) {
     for (const stmt of initFun.body ?? []) compileStmt(stmt, em);
     em.iLevel--;
     em.scheduleNode(NID.END, `end ${cname} constructor`);
-    em.wrctrl(`CAPTBASE[0x${capHex}]`, 'R255', 'seal instance (no more writes via cap)');
-    em.jmpr('R241', NID.END, 'return instance');
+    // Capability seal removed -- see the install-site note above.
+    em.returnFromScope(NID.END, 'return instance');
     em.popScope();
   }
 
@@ -1563,7 +2130,7 @@ function compileTry(node, em) {
   // err handler
   em.label(errL);
   em.scheduleNode(NID.ELSE_CON, `err ${node.errVar ?? 'e'}`);
-  em.sts64('r0', 'R240', node.errVar ?? 'e', em.currentCap(),
+  em.sts64('r0', 'sp', node.errVar ?? 'e', em.currentCap(),
     `${node.errVar ?? 'e'} = error message`);
   em.iLevel++;
   for (const stmt of node.errBody ?? []) compileStmt(stmt, em);
@@ -1657,22 +2224,40 @@ function compileSEER(source, opts) {
   // ── File header ─────────────────────────────────────────────────────────────
   em.lines.push(
     '; ═══════════════════════════════════════════════════════════════════',
-    '; SEER ISA v10 — generated by ivx-seer (hex-token format)',
-    '; Each instruction: <opcode_hex> [operands…]  ; comment',
-    '; Registers: R0–R239 general  R240=FP  R241=LINK  R242=SP  R255=ZR',
+    '; SEER ISA -- generated against the real, verified hardware encoding',
+    '; (this session -- see the accompanying notes throughout this file for',
+    '; exactly what was fixed, and what still needs its own design pass).',
+    '; Each instruction: <mnemonic> operand, operand, ...  ; comment',
+    '; Registers: r0-r239 general  sp=r254 (real stack pointer)  r241=link',
+    '; r243=class-instance self (NOT yet initialized anywhere -- see the',
+    '; sts64/lds64 note)  r245=stack-slot-offset scratch  r246=unary-not',
+    '; scratch  zr=r255',
     '; ═══════════════════════════════════════════════════════════════════',
     ''
   );
+
+  // Real stack base. NOTE: chosen by inference, not freshly re-verified --
+  // dmem's own addr[13:4] bit-slice (confirmed earlier this session)
+  // implies only 16KB of real addressable space, which 0x6000 exceeds --
+  // but 0x5000 (the RAS spill region) was directly verified working on
+  // real hardware earlier this session despite that same arithmetic, so
+  // this trusts that prior, empirical result over a fresh re-derivation
+  // rather than re-deriving dmem's exact size from scratch here. Worth an
+  // explicit, direct hardware check before relying on this for anything
+  // real -- flagged rather than silently assumed correct.
+  em.dataLabel('.program_start');
+  em.instr(`li sp, 24576`, 'real stack base for Vertex-compiled program frames (0x6000 -- see note above)');
 
   // ── Program entry ────────────────────────────────────────────────────────────
   const globalCap    = em.pushScope('__global__', 'global');
   const globalCapHex = globalCap.toString(16).padStart(2,'0');
 
   // START nid on wrctrl — no standalone nop
-  em.label('.program_start');
   em.scheduleNode(NID.START, 'program entry');
-  em.wrctrl(`CAPTBASE[0x${globalCapHex}]`, 'R242',
-    `register global capability cap_id=0x${globalCapHex}`);
+  // Global capability install removed -- same reasoning as the function/
+  // class scope notes elsewhere in this file: no CAPTBASE mechanism exists
+  // on real hardware anymore. globalCap/globalCapHex are kept as the
+  // program's top-level scope identifier for stack-slot addressing.
   em.blank();
 
   // ── Compile body ─────────────────────────────────────────────────────────────
@@ -1689,10 +2274,30 @@ function compileSEER(source, opts) {
   em.label('.program_end');
   // END nid on wrctrl — no standalone nop
   em.scheduleNode(NID.END, 'program END');
-  em.wrctrl(`CAPTBASE[0x${globalCapHex}]`, 'R255', 'invalidate global capability');
+  // Global capability invalidation removed -- see the install-site note above.
   em.hlt('program complete');
 
+  // ── String literal data section ──────────────────────────────────────────────
+  // Placed after hlt so it's never reached as code. Each interned string
+  // becomes a real label + its UTF-8 bytes + a null terminator (see
+  // internString's own note on the null-terminator convention this
+  // assumes downstream).
+  if (em.stringLiterals.size) {
+    em.blank();
+    em.lines.push('; ── String data ' + '─'.repeat(52));
+    for (const [text, label] of em.stringLiterals) {
+      em.dataLabel(label);
+      em.lines.push(`.string ${JSON.stringify(text)}`);
+    }
+  }
+
   em.popScope();
+
+  // Resolve every jmp/jz/jne/jge placeholder now that the whole program
+  // (including the string data section) has been emitted, and prepend
+  // the real CN-table registration prologue. See resolveCnJumps()'s own
+  // header comment for the full mechanism.
+  em.resolveCnJumps();
 
   // ── Symbol table ─────────────────────────────────────────────────────────────
   if (em.symbols.length) {
@@ -2496,6 +3101,39 @@ const ReverseTranspiler = (() => {
       <div id="lens-scroll">
         <div id="lens-code" spellcheck="false"></div>
       </div>
+      <div id="lens-hw-panel" style="display:none;flex-direction:column;flex:1;min-height:0;overflow:auto;padding:10px 12px">
+        <div id="lens-hw-conn" style="display:flex;align-items:center;gap:8px;padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid #2a2a3e">
+          <span id="lens-hw-status" style="font-family:monospace;font-size:11px;color:#6b7280">not connected</span>
+          <div style="flex:1"></div>
+          <span style="font-family:monospace;font-size:10px;color:#4b5563">baud</span>
+          <select class="gsel panel-hdr-sel" id="lens-hw-baud">
+            <option value="9600">9600</option>
+            <option value="115200" selected>115200</option>
+            <option value="460800">460800</option>
+            <option value="921600">921600</option>
+          </select>
+          <button class="kb" id="lens-hw-connect-btn">Connect FPGA Hardware</button>
+        </div>
+        <div id="lens-hw-tabs" style="display:flex;gap:6px;margin-bottom:10px">
+          <button class="kb lens-hw-tab active" data-hwtab="verify">Send &amp; Verify</button>
+          <button class="kb lens-hw-tab" data-hwtab="soak">Soak Tests</button>
+        </div>
+        <div id="lens-hw-verify" class="lens-hw-tabpanel">
+          <div style="color:#6b7280;font-size:11px;margin-bottom:8px">
+            Compiles the current IVX source to SEER (same view as the code lens, using the register
+            count above), sends it to the connected board, and compares the board's real, received
+            register values against what the simulator expects.
+          </div>
+          <button class="kb" id="lens-hw-send-btn">&#9654; Send &amp; verify compiled SEER</button>
+          <div id="lens-hw-verify-status" style="margin-top:8px;font-size:12px"></div>
+          <div id="lens-hw-reset-prompt" style="display:none;margin-top:8px;padding:8px;background:#1c2128;border-radius:6px">
+            <span style="font-size:11px;color:#6b7280">Program is staged — press the board's physical reset, then continue.</span><br>
+            <button class="kb" id="lens-hw-reset-continue" style="margin-top:6px">Reset pressed — send &amp; continue</button>
+          </div>
+          <div id="lens-hw-verify-results" style="margin-top:8px;font-size:12px"></div>
+        </div>
+        <div id="lens-hw-soak" class="lens-hw-tabpanel" style="display:none"></div>
+      </div>
     </div>
     <div id="lens-import-confirm" style="display:none">
       <span id="lens-import-msg"></span>
@@ -2531,6 +3169,7 @@ const ReverseTranspiler = (() => {
         style="width:80px;accent-color:#4ade80;cursor:pointer">
       <span id="seer-reg-label" style="font-family:monospace;font-size:10px;color:#4ade80;min-width:28px;text-align:right">240</span>
     </div>
+    <button class="kb panel-hdr-btn" id="lens-hw-toggle" style="display:none">&#9889; Hardware</button>
     <button class="kb panel-hdr-btn" id="lens-btn">Lens</button>
   `;
 
@@ -2560,10 +3199,13 @@ const ReverseTranspiler = (() => {
   const seerRegWrap   = document.getElementById('seer-reg-wrap');
   const seerRegSlider = document.getElementById('seer-reg-slider');
   const seerRegLabel  = document.getElementById('seer-reg-label');
+  const lensHwToggle  = document.getElementById('lens-hw-toggle');
   let seerMaxRegs = 240;
 
   function updateSeerSlider() {
-    seerRegWrap.style.display = (lensLang === 'seer' && lensOpen) ? 'flex' : 'none';
+    const showSeer = (lensLang === 'seer' && lensOpen);
+    seerRegWrap.style.display = showSeer ? 'flex' : 'none';
+    lensHwToggle.style.display = showSeer ? '' : 'none';
   }
 
   seerRegSlider.addEventListener('input', () => {
@@ -2571,6 +3213,344 @@ const ReverseTranspiler = (() => {
     seerRegLabel.textContent = String(seerMaxRegs);
     if (lensOpen && lensLang === 'seer' && !lensEdited) renderLens();
   });
+
+  // ── Hardware layer (ported from the Soak Tester, this session) ────────────
+  // Serial connection state and the trace-frame wire-format parser are
+  // carried over largely unmodified -- confirmed against trace_packetizer.sv
+  // and tested against real hardware there; no reason to re-derive any of
+  // this from scratch. Scoped inside this IIFE (not top-level globals, the
+  // way the standalone Soak Tester had them) since this is the only place
+  // in Vertex that talks to navigator.serial.
+  let hwSerialPort = null;
+  let hwSerialWriter = null;
+  let hwSerialReader = null;
+  let hwSerialReadBuffer = new Uint8Array(0);
+  const hwTraceFrameListeners = new Set(); // fn({type, waddr, pc, resultData, ...} | {type:'halted'})
+
+  const hwStatusEl = document.getElementById('lens-hw-status');
+  const hwConnectBtn = document.getElementById('lens-hw-connect-btn');
+  const hwBaudSel = document.getElementById('lens-hw-baud');
+
+  function hwSetStatus(text, colorVar) {
+    hwStatusEl.textContent = text;
+    hwStatusEl.style.color = colorVar ? `var(${colorVar})` : '';
+  }
+
+  function hwAppendBuffer(a, b) {
+    const t = new Uint8Array(a.length + b.length);
+    t.set(a, 0); t.set(b, a.length);
+    return t;
+  }
+
+  // 14-byte frames: 0xAA sync (data) or 0xBB sync (halted marker, 13
+  // zero-padded bytes). Data frame: 8-bit register address, 24-bit PC,
+  // 64-bit data, 1 diagnostic byte (bit0=from li_mem_execute,
+  // bit1=response actually captured before timeout).
+  const HW_MAX_TRACE_BUFFER_BYTES = 4096;
+  function hwProcessTraceBuffer() {
+    const FRAME_LEN = 14;
+    if (hwSerialReadBuffer.length > HW_MAX_TRACE_BUFFER_BYTES) {
+      console.warn(`[SEER hw] read buffer exceeded ${HW_MAX_TRACE_BUFFER_BYTES} bytes with no valid frame `
+        + `boundary -- dropping and resyncing on whatever arrives next.`);
+      hwSerialReadBuffer = new Uint8Array(0);
+    }
+    while (hwSerialReadBuffer.length >= FRAME_LEN) {
+      if (hwSerialReadBuffer[0] !== 0xAA && hwSerialReadBuffer[0] !== 0xBB) {
+        let next = hwSerialReadBuffer.indexOf(0xAA);
+        const nextB = hwSerialReadBuffer.indexOf(0xBB);
+        if (next === -1 || (nextB !== -1 && nextB < next)) next = nextB;
+        if (next === -1) { hwSerialReadBuffer = new Uint8Array(0); break; }
+        hwSerialReadBuffer = hwSerialReadBuffer.slice(next);
+        continue;
+      }
+      const frame = hwSerialReadBuffer.slice(0, FRAME_LEN);
+      hwSerialReadBuffer = hwSerialReadBuffer.slice(FRAME_LEN);
+      const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
+      if (frame[0] === 0xBB) {
+        hwTraceFrameListeners.forEach(fn => { try { fn({type: 'halted'}); } catch (e) { console.error(e); } });
+        continue;
+      }
+      const waddr = view.getUint8(1);
+      const pc = (view.getUint8(2) << 16) | (view.getUint8(3) << 8) | view.getUint8(4);
+      const resultData = view.getBigUint64(5, false);
+      const diag = view.getUint8(13);
+      const fromLiMem = (diag & 0x1) !== 0;
+      const respCaptured = (diag & 0x2) !== 0;
+      hwTraceFrameListeners.forEach(fn => {
+        try { fn({type: 'write', waddr, pc, resultData, fromLiMem, respCaptured}); } catch (e) { console.error(e); }
+      });
+    }
+  }
+
+  async function hwSerialReadLoop() {
+    while (hwSerialPort && hwSerialPort.readable) {
+      hwSerialReader = hwSerialPort.readable.getReader();
+      try {
+        while (true) {
+          const {value, done} = await hwSerialReader.read();
+          if (done) break;
+          hwSerialReadBuffer = hwAppendBuffer(hwSerialReadBuffer, value);
+          hwProcessTraceBuffer();
+        }
+      } catch (e) {
+        console.error('[SEER hw] read error:', e);
+      } finally {
+        try { hwSerialReader.releaseLock(); } catch (e) {}
+      }
+      if (!hwSerialPort) break;
+    }
+  }
+
+  async function hwDisconnectSerial() {
+    if (hwSerialReader) { try { await hwSerialReader.cancel(); } catch (e) {} }
+    if (hwSerialWriter) { try { await hwSerialWriter.close(); } catch (e) {} hwSerialWriter = null; }
+    if (hwSerialPort)   { try { await hwSerialPort.close(); }   catch (e) {} hwSerialPort = null; }
+    hwSetStatus('not connected', '--muted');
+    hwConnectBtn.textContent = 'Connect FPGA Hardware';
+  }
+
+  async function hwConnectSerial() {
+    if (!('serial' in navigator)) {
+      hwSetStatus('Web Serial not supported in this browser (Chromium-only: Chrome/Edge)', '--op');
+      return;
+    }
+    try {
+      await hwDisconnectSerial();
+      const port = await navigator.serial.requestPort();
+      const baud = parseInt(hwBaudSel.value, 10) || 115200;
+      await port.open({ baudRate: baud, flowControl: 'none' });
+      hwSerialPort = port;
+      hwSerialWriter = port.writable.getWriter();
+      hwSerialReadBuffer = new Uint8Array(0);
+      hwSerialReadLoop();
+      hwSetStatus(`connected @ ${baud} baud`, '--branch');
+      hwConnectBtn.textContent = 'Disconnect';
+    } catch (e) {
+      hwSetStatus(`connection failed: ${e.message}`, '--op');
+    }
+  }
+
+  hwConnectBtn.addEventListener('click', () => {
+    if (hwSerialPort) hwDisconnectSerial();
+    else hwConnectSerial();
+  });
+
+  async function hwWriteBytesToSerial(buf) {
+    try {
+      await hwSerialWriter.write(buf);
+      return { ok: true, message: `sent ${buf.length} bytes` };
+    } catch (e) {
+      return { ok: false, message: `send failed: ${e.message}` };
+    }
+  }
+
+  // ── Tab switching (Send & Verify / Soak Tests) ─────────────────────────────
+  document.querySelectorAll('.lens-hw-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.lens-hw-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const which = btn.dataset.hwtab;
+      document.getElementById('lens-hw-verify').style.display = which === 'verify' ? '' : 'none';
+      document.getElementById('lens-hw-soak').style.display = which === 'soak' ? '' : 'none';
+      if (which === 'soak') hwEnsureSoakPanelsBuilt();
+    });
+  });
+
+  // ── Code-view <-> Hardware-view toggle ──────────────────────────────────────
+  const lensHwPanel = document.getElementById('lens-hw-panel');
+  let hwPanelOpen = false;
+  lensHwToggle.addEventListener('click', () => {
+    hwPanelOpen = !hwPanelOpen;
+    lensGutter.parentElement.style.display = hwPanelOpen ? 'none' : (lensLang === 'seer' ? 'none' : '');
+    lensScroll.style.display = hwPanelOpen ? 'none' : '';
+    lensHwPanel.style.display = hwPanelOpen ? 'flex' : 'none';
+    lensHwToggle.classList.toggle('active', hwPanelOpen);
+    lensHwToggle.textContent = hwPanelOpen ? '\u2039 Code' : '\u26A1 Hardware';
+  });
+
+  // ── Send & verify compiled SEER ─────────────────────────────────────────────
+  // Compiles fresh from the current IVX source (same call renderLens() makes
+  // for the code view) rather than trusting a possibly-stale cached string --
+  // always operates on what's actually in the editor right now.
+  const hwSendBtn = document.getElementById('lens-hw-send-btn');
+  const hwVerifyStatusEl = document.getElementById('lens-hw-verify-status');
+  const hwResetPrompt = document.getElementById('lens-hw-reset-prompt');
+  const hwResetContinueBtn = document.getElementById('lens-hw-reset-continue');
+  const hwVerifyResultsEl = document.getElementById('lens-hw-verify-results');
+
+  const hwVerifyState = {
+    pendingBuf: null, expectedFinal: null, awaitingReset: false,
+    receivedFinal: null, haltMarkerSeen: false, currentListener: null, idleTimer: null,
+  };
+
+  hwSendBtn.addEventListener('click', () => {
+    if (hwVerifyState.idleTimer) { clearInterval(hwVerifyState.idleTimer); hwVerifyState.idleTimer = null; }
+    if (hwVerifyState.currentListener) { hwTraceFrameListeners.delete(hwVerifyState.currentListener); hwVerifyState.currentListener = null; }
+    hwResetPrompt.style.display = 'none';
+    hwVerifyResultsEl.innerHTML = '';
+
+    if (!hwSerialWriter) {
+      hwVerifyStatusEl.innerHTML = `<span style="color:var(--op,#e05c5c)">Not connected -- use "Connect FPGA Hardware" above.</span>`;
+      return;
+    }
+
+    let compiled;
+    try { compiled = compileSEER(srcEl.value, { maxRegs: seerMaxRegs }); }
+    catch (e) {
+      hwVerifyStatusEl.innerHTML = `<span style="color:var(--op,#e05c5c)">Cannot compile -- ${escHtmlLens(e.message)}</span>`;
+      return;
+    }
+
+    // Assemble first -- gives real bytes for both the simulator (which
+    // takes bytes directly, not source text -- see its own note) and the
+    // actual send buffer, and surfaces any assembly error before wasting
+    // a simulation run on text that wouldn't have produced valid bytes.
+    const asmResults = assembleSource(compiled);
+    let bytes = [];
+    for (const r of asmResults) {
+      if (r.isLabel) continue;
+      if (r.error) {
+        hwVerifyStatusEl.innerHTML = `<span style="color:var(--op,#e05c5c)">Cannot assemble -- ${escHtmlLens(r.error)} `
+          + `&lt;- ${escHtmlLens(r.srcLine || '')}</span>`;
+        return;
+      }
+      for (const b of r.bytes) bytes.push(b);
+    }
+
+    // regDepth=256 always -- real hardware has 256 physical registers
+    // regardless of seerMaxRegs, which only constrains how aggressively
+    // the COMPILER spills (a testing knob for RegAlloc, not a hardware
+    // fact). Passing seerMaxRegs here was a real bug: sp/ra are hardcoded
+    // to r254/r252 by SEEREmitter regardless of seerMaxRegs, so the
+    // default slider value (240) made the simulator think sp itself
+    // "doesn't exist" and trap on the very first instruction.
+    const sim = simulateProgram(bytes, 200000, 256);
+    if (sim.error) {
+      hwVerifyStatusEl.innerHTML = `<span style="color:var(--op,#e05c5c)">Cannot verify -- simulator error: ${escHtmlLens(sim.error)}</span>`;
+      return;
+    }
+
+    // NOTE: no read-before-write warning here (yet) -- the Soak Tester's
+    // own version of this check (readBeforeWriteRegs) has its own
+    // multi-function dependency chain (buildPcToItem/instrSourceRegs/
+    // VALIDATOR_BRANCH_MNEMS, all built around parseProgram's specific
+    // item shape) that wasn't ported this pass. A real, separate gap --
+    // this handler can currently report a false mismatch if a compiled
+    // program happens to read a register before this run writes it,
+    // since the register file isn't cleared between runs on real
+    // hardware but the simulator always starts from a clean, zeroed state.
+
+    const words = Math.ceil(bytes.length / 4);
+    const padded = new Uint8Array(words * 4);
+    padded.set(bytes);
+    const buf = new Uint8Array(4 + padded.length);
+    const dv = new DataView(buf.buffer);
+    dv.setUint32(0, words, false);
+    buf.set(padded, 4);
+
+    const expectedFinal = new Map();
+    for (const t of sim.trace) {
+      if (t.waddr !== null) expectedFinal.set(t.waddr, { pc: t.pc, wdata: t.wdata });
+    }
+
+    hwVerifyState.pendingBuf = buf;
+    hwVerifyState.expectedFinal = expectedFinal;
+    hwVerifyState.awaitingReset = true;
+    hwResetPrompt.style.display = 'block';
+    hwVerifyStatusEl.innerHTML = `Compiled and simulated cleanly -- ${expectedFinal.size} register(s) expected to be written. Waiting for reset.`;
+  });
+
+  hwResetContinueBtn.addEventListener('click', async () => {
+    if (!hwVerifyState.awaitingReset) return;
+    hwResetPrompt.style.display = 'none';
+    hwVerifyState.awaitingReset = false;
+    hwVerifyState.receivedFinal = new Map();
+    hwVerifyState.haltMarkerSeen = false;
+    let lastFrameAt = Date.now();
+    hwVerifyState.currentListener = (frame) => {
+      lastFrameAt = Date.now();
+      if (frame.type === 'halted') { hwVerifyState.haltMarkerSeen = true; return; }
+      hwVerifyState.receivedFinal.set(frame.waddr,
+        { pc: frame.pc, resultData: frame.resultData, fromLiMem: frame.fromLiMem, respCaptured: frame.respCaptured });
+    };
+    hwTraceFrameListeners.add(hwVerifyState.currentListener);
+
+    const { ok, message } = await hwWriteBytesToSerial(hwVerifyState.pendingBuf);
+    if (!ok) {
+      hwVerifyStatusEl.innerHTML = `<span style="color:var(--op,#e05c5c)">Send failed -- ${escHtmlLens(message)}</span>`;
+      hwTraceFrameListeners.delete(hwVerifyState.currentListener);
+      hwVerifyState.currentListener = null;
+      return;
+    }
+    hwVerifyStatusEl.textContent = 'Sent -- waiting for the board\u2019s response...';
+
+    hwVerifyState.idleTimer = setInterval(() => {
+      const quietMs = Date.now() - lastFrameAt;
+      const markerSettled = hwVerifyState.haltMarkerSeen && quietMs > 300;
+      const timedOut = hwVerifyState.receivedFinal.size > 0 ? quietMs > 3000 : quietMs > 8000;
+      if (markerSettled || timedOut) {
+        clearInterval(hwVerifyState.idleTimer);
+        hwVerifyState.idleTimer = null;
+        hwTraceFrameListeners.delete(hwVerifyState.currentListener);
+        hwVerifyState.currentListener = null;
+        hwVerifyFinalize();
+      }
+    }, 250);
+  });
+
+  function hwVerifyFinalize() {
+    const expected = hwVerifyState.expectedFinal;
+    const received = hwVerifyState.receivedFinal;
+    const allRegs = [...new Set([...expected.keys(), ...received.keys()])].sort((a, b) => a - b);
+
+    let bad = 0;
+    const rows = allRegs.map(r => {
+      const exp = expected.get(r);
+      const got = received.get(r);
+      const expStr = exp ? `0x${exp.wdata.toString(16)}` : `<span style="color:#6b7280">(not written by simulator)</span>`;
+      const gotStr = got ? `0x${got.resultData.toString(16)}` : `<span style="color:var(--op,#e05c5c)">never arrived</span>`;
+      const matched = !!(exp && got && got.resultData === exp.wdata);
+      if (exp && !matched) bad++;
+      const color = !exp ? '#6b7280' : matched ? 'var(--branch,#4ade80)' : 'var(--op,#e05c5c)';
+      return `<tr><td style="padding:2px 8px">r${r}</td><td style="padding:2px 8px;color:${color}">${expStr}</td>`
+        + `<td style="padding:2px 8px;color:${color}">${gotStr}</td></tr>`;
+    }).join('');
+
+    const summary = bad === 0
+      ? `<div style="color:var(--branch,#4ade80);font-weight:bold">PASS -- every expected register matched the board's actual value.</div>`
+      : `<div style="color:var(--op,#e05c5c);font-weight:bold">FAIL -- ${bad} register(s) mismatched.</div>`;
+
+    const haltNote = !hwVerifyState.haltMarkerSeen
+      ? `<div style="color:#6b7280;font-size:11px;margin-top:4px">Note: halt-drained marker never arrived -- the program may not have halted as expected.</div>`
+      : '';
+
+    hwVerifyResultsEl.innerHTML = summary + haltNote
+      + `<table style="margin-top:8px;font-family:monospace;font-size:11px;border-collapse:collapse">`
+      + `<tr style="color:#6b7280"><td style="padding:2px 8px">reg</td><td style="padding:2px 8px">expected</td>`
+      + `<td style="padding:2px 8px">actual (from board)</td></tr>${rows}</table>`;
+
+    hwVerifyStatusEl.textContent = bad === 0 ? 'Done -- passed.' : `Done -- ${bad} mismatch(es).`;
+  }
+
+  // ── Soak Tests tab -- NOT YET PORTED ────────────────────────────────────────
+  // Deliberately left as a clearly-marked stub rather than a rushed port.
+  // The three Soak Tester panels (random stress, trap tests, capability-
+  // adversarial tests) still need makeSoakRunner + generateRandomProgramForSoak
+  // carried over and their DOM IDs re-namespaced (lens-soak1-*/lens-soak2-*/
+  // lens-soak3-*) to avoid colliding with anything else in this page -- real,
+  // bounded, separate work, not started this pass. Send & Verify above is
+  // the completed, tested path.
+  let hwSoakPanelsBuilt = false;
+  function hwEnsureSoakPanelsBuilt() {
+    if (hwSoakPanelsBuilt) return;
+    hwSoakPanelsBuilt = true;
+    document.getElementById('lens-hw-soak').innerHTML =
+      `<div style="color:#6b7280;font-size:12px;padding:20px;text-align:center">
+        Soak Tests (random stress / trap / capability-adversarial) are not ported into
+        this panel yet -- Send &amp; Verify (the other tab) is complete and tested.
+      </div>`;
+  }
+
 
   // ── State ───────────────────────────────────────────────────────────────────
   let lensOpen    = false;
@@ -2704,7 +3684,37 @@ const ReverseTranspiler = (() => {
       }
 
       goodCount++;
-      const addr = ((goodCount - 1) * 8).toString(16).padStart(4, '0');
+      // BUGFIX: was `(goodCount - 1) * 8`, assuming every instruction is 8
+      // bytes -- real SEER instructions are 1 or 4 bytes, so a fixed
+      // multiplier gives wrong addresses for any program mixing OB
+      // (1-byte) and everything else (4-byte). assembleSource() already
+      // tracks each instruction's real byte offset directly; use that.
+      const addr = (inst.addr ?? 0).toString(16).padStart(4, '0');
+
+      // BUGFIX: string-literal data chunks (from a .string directive) were
+      // being fed through seerDisasm() like any other instruction --
+      // wrong, since they're not code at all. Real, visible symptom: the
+      // bytes for "World" (0x57='W') happened to decode as a genuine
+      // opcode (0x57 = real sll), rendering as "sll r111, r114" in the
+      // UI. assembleSource() already tags these with resolvedTokens[0]
+      // .type === 'data' (see its own .string handling) -- checked here
+      // to route data chunks to their own row instead of disasm().
+      if (inst.resolvedTokens?.[0]?.type === 'data') {
+        const hex = Array.from(inst.bytes).map(b => b.toString(16).toUpperCase().padStart(2,'0')).join(' ');
+        const bg  = `color-mix(in srgb, ${COL.memory} 30%, #111)`;
+        const border = `color-mix(in srgb, ${COL.memory} 55%, transparent)`;
+        lines.push(
+          `<div class="seer-row" title="${ESC(inst.srcLine)}">` +
+          `<span class="seer-addr" style="color:${COL.addr}">+${addr}</span>` +
+          `<div class="seer-pills"><span class="seer-pill seer-pill-data" ` +
+          `style="background:${bg};color:${COL.memory};border:1px solid ${border}" ` +
+          `title="${ESC(inst.srcLine)}">${ESC(hex)}</span></div>` +
+          `<span class="seer-mnem" style="color:${COL.comment};font-size:10px">${ESC(inst.srcLine)}</span>` +
+          `</div>`
+        );
+        continue;
+      }
+
       const d = seerDisasm(inst.bytes);
       const sorted = [...d.fields].sort((a,b) => a.start - b.start);
       const isPack = d.fields.some(f => f.tip?.startsWith('a:')) &&

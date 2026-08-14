@@ -1,0 +1,97 @@
+{
+  "name": "kh-extension",
+  "displayName": "KH Diagnostics & Visualizer",
+  "description": "Desktop diagnostics and realtime flowchart visualizer for the KH language.",
+  "version": "0.1.0",
+  "publisher": "ice-bolt",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yefoo/kh-lahk"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": ["Other"],
+
+  "main": "./dist/extension.js",
+  "extensionKind": ["workspace"],
+  "activationEvents": [
+    "onLanguage:kh",
+    "onCommand:kh.showGraph",
+    "onCommand:kh.toggleRealtimeGraph"
+  ],
+
+  "contributes": {
+    "languages": [
+      {
+        "id": "kh",
+        "extensions": [".kh", ".ivx"],
+        "aliases": ["KH", "kh"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "kh",
+        "scopeName": "source.kh",
+        "path": "./kh.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "kh.dumpGraph",
+        "title": "KH: Dump Graph"
+      },
+      {
+        "command": "kh.showGraph",
+        "title": "KH: Show Graph",
+        "category": "KH"
+      },
+      {
+        "command": "kh.toggleRealtimeGraph",
+        "title": "KH: Toggle Realtime Graph",
+        "category": "KH"
+      },
+      {
+        "command": "kh.runCode",
+        "title": "KH: Run Code",
+        "category": "KH",
+        "icon": "$(play)"
+      },
+      {
+        "command": "kh.clearDiagnostics",
+        "title": "KH: Clear Diagnostics"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "kh.runCode",
+          "group": "navigation",
+          "when": "resourceLangId == kh"
+        },
+        {
+          "command": "kh.showGraph",
+          "group": "navigation",
+          "when": "resourceLangId == kh"
+        }
+      ]
+    }
+  },
+
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "npm run clean && tsc -p ./tsconfig.json",
+    "watch": "tsc -p ./tsconfig.json -w",
+    "clean": "rimraf dist"
+  },
+
+  "dependencies": {
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.3",
+    "@types/vscode": "^1.75.0",
+    "rimraf": "^6.1.2"
+  }
+}

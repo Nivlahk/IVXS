@@ -1,0 +1,28 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "KH",
+	"patterns": [
+		{ "include": "#keywords" },
+		{ "include": "#strings" }
+	],
+	"repository": {
+		"keywords": {
+			"patterns": [{
+				"name": "keyword.control.kh",
+				"match": "\\b(if|else|loop|end|so|then|fun|class|give|init|super|make|del|take|say|print|save|download|dot|fork|prev|next|from|not|and|or|same|is|yes|no|none|in|for|wait|note|try|err|ask|post|use|key|sheets|email|to|subject|body|http|time|by)\\b"
+			}]
+		},
+		"strings": {
+			"name": "string.quoted.double.kh",
+			"begin": "\"",
+			"end": "\"",
+			"patterns": [
+				{
+					"name": "constant.character.escape.kh",
+					"match": "\\\\."
+				}
+			]
+		}
+	},
+	"scopeName": "source.kh"
+}
