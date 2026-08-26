@@ -1969,7 +1969,23 @@ class TypeChecker {
       ExprStatement: (node, env) => this._checkExprStatementStmt(node, env),
       End: () => { },
       Dot: () => { },
-      Import: () => { },
+      Import: (node, env) => {
+        // An import BINDS names, and the checker previously registered
+        // none of them -- so `from _ by npm:lodash` parsed fine and then
+        // every later use of `_` failed static checking with "Undefined
+        // variable", before execution even began.
+        //
+        // Both forms bind: the URL form binds each name in `use a, b`
+        // (or, with no name list, the whole module namespace under no
+        // single name), and the `by` form binds the local path name.
+        // Typed UNKNOWN because what a foreign module exports cannot be
+        // known statically -- that is the honest type, and it lets member
+        // access through without pretending to verify it.
+        if (node.path) env.define(node.path, TYPE.UNKNOWN);
+        if (Array.isArray(node.names)) {
+          for (const n of node.names) env.define(n, TYPE.UNKNOWN);
+        }
+      },
       UseCred: () => { },
       Get: (node, env) => { this.checkExpr(node.url, env); },
     };

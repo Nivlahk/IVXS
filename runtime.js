@@ -1854,7 +1854,63 @@ class Interpreter {
         break;
 
       case 'Import': {
-        if (!node.url) break;
+        // ── Web import (via) form: `from Name by specifier` ────
+        // Previously a silent no-op -- node.url is undefined for this form,
+        // so this case fell straight to `break` and `from Frames by pandas`
+        // parsed cleanly and did nothing. Wired to the real Phase 1/4
+        // pipeline: IVX.resolver resolves the specifier (npm/PyPI/URL/Go),
+        // IVX.bridge brings up a worker for it, and the local name becomes
+        // a NAMESPACE OBJECT whose members are async functions calling into
+        // that worker. This needs no change to evalCall/_evalInvokeExpr:
+        // _evalInvokeExpr already has a `typeof callee === 'function'`
+        // fallback for exactly this shape (used today for sheets handle
+        // methods), so `Frames.compute(5)` (member access, then invoke)
+        // works via the EXISTING calling convention. Bare `Frames(5)` --
+        // no member access -- is not supported by this form; a module is a
+        // namespace, not a callable.
+        if (!node.url) {
+          if (!node.via) break;
+          // The parser builds `via` by joining raw tokens with spaces, so
+          // `npm:lodash` arrives as "npm : lodash" (the lexer emits ':' as
+          // its own token). A URL survives intact because it lexes as a
+          // single STRING token. Neither form can legitimately contain a
+          // space, so collapsing them is safe and fixes the prefix forms.
+          const viaSpec = String(node.via).replace(/\s+/g, '');
+          if (typeof window === 'undefined' || !window.IVX || !window.IVX.resolver || !window.IVX.bridge) {
+            throw new RuntimeError(
+              `Web imports need ivx_resolve.js and ivx_bridge.js loaded before runtime.js. `
+              + `'${node.via}' could not be resolved.`, node.line);
+          }
+          try {
+            const mod = await window.IVX.resolver.resolve(viaSpec);
+            const handle = await window.IVX.bridge.loadResolved(mod);
+            let exportNames = [];
+            try {
+              const w = await window.IVX.bridge.pool.acquire(handle.key);
+              exportNames = await w.exports();
+            } catch (e) { /* fall through with an empty namespace + .call escape hatch */ }
+
+            const ns = {};
+            for (const name of exportNames) {
+              ns[name] = async (...args) => {
+                const v = await window.IVX.bridge.call(handle.key, name, args);
+                return (v === undefined || v === null) ? NONE : v;
+              };
+            }
+            // Escape hatch for modules with no statically enumerable
+            // exports (Python globals, a default-export JS module):
+            // `Frames.call("func_name", 1, 2)`.
+            ns.call = async (fnName, ...args) => {
+              const v = await window.IVX.bridge.call(handle.key, fnName, args);
+              return (v === undefined || v === null) ? NONE : v;
+            };
+            env.set(node.path, ns);
+          } catch (e) {
+            throw new RuntimeError(`Import failed for '${viaSpec}': ${e.message}`, node.line);
+          }
+          break;
+        }
+
         let url = node.url;
         if (url.startsWith('http:')) throw new RuntimeError("Insecure protocol: HTTPS is mandatory for KH modules.", node.line);
         if (!url.startsWith('http')) url = 'https://' + url;
@@ -2620,6 +2676,12 @@ function ivxIn(left, right, node) {
 
 // Convert an IVX value to an iterable of [primary, secondary] pairs
 function toIterable(value, node) {
+  if (typeof value === 'number') {
+    if (!Number.isInteger(value) || value < 0) {
+      throw new RuntimeError(`'for <N>' requires a non-negative whole number, got ${value}`, node?.line);
+    }
+    return Array.from({ length: value }, (_, i) => [i, i]);
+  }
   if (Array.isArray(value)) {
     return value.map((v, i) => [v, i]);
   }

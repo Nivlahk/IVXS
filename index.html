@@ -29,6 +29,61 @@
     }
   }
   </script>
+  <style>
+    /* Abstraction lens panel. Inline so the panel works without editing
+       styles.css -- move this block there if you prefer. Colours follow the
+       existing dark chrome. */
+    #lens-panel { display:flex; flex-direction:column; border-top:1px solid #3a3a5c;
+                  background:#12121a; max-height:38vh; min-height:120px; overflow:hidden; }
+    #lens-panel.collapsed { max-height:32px; min-height:32px; }
+    #lens-body { overflow:auto; flex:1; padding:4px 6px; }
+    .lens-check { font-size:11px; color:#9ca3af; display:inline-flex; align-items:center;
+                  gap:4px; margin:0 8px; cursor:pointer; }
+    .lens-status { font-size:11px; color:#6b7280; margin-right:8px; white-space:nowrap; }
+    .lens-status.lens-err { color:#f87171; }
+    .lens-table { width:100%; border-collapse:collapse; font-family:ui-monospace,monospace;
+                  font-size:11px; color:#cdd6f4; }
+    .lens-table th { text-align:left; font-weight:600; color:#6b7280; padding:2px 8px 4px 0;
+                     border-bottom:1px solid #2a2a3c; position:sticky; top:0; background:#12121a; }
+    .lens-table td { padding:1px 8px 1px 0; vertical-align:top; white-space:pre; }
+    .lens-row:hover { background:#1c1c28; }
+    .lens-num { color:#6b7280; text-align:right; }
+    .lens-bytes { color:#7dd3fc; }
+    .lens-kind { color:#a78bfa; }
+    .lens-code { color:#cdd6f4; }
+    .lens-note { color:#9ca3af; font-size:11px; padding:2px 0; white-space:normal; }
+    .lens-synthetic { opacity:.55; }
+    .lens-refusals { margin-top:6px; border-top:1px solid #2a2a3c; padding-top:4px; }
+  </style>
+  <style>
+    /* Python authoring panel. Same dark chrome as the lens panel. */
+    #py-panel { display:flex; flex-direction:column; border-top:1px solid #3a3a5c;
+                background:#12121a; max-height:42vh; min-height:160px; overflow:hidden; }
+    #py-panel.collapsed { max-height:32px; min-height:32px; }
+    #py-body { display:flex; flex:1; min-height:0; }
+    #py-src { flex:1; min-width:0; background:#0f0f14; color:#cdd6f4; border:none;
+              border-right:1px solid #2a2a3c; padding:8px; font-family:ui-monospace,monospace;
+              font-size:12px; resize:none; outline:none; }
+    #py-out { flex:1; min-width:0; overflow:auto; padding:8px; font-family:ui-monospace,monospace;
+              font-size:12px; color:#cdd6f4; background:#0c0c11; }
+    .py-line { white-space:pre-wrap; padding:1px 0; }
+    .py-line.py-stderr { color:#f87171; }
+    .py-line.py-note { color:#6b7280; }
+    .py-prompt-row { display:flex; align-items:center; gap:6px; }
+    .py-prompt-label { color:#9ca3af; }
+    .py-prompt-input { background:#1c1c28; color:#cdd6f4; border:1px solid #3a3a5c;
+                        border-radius:3px; padding:1px 6px; font-family:inherit; font-size:12px;
+                        flex:1; min-width:60px; outline:none; }
+    .py-prompt-input:focus { border-color:#60a5fa; }
+    .py-line.py-echo { color:#7dd3fc; }
+    .py-check { font-size:11px; color:#9ca3af; display:inline-flex; align-items:center;
+                gap:4px; margin:0 8px; cursor:pointer; white-space:nowrap; }
+    .py-status { font-size:11px; color:#6b7280; margin-right:8px; white-space:nowrap; }
+    .py-status.py-ok { color:#4ade80; }
+    .py-status.py-err { color:#f87171; }
+    .py-url-input { background:#0f0f14; color:#9ca3af; border:1px solid #3a3a5c; border-radius:4px;
+                    font-size:11px; padding:3px 6px; width:220px; margin-right:8px; }
+  </style>
 </head>
 
 <body>
@@ -206,6 +261,55 @@
             </div>
             <div id="term-msgs"></div>
           </div>
+
+      <!-- ── Abstraction lens panel (IVX phase 3) ─────────────────────────
+           A PROJECTION, not an edit. Unlike the materialize toggle, this
+           never writes to #src -- it renders a separate view driven by the
+           lowering source map, so switching altitude is reversible. -->
+      <div id="lens-panel">
+        <div id="lens-hdr" class="panel-hdr">
+          <span class="panel-hdr-title">Lens</span>
+          <div class="panel-hdr-sep"></div>
+          <select class="gsel panel-hdr-sel" id="lens-altitude" title="Abstraction altitude">
+            <option value="source" selected>Source</option>
+            <option value="cf">IR (control flow)</option>
+            <option value="flat">Machine (PC / bytes / cycles)</option>
+          </select>
+          <label class="lens-check" title="Hide instructions with no counterpart in your source">
+            <input type="checkbox" id="lens-synthetic" checked> hide scaffolding
+          </label>
+          <button class="gb panel-hdr-btn" id="lens-refresh">Refresh</button>
+          <div style="flex:1"></div>
+          <span id="lens-status" class="lens-status"></span>
+          <button id="lens-minimize" class="panel-minimize-btn" title="Collapse lens">—</button>
+        </div>
+        <div id="lens-body"></div>
+      </div>
+
+      <!-- ── Python authoring panel ────────────────────────────────────────
+           Write LITERAL Python, run it in a real Pyodide worker. Separate
+           from the lens panel: this executes actual Python semantics, not
+           a KH program styled to look like Python. -->
+      <div id="py-panel">
+        <div id="py-hdr" class="panel-hdr">
+          <span class="panel-hdr-title">Python</span>
+          <div class="panel-hdr-sep"></div>
+          <input id="py-index-url" class="py-url-input" type="text"
+                 placeholder="Pyodide indexURL (optional override)">
+          <label class="py-check" title="Runs Pyodide on the main thread instead of a worker, so input() works via window.prompt() with no special server headers needed. Trade-off: an infinite loop with no input() calls will freeze the tab, not just one worker.">
+            <input type="checkbox" id="py-interactive"> interactive (input(), no isolation)
+          </label>
+          <button class="gb panel-hdr-btn" id="py-run">▶ Run Python</button>
+          <div style="flex:1"></div>
+          <span id="py-status" class="py-status"></span>
+          <button id="py-minimize" class="panel-minimize-btn" title="Collapse Python panel">—</button>
+        </div>
+        <div id="py-body">
+          <textarea id="py-src" placeholder="import math&#10;print(math.sqrt(2))"
+                    spellcheck="false"></textarea>
+          <div id="py-out"></div>
+        </div>
+      </div>
         </div><!-- end ep-body -->
       </div><!-- end ep -->
 
@@ -260,6 +364,28 @@
   <script src="terminal.js"></script>
   <script src="diagnostics.js"></script>
   <script src="ui.js"></script>
+
+  <!-- ── IVX glue layer ────────────────────────────────────────────────────
+       Classic scripts in dependency order; there is no bundler. Each file is
+       wrapped in an IIFE and exports onto window.IVX, so load ORDER is the
+       only thing that matters:
+         word_kh            -> the subset parser the lowerer consumes
+         ivx_lower_contract -> CFEmitter + invariant checkers
+         ivx_altitude       -> projection over the source map
+         ivx_lower          -> UAST -> SEER lowering (needs the contract)
+         ivx_lens_ui        -> the panel (needs all of the above)
+       ivx_resolve / ivx_workers / ivx_bridge are phases 1 and 4: loaded and
+       reachable as window.IVX.*, but nothing in the page calls them yet. -->
+  <script src="word_kh.js"></script>
+  <script src="ivx_lower_contract.js"></script>
+  <script src="ivx_altitude.js"></script>
+  <script src="ivx_lower.js"></script>
+  <script src="ivx_resolve.js"></script>
+  <script src="ivx_worker_runtime.js"></script>
+  <script src="ivx_workers.js"></script>
+  <script src="ivx_bridge.js"></script>
+  <script src="ivx_lens_ui.js"></script>
+  <script src="ivx_python_ui.js"></script>
   <script src="demos.js"></script>
   <script src="examples.js"></script>
 </body>
